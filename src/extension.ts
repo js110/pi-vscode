@@ -12,6 +12,31 @@ import type { BridgeContext } from './bridge/types';
 let piSession: PiSessionManager | undefined;
 let bridgeContext: BridgeContext | undefined;
 
+const SIDEBAR_PLACEMENT_KEY = 'pi-agent.sidebarPlacementDone';
+
+/**
+ * Move the Pi panel view between workbench areas. The view must be focused
+ * for VS Code's move commands to pick it up, so we focus its container first.
+ */
+async function moveSidebarView(
+    target: 'secondary' | 'primary',
+    outputChannel: vscode.OutputChannel,
+): Promise<void> {
+    try {
+        await vscode.commands.executeCommand('workbench.view.extension.pi-agent');
+        // Give the view a moment to receive focus before it is moved.
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await vscode.commands.executeCommand(
+            target === 'secondary'
+                ? 'workbench.action.moveViewToSecondarySideBar'
+                : 'workbench.action.moveViewToPrimarySideBar',
+        );
+        outputChannel.appendLine(`Pi panel moved to ${target} sidebar.`);
+    } catch (err: any) {
+        outputChannel.appendLine(`Failed to move Pi panel to ${target} sidebar: ${err?.message ?? err}`);
+    }
+}
+
 export async function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('Pi Agent');
     outputChannel.appendLine('Pi Agent extension activating...');
@@ -77,6 +102,14 @@ export async function activate(context: vscode.ExtensionContext) {
                 vscode.commands.executeCommand('pi-agent.chat.focus');
             }),
 
+            vscode.commands.registerCommand('pi-agent.moveToSecondarySidebar', () => {
+                void moveSidebarView('secondary', outputChannel);
+            }),
+
+            vscode.commands.registerCommand('pi-agent.moveToPrimarySidebar', () => {
+                void moveSidebarView('primary', outputChannel);
+            }),
+
             vscode.commands.registerCommand('pi-agent.openSettings', () => {
                 SettingsPanel.show(
                     context.extensionUri,
@@ -87,6 +120,14 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         outputChannel.appendLine('Pi Agent extension activated.');
+
+        // First run only: default the panel to the secondary (right) sidebar.
+        // Afterwards the user's own placement is respected.
+        const placementDone = context.globalState.get<boolean>(SIDEBAR_PLACEMENT_KEY);
+        if (!placementDone) {
+            await context.globalState.update(SIDEBAR_PLACEMENT_KEY, true);
+            await moveSidebarView('secondary', outputChannel);
+        }
     } catch (err: any) {
         outputChannel.appendLine(`Failed to activate: ${err.message}`);
         vscode.window.showErrorMessage(`Pi Agent failed to activate: ${err.message}`);

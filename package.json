@@ -70,6 +70,14 @@
       {
         "command": "pi-agent.openSettings",
         "title": "Pi: Open Settings"
+      },
+      {
+        "command": "pi-agent.moveToSecondarySidebar",
+        "title": "Pi: Move Panel to Secondary Sidebar (Right)"
+      },
+      {
+        "command": "pi-agent.moveToPrimarySidebar",
+        "title": "Pi: Move Panel to Primary Sidebar (Left)"
       }
     ],
     "keybindings": [
