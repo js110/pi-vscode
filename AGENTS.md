@@ -68,7 +68,7 @@ The local IDE bridge starts with extension activation. `src/bridge/` exposes tok
 - Never import the Pi SDK at runtime outside `src/pi/compat.ts` (`loadPiSdk()`); use type-only imports elsewhere. See "Pi SDK Upgrade Compatibility" above.
 - The webview bundles (`src/webview/`) cannot import `vscode` or Node.js modules. They are browser-only IIFE bundles.
 - `tsconfig.json` excludes `src/webview/**/*` from the main TypeScript compilation. The webview files are compiled by esbuild only.
-- The Pi SDK is dynamically imported (`await import(...)`) in `session.ts` because it is externalized and must be resolved at runtime by VS Code's module loader.
+- The Pi SDK is only reached through `src/pi/compat.ts`: the bundled copy is inlined into `extension.js` by esbuild via the *string-literal* dynamic import in `loadBundledSdk()` (keep it a literal!), while the system-wide Pi copy is imported at runtime by absolute file path. See "Pi SDK Upgrade Compatibility" above.
 - `ModelRuntime` is owned by `src/pi/auth.ts`; `ModelRegistry` and sessions must share it so SecretStorage overrides and Pi's native auth/model behavior stay consistent.
 - When adding new settings, update both `package.json` (`contributes.configuration`) and `src/shared/protocol.ts` (`SettingsData` interface), then wire them in `settings-panel.ts` and `settings.ts`.
 
@@ -77,6 +77,7 @@ The local IDE bridge starts with extension activation. `src/bridge/` exposes tok
 The Pi SDK ships minor releases every 1–2 weeks. The extension must survive (and adopt) upstream changes without manual firefighting:
 
 - **Single gateway**: all *runtime* SDK imports go through `loadPiSdk()` in `src/pi/compat.ts`. Never `await import('@earendil-works/pi-coding-agent')` anywhere else. Type-only imports (`import type`) are allowed anywhere and are erased at compile time.
+- **System Pi first, bundled fallback**: `loadPiSdk()` detects the system-wide Pi install (env `PI_VSCODE_SDK_PATH`, the `pi` binary on PATH, `npm root -g`, common global locations), validates its API surface at runtime, and falls back to the bundled copy — with a logged reason — when it is missing or incompatible. Which copy was loaded is logged at session init via `getSdkSource()`.
 - **Feature-detect optional APIs**: for non-critical SDK methods, prefer `hasFunction()` from `compat.ts` so a renamed/removed API degrades gracefully (log + skip) instead of crashing the session. Only truly core calls (`prompt`, `abort`, `createAgentSession`) may assume existence.
 - **API surface audit**: `scripts/check-pi-api.mjs` asserts that every SDK export/static/prototype method the extension relies on exists in the *installed* SDK. When you start using a new SDK API, add a check for it there.
 - **Canary workflow**: `.github/workflows/pi-canary.yml` periodically runs the audit + typecheck + build + unit tests against `pi-coding-agent@latest`. Green → automatic upgrade PR; red → automatic issue.

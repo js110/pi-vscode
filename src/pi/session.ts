@@ -8,7 +8,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo } from '../shared/protocol';
 import { EventRouter } from './events';
-import { loadPiSdk, getInstalledPiVersion, hasFunction, type PiSdk } from './compat';
+import { loadPiSdk, getSdkSource, hasFunction, type PiSdk } from './compat';
 import { mapSkills } from './skills';
 import { getModelRuntime, disposeModelRuntime } from './auth';
 import { getModelRegistry, getAvailableModels, findModel, disposeModelRegistry } from './models';
@@ -48,6 +48,12 @@ export class PiSessionManager {
     async initialize(): Promise<void> {
         this._outputChannel.appendLine('Initializing Pi session...');
         const { SessionManager: SM } = await loadPiSdk();
+        const src = getSdkSource();
+        if (src) {
+            const location = src.source === 'system' && src.path ? ` (${src.path})` : '';
+            const fallback = src.reason ? ` [using bundled SDK instead: ${src.reason}]` : '';
+            this._outputChannel.appendLine(`Pi SDK: ${src.source} copy, v${src.version}${location}${fallback}`);
+        }
 
         const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
         this._modelRuntime = await getModelRuntime();
@@ -69,7 +75,7 @@ export class PiSessionManager {
 
         const model = session.model;
         this._outputChannel.appendLine(
-            `Pi session initialized (pi-coding-agent ${getInstalledPiVersion()}). Model: ${model ? `${getProviderId(model)}/${model.id}` : 'none'}`
+            `Pi session initialized. Model: ${model ? `${getProviderId(model)}/${model.id}` : 'none'}`
         );
     }
 

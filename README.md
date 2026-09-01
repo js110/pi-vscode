@@ -42,7 +42,7 @@ Pi remains the backend. VS Code supplies presentation, approvals, editor state, 
 - VS Code 1.100 or newer.
 - A provider configured for Pi.
 
-The extension embeds the SDK, so a global Pi installation is not required at runtime. Installing the CLI is still the easiest way to log in and manage the same native configuration used by the extension:
+The extension prefers your system-wide Pi installation: at startup it detects the global install (via the `pi` binary on PATH, `npm root -g`, or common global locations), validates its API surface, and uses it when compatible. If no system Pi is found — or an upgrade makes it incompatible — the extension automatically falls back to its bundled SDK copy and logs the reason, so it keeps working either way. Installing the CLI is still the easiest way to log in and manage the same native configuration used by the extension (set `PI_VSCODE_SDK_PATH` to force a specific SDK copy):
 
 ```powershell
 npm install -g @earendil-works/pi-coding-agent
