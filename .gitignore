@@ -1,0 +1,10 @@
+out/
+out-test/
+node_modules/
+*.vsix
+.vscode-test/
+.vscode-test-local/
+.upstream/
+legacy-rpc-prototype/
+.design-qa/
+design-qa.md

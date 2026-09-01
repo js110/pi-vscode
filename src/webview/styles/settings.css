@@ -1,0 +1,389 @@
+:root {
+    --bg: var(--vscode-editor-background, #1e1e1e);
+    --fg: var(--vscode-editor-foreground, #cccccc);
+    --muted: var(--vscode-descriptionForeground, #999);
+    --input-bg: var(--vscode-input-background, #3c3c3c);
+    --input-fg: var(--vscode-input-foreground, #cccccc);
+    --input-border: var(--vscode-input-border, #3c3c3c);
+    --focus-border: var(--vscode-focusBorder, #007acc);
+    --btn-bg: var(--vscode-button-background, #0e639c);
+    --btn-fg: var(--vscode-button-foreground, #ffffff);
+    --btn-hover: var(--vscode-button-hoverBackground, #1177bb);
+    --border: var(--vscode-panel-border, #2d2d2d);
+    --card-bg: var(--vscode-editorWidget-background, #252526);
+    --error-fg: var(--vscode-errorForeground, #f48771);
+    --success-fg: var(--vscode-testing-iconPassed, #73c991);
+    --link: var(--vscode-textLink-foreground, #3794ff);
+    --font-mono: var(--vscode-editor-font-family, 'Cascadia Code', Consolas, 'Courier New', monospace);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+    font-size: var(--vscode-font-size, 13px);
+    color: var(--fg);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+}
+
+.settings-container {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 24px 20px 48px;
+}
+
+.settings-header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 24px;
+}
+
+.settings-section {
+    margin-bottom: 28px;
+}
+
+.section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+
+.setting-row {
+    margin-bottom: 16px;
+}
+
+.setting-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.setting-label-row label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg);
+}
+
+.setting-description {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+    line-height: 1.5;
+}
+
+.setting-description a {
+    color: var(--link);
+    text-decoration: none;
+}
+.setting-description a:hover {
+    text-decoration: underline;
+}
+
+.setting-input {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--input-bg);
+    color: var(--input-fg);
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+}
+.setting-input:focus {
+    border-color: var(--focus-border);
+}
+
+.setting-select {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--input-bg);
+    color: var(--input-fg);
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+}
+.setting-select:focus {
+    border-color: var(--focus-border);
+}
+
+.setting-range {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--input-border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+.setting-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--btn-bg);
+    cursor: pointer;
+}
+
+.range-value {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+}
+
+/* Toggle switch */
+.setting-toggle-row {
+    display: flex;
+    align-items: center;
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    user-select: none;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--input-border);
+    border-radius: 10px;
+    transition: background 0.2s;
+    cursor: pointer;
+}
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--fg);
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--btn-bg);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+}
+.toggle-switch input:focus + .toggle-slider {
+    box-shadow: 0 0 0 2px var(--focus-border);
+}
+
+/* API key */
+.api-key-input-row {
+    display: flex;
+    gap: 8px;
+}
+.api-key-input-row .setting-input {
+    flex: 1;
+}
+
+.api-key-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.key-status {
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+.key-status.set {
+    background: rgba(115, 201, 145, 0.15);
+    color: var(--success-fg);
+}
+.key-status.unset {
+    background: rgba(244, 135, 113, 0.1);
+    color: var(--muted);
+}
+
+/* Buttons */
+.setting-btn {
+    padding: 5px 14px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s;
+}
+.setting-btn.primary {
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+}
+.setting-btn.primary:hover {
+    background: var(--btn-hover);
+}
+.setting-btn.secondary {
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--border);
+}
+.setting-btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+.setting-btn.danger {
+    background: transparent;
+    color: var(--error-fg);
+    border: 1px solid rgba(244, 135, 113, 0.3);
+}
+.setting-btn.danger:hover {
+    background: rgba(244, 135, 113, 0.1);
+}
+
+/* Auth indicator */
+.auth-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+.auth-status.auth-ok {
+    background: rgba(115, 201, 145, 0.08);
+    color: var(--success-fg);
+}
+.auth-status.auth-none {
+    background: rgba(244, 135, 113, 0.08);
+    color: var(--muted);
+}
+.auth-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+/* Shortcuts */
+.shortcuts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.shortcut-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+}
+.shortcut-item kbd {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    min-width: 100px;
+    text-align: center;
+}
+.shortcut-item span {
+    color: var(--muted);
+}
+
+/* Toast */
+.toast {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-size: 12px;
+    z-index: 1000;
+    transition: transform 0.3s ease;
+    pointer-events: none;
+}
+.toast.visible {
+    transform: translateX(-50%) translateY(0);
+}
+.toast-error {
+    background: rgba(244, 135, 113, 0.15);
+    color: var(--error-fg);
+    border: 1px solid rgba(244, 135, 113, 0.3);
+}
+.toast-info {
+    background: var(--card-bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+}
+
+/* Skill cards */
+.skill-card {
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+.skill-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+.skill-card-name {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+}
+.skill-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.skill-card-desc {
+    font-size: 12px;
+    color: var(--fg);
+    margin: 2px 0 4px;
+    opacity: 0.85;
+}
+.skill-card-path {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 2px 0;
+    font-family: var(--vscode-editor-font-family, monospace);
+    word-break: break-all;
+}
+.skill-card-source {
+    font-size: 10px;
+    color: var(--muted);
+    opacity: 0.7;
+}
