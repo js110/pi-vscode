@@ -17,6 +17,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
+      - run: node scripts/check-pi-api.mjs
       - run: npm run compile
       - run: npm run package
       - uses: actions/upload-artifact@v4

@@ -1,5 +1,6 @@
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import type { ModelInfo } from '../shared/protocol';
+import { loadPiSdk } from './compat';
 import { getModelRuntime } from './auth';
 
 let cached: ModelRegistry | undefined;
@@ -8,7 +9,7 @@ export async function getModelRegistry(): Promise<ModelRegistry> {
     if (cached) {
         return cached;
     }
-    const { ModelRegistry: MR } = await import('@earendil-works/pi-coding-agent');
+    const { ModelRegistry: MR } = await loadPiSdk();
     cached = new MR(await getModelRuntime());
     return cached;
 }

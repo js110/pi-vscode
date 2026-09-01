@@ -1,4 +1,5 @@
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
+import { loadPiSdk } from './compat';
 
 let cached: ModelRuntime | undefined;
 
@@ -11,7 +12,7 @@ export async function getModelRuntime(): Promise<ModelRuntime> {
     if (cached) {
         return cached;
     }
-    const { ModelRuntime: Runtime } = await import('@earendil-works/pi-coding-agent');
+    const { ModelRuntime: Runtime } = await loadPiSdk();
     cached = await Runtime.create();
     return cached;
 }

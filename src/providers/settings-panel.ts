@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import type { SettingsClientMessage, SettingsServerMessage, SettingsData, SkillInfo } from '../shared/protocol';
+import type { SettingsClientMessage, SettingsServerMessage, SettingsData } from '../shared/protocol';
+import { discoverSkills } from '../pi/skills';
 
 const API_KEY_PREFIX = 'pi-agent.apiKey.';
 
@@ -127,19 +128,8 @@ export class SettingsPanel {
 
     private async _sendSkills(): Promise<void> {
         try {
-            const { loadSkills } = await import('@earendil-works/pi-coding-agent');
-            const path = require('path');
-            const os = require('os');
             const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
-            const agentDir = path.join(os.homedir(), '.pi', 'agent');
-            const { skills: rawSkills } = loadSkills({ cwd, agentDir, skillPaths: [], includeDefaults: true });
-            const skills: SkillInfo[] = rawSkills.map((s: any) => ({
-                name: s.name,
-                description: s.description ?? '',
-                filePath: s.filePath ?? '',
-                source: s.sourceInfo?.source ?? '',
-                disableModelInvocation: s.disableModelInvocation ?? false,
-            }));
+            const skills = await discoverSkills(cwd);
             this._post({ type: 'skills', skills });
         } catch {
             this._post({ type: 'skills', skills: [] });

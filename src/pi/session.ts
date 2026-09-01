@@ -8,6 +8,8 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo } from '../shared/protocol';
 import { EventRouter } from './events';
+import { loadPiSdk, getInstalledPiVersion, hasFunction, type PiSdk } from './compat';
+import { mapSkills } from './skills';
 import { getModelRuntime, disposeModelRuntime } from './auth';
 import { getModelRegistry, getAvailableModels, findModel, disposeModelRegistry } from './models';
 
@@ -45,7 +47,7 @@ export class PiSessionManager {
 
     async initialize(): Promise<void> {
         this._outputChannel.appendLine('Initializing Pi session...');
-        const { SessionManager: SM } = await import('@earendil-works/pi-coding-agent');
+        const { SessionManager: SM } = await loadPiSdk();
 
         const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
         this._modelRuntime = await getModelRuntime();
@@ -67,7 +69,7 @@ export class PiSessionManager {
 
         const model = session.model;
         this._outputChannel.appendLine(
-            `Pi session initialized. Model: ${model ? `${getProviderId(model)}/${model.id}` : 'none'}`
+            `Pi session initialized (pi-coding-agent ${getInstalledPiVersion()}). Model: ${model ? `${getProviderId(model)}/${model.id}` : 'none'}`
         );
     }
 
@@ -104,26 +106,39 @@ export class PiSessionManager {
 
     async steer(text: string): Promise<void> {
         if (!this._session) { throw new Error('Session not initialized'); }
+        if (!hasFunction(this._session, 'steer')) {
+            throw new Error("steer() is not available in the installed Pi SDK");
+        }
         await this._session.steer(text);
     }
 
     async followUp(text: string): Promise<void> {
         if (!this._session) { throw new Error('Session not initialized'); }
+        if (!hasFunction(this._session, 'followUp')) {
+            throw new Error("followUp() is not available in the installed Pi SDK");
+        }
         await this._session.followUp(text);
     }
 
     getFollowUpMessages(): string[] {
-        return [...(this._session?.getFollowUpMessages() ?? [])];
+        if (!this._session || !hasFunction(this._session, 'getFollowUpMessages')) { return []; }
+        return [...(this._session.getFollowUpMessages() ?? [])];
     }
 
     async replaceFollowUpMessages(messages: string[]): Promise<void> {
         if (!this._session) { throw new Error('Session not initialized'); }
-        const queued = this._session.clearQueue();
-        for (const message of queued.steering) {
-            await this._session.steer(message);
-        }
-        for (const message of messages) {
-            await this._session.followUp(message);
+        if (hasFunction(this._session, 'clearQueue')) {
+            const queued = this._session.clearQueue();
+            if (hasFunction(this._session, 'steer')) {
+                for (const message of queued.steering) {
+                    await this._session.steer(message);
+                }
+            }
+            if (hasFunction(this._session, 'followUp')) {
+                for (const message of messages) {
+                    await this._session.followUp(message);
+                }
+            }
         }
     }
 
@@ -158,12 +173,12 @@ export class PiSessionManager {
     }
 
     setThinkingLevel(level: string): void {
-        if (!this._session) { return; }
+        if (!this._session || !hasFunction(this._session, 'setThinkingLevel')) { return; }
         this._session.setThinkingLevel(level as any);
     }
 
     cycleThinkingLevel(): string | undefined {
-        if (!this._session) { return undefined; }
+        if (!this._session || !hasFunction(this._session, 'cycleThinkingLevel')) { return undefined; }
         return this._session.cycleThinkingLevel();
     }
 
@@ -173,7 +188,7 @@ export class PiSessionManager {
         this._session.dispose();
 
         const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
-        const { SessionManager: SM } = await import('@earendil-works/pi-coding-agent');
+        const { SessionManager: SM } = await loadPiSdk();
         this._sessionManager = this._createSessionManager(SM, cwd);
         const { session } = await this._createPiSession(cwd, this._sessionManager);
 
@@ -184,7 +199,7 @@ export class PiSessionManager {
     }
 
     async getSessions(): Promise<SessionInfo[]> {
-        const { SessionManager: SM } = await import('@earendil-works/pi-coding-agent');
+        const { SessionManager: SM } = await loadPiSdk();
         const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
         const sessionDir = vscode.workspace.getConfiguration('pi-agent').get<string>('sessionStoragePath', '') || undefined;
         const sessions = await SM.list(cwd, sessionDir);
@@ -201,7 +216,7 @@ export class PiSessionManager {
         this._unsubscribe?.();
         this._session.dispose();
 
-        const { SessionManager: SM } = await import('@earendil-works/pi-coding-agent');
+        const { SessionManager: SM } = await loadPiSdk();
         const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
         this._sessionManager = SM.open(sessionPath, undefined);
         const { session } = await this._createPiSession(cwd, this._sessionManager);
@@ -212,7 +227,7 @@ export class PiSessionManager {
     }
 
     private _createSessionManager(
-        SessionManagerClass: typeof import('@earendil-works/pi-coding-agent').SessionManager,
+        SessionManagerClass: PiSdk['SessionManager'],
         cwd: string,
     ): SessionManager {
         const config = vscode.workspace.getConfiguration('pi-agent');
@@ -238,7 +253,7 @@ export class PiSessionManager {
             DefaultResourceLoader,
             SettingsManager,
             getAgentDir,
-        } = await import('@earendil-works/pi-coding-agent');
+        } = await loadPiSdk();
         this._modelRuntime ??= await getModelRuntime();
 
         const agentDir = getAgentDir();
@@ -317,30 +332,36 @@ export class PiSessionManager {
     getSkills(): SkillInfo[] {
         if (!this._session) return [];
         try {
-            const { skills } = this._session.resourceLoader.getSkills();
-            return skills.map((s: any) => ({
-                name: s.name,
-                description: s.description ?? '',
-                filePath: s.filePath ?? '',
-                source: s.sourceInfo?.source ?? '',
-                disableModelInvocation: s.disableModelInvocation ?? false,
-            }));
+            const loader = (this._session as any).resourceLoader;
+            if (!loader || !hasFunction(loader, 'getSkills')) { return []; }
+            const { skills } = loader.getSkills();
+            return mapSkills(skills);
         } catch {
             return [];
         }
     }
 
     getActiveToolNames(): string[] {
-        return this._session?.getActiveToolNames() ?? [];
+        if (!this._session || !hasFunction(this._session, 'getActiveToolNames')) { return []; }
+        return this._session.getActiveToolNames();
     }
 
     getMessages(): any[] {
-        return this._session?.state?.messages ?? [];
+        try {
+            return (this._session as any)?.state?.messages ?? [];
+        } catch {
+            return [];
+        }
     }
 
     setMessages(msgs: any[]): void {
-        if (this._session?.state) {
-            this._session.state.messages = msgs;
+        try {
+            const state = (this._session as any)?.state;
+            if (state) {
+                state.messages = msgs;
+            }
+        } catch (err: any) {
+            this._outputChannel.appendLine(`[pi-compat] Failed to write session state: ${err?.message ?? err}`);
         }
     }
 
@@ -355,7 +376,7 @@ export class PiSessionManager {
         }
         const model = s.model;
         return {
-            messages: s.messages.map(safeSerialize),
+            messages: (s as any).messages?.map(safeSerialize) ?? [],
             model: model ? { provider: getProviderId(model), id: model.id, name: model.name } : undefined,
             thinkingLevel: s.thinkingLevel,
             isStreaming: s.isStreaming,

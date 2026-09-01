@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Keeps package-lock.json fresh for caret ranges (patch updates) and
+  # upgrades the toolchain. Major/minor Pi SDK upgrades arrive via the
+  # pi-canary workflow, which verifies them against the full check suite.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-type: "direct"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
