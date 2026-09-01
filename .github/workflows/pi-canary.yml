@@ -54,7 +54,7 @@ jobs:
 
       - name: Report canary failure
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const label = 'pi-sdk-canary';
