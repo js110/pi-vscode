@@ -85,7 +85,7 @@ jobs:
 
       - name: Open upgrade PR when canary passes
         if: success()
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: deps/pi-sdk-canary-upgrade
           delete-branch: true
