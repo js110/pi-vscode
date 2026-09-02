@@ -130,7 +130,7 @@ export type ServerMessage =
     | { type: 'ready' }
     | { type: 'stateSync'; state: SerializedAgentState }
     | { type: 'agentEvent'; event: any }
-    | { type: 'models'; models: ModelInfo[]; current?: ModelInfo; thinkingLevel?: string }
+    | { type: 'models'; models: ModelInfo[]; current?: ModelInfo; thinkingLevel?: string; availableThinkingLevels?: string[]; supportsThinking?: boolean }
     | { type: 'modelChanged'; model: ModelInfo; thinkingLevel?: string }
     | { type: 'sessions'; sessions: SessionInfo[]; currentSessionId?: string }
     | { type: 'sessionChanged'; sessionId: string }

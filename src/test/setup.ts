@@ -1,5 +1,44 @@
-import { beforeAll, afterAll } from 'vitest';
+import { beforeAll, afterAll, vi } from 'vitest';
 import type { AgentSession, ModelRegistry } from '@earendil-works/pi-coding-agent';
+
+vi.mock('vscode', () => {
+    const noop = () => undefined as any;
+    const event = () => ({ fire: noop, dispose: noop } as any);
+    return {
+        workspace: {
+            workspaceFolders: [{ uri: { fsPath: process.cwd() } }],
+            getConfiguration: () => ({ get: () => undefined, has: () => false, update: noop }),
+            openTextDocument: async () => ({} as any),
+            registerTextDocumentContentProvider: () => ({ dispose: noop }),
+            onDidChangeConfiguration: event,
+        },
+        window: {
+            createStatusBarItem: () => ({ text: '', tooltip: '', command: '', show: noop, dispose: noop }),
+            createWebviewPanel: noop,
+            showInformationMessage: async () => undefined,
+            showWarningMessage: async () => undefined,
+            showErrorMessage: async () => undefined,
+            showTextDocument: async () => ({} as any),
+            showQuickPick: async () => undefined,
+        },
+        commands: {
+            executeCommand: async () => undefined,
+            registerCommand: () => ({ dispose: noop }),
+        },
+        Uri: {
+            file: (p: string) => ({ fsPath: p } as any),
+            parse: (s: string) => ({ toString: () => s } as any),
+            joinPath: (a: any, ...p: string[]) => ({ fsPath: [a?.fsPath, ...p].join('/') } as any),
+        },
+        EventEmitter: class { fire = noop; dispose = noop; event = noop; },
+        Disposable: { from: () => ({ dispose: noop }) },
+        StatusBarAlignment: { Left: 1, Right: 2 },
+        ConfigurationTarget: { Global: 1 },
+        ViewColumn: { One: 1 },
+        env: {},
+        version: '0.0.0',
+    };
+});
 
 export let TEST_MODEL_PROVIDER = '';
 export let TEST_MODEL_ID = '';

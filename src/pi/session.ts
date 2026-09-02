@@ -298,6 +298,28 @@ export class PiSessionManager {
         return this._session?.thinkingLevel;
     }
 
+    getAvailableThinkingLevels(): string[] {
+        if (!this._session || !hasFunction(this._session, 'getAvailableThinkingLevels')) {
+            return [];
+        }
+        try {
+            return this._session.getAvailableThinkingLevels() ?? [];
+        } catch {
+            return [];
+        }
+    }
+
+    supportsThinking(): boolean {
+        if (!this._session || !hasFunction(this._session, 'supportsThinking')) {
+            return false;
+        }
+        try {
+            return this._session.supportsThinking();
+        } catch {
+            return false;
+        }
+    }
+
     getAutoApproveTools(): boolean {
         return vscode.workspace.getConfiguration('pi-agent').get<boolean>('autoApproveTools', false);
     }
@@ -401,6 +423,17 @@ export class PiSessionManager {
             contextWindow: usage.contextWindow,
             percent: usage.percent,
         };
+    }
+
+    getSessionStats(): any {
+        if (!this._session || !hasFunction(this._session, 'getSessionStats')) {
+            return undefined;
+        }
+        try {
+            return this._session.getSessionStats();
+        } catch {
+            return undefined;
+        }
     }
 
     async showModelPicker(): Promise<void> {

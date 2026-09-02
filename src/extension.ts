@@ -1,15 +1,17 @@
 import * as vscode from 'vscode';
 import { PiSessionManager } from './pi/session';
 import { SidebarProvider } from './providers/sidebar';
+import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from './providers/tab';
 import { StatusBarManager } from './providers/status-bar';
 import { SettingsPanel } from './providers/settings-panel';
 
 import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
+import { getModelRuntime } from './pi/auth';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
+import type { ServerMessage } from './shared/protocol';
 
-let piSession: PiSessionManager | undefined;
 let bridgeContext: BridgeContext | undefined;
 
 const SIDEBAR_PLACEMENT_KEY = 'pi-agent.sidebarPlacementDone';
@@ -46,33 +48,50 @@ export async function activate(context: vscode.ExtensionContext) {
         process.env.PI_VSCODE_BRIDGE_URL = bridgeContext.url;
         process.env.PI_VSCODE_BRIDGE_TOKEN = bridgeContext.token;
         const bridgeExtensionPath = context.asAbsolutePath('bridge/pi-vscode-bridge.js');
+        const secrets = context.secrets;
 
-        piSession = new PiSessionManager(outputChannel, bridgeExtensionPath, context.secrets);
-        await piSession.initialize();
+        let providerRef: SidebarProvider | undefined;
+        const hooks: TabManagerHooks = {
+            post: (msg) => providerRef?.post(msg),
+            setContext: (key, value) => { void vscode.commands.executeCommand('setContext', key, value); },
+            openFile: (filePath) => {
+                const uri = vscode.Uri.file(filePath);
+                void vscode.workspace.openTextDocument(uri).then(
+                    (doc) => vscode.window.showTextDocument(doc, { preview: true }),
+                    () => { /* file may not exist */ },
+                );
+            },
+            showMessage: (message) => void vscode.window.showInformationMessage(message),
+            confirmDialog: (message) =>
+                Promise.resolve(
+                    vscode.window.showWarningMessage(message, { modal: true }, 'Yes'),
+                ).then((answer): boolean => answer === 'Yes'),
+            openSettings: () => void vscode.commands.executeCommand('pi-agent.openSettings'),
+        };
+
+        const factory: TabFactory = {
+            async create(): Promise<Tab> {
+                const session = new PiSessionManager(outputChannel, bridgeExtensionPath, secrets);
+                await session.initialize();
+                const checkpointManager = new CheckpointManager();
+                const diffManager = new DiffManager(session, checkpointManager);
+                return { id: '', name: 'New Agent', session, diffManager, checkpointManager };
+            },
+        };
+
+        const tabManager = new TabManager(factory, hooks);
+        await tabManager.initialize();
 
         const diffContentProvider = new DiffContentProvider();
-        const checkpointManager = new CheckpointManager();
-        const statusBar = new StatusBarManager(piSession);
+        const statusBar = new StatusBarManager(tabManager);
 
-        const diffManager = new DiffManager(piSession, checkpointManager);
-        const sidebarProvider = new SidebarProvider(
-            context.extensionUri,
-            piSession,
-            diffManager,
-            checkpointManager,
-            outputChannel,
-            bridgeExtensionPath,
-            context.secrets,
-        );
+        const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager);
+        providerRef = sidebarProvider;
 
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('pi-agent.chat', sidebarProvider),
             vscode.workspace.registerTextDocumentContentProvider('pi-diff', diffContentProvider),
             statusBar,
-
-            diffManager,
-            checkpointManager,
-            outputChannel,
 
             vscode.commands.registerCommand('pi-agent.newChat', async () => {
                 await sidebarProvider.newSession();
@@ -113,8 +132,15 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('pi-agent.openSettings', () => {
                 SettingsPanel.show(
                     context.extensionUri,
-                    context.secrets,
-                    async (provider, key) => piSession?.setRuntimeApiKey(provider, key),
+                    secrets,
+                    async (provider, key) => {
+                        const runtime = await getModelRuntime();
+                        if (key) {
+                            await runtime.setRuntimeApiKey(provider, key);
+                        } else {
+                            await runtime.removeRuntimeApiKey(provider);
+                        }
+                    },
                 );
             }),
         );
@@ -135,7 +161,6 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
-    await piSession?.dispose();
     await PiSessionManager.disposeGlobal();
     await bridgeContext?.dispose();
     bridgeContext = undefined;

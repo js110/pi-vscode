@@ -17,6 +17,8 @@ const state: {
     isStreaming: boolean;
     model?: { provider: string; id: string; name?: string };
     thinkingLevel?: string;
+    availableThinkingLevels?: string[];
+    supportsThinking?: boolean;
     tools: string[];
     sessionId?: string;
     sessionName?: string;
@@ -102,6 +104,8 @@ function handleMessage(msg: ServerMessage): void {
             break;
         case 'models':
             state.availableModels = msg.models ?? [];
+            state.availableThinkingLevels = msg.availableThinkingLevels ?? [];
+            state.supportsThinking = msg.supportsThinking ?? false;
             if (msg.current) {
                 state.model = msg.current;
                 addToRecentModels(msg.current.provider, msg.current.id, msg.current.name);
@@ -1600,12 +1604,16 @@ function showModelPicker(): void {
     const thinkingLabel = el('span', 'thinking-label');
     thinkingLabel.textContent = 'Thinking:';
     thinkingRow.appendChild(thinkingLabel);
-    const levels = ['off', 'minimal', 'low', 'medium', 'high'];
-    for (const level of levels) {
-        const chip = el('button', `thinking-chip${level === state.thinkingLevel ? ' active' : ''}`);
-        chip.textContent = level.charAt(0).toUpperCase() + level.slice(1);
-        chip.dataset.level = level;
-        thinkingRow.appendChild(chip);
+    const supported = state.supportsThinking && (state.availableThinkingLevels?.length ?? 0) > 0;
+    if (supported) {
+        for (const level of state.availableThinkingLevels!) {
+            const chip = el('button', `thinking-chip${level === state.thinkingLevel ? ' active' : ''}`);
+            chip.textContent = level.charAt(0).toUpperCase() + level.slice(1);
+            chip.dataset.level = level;
+            thinkingRow.appendChild(chip);
+        }
+    } else {
+        thinkingRow.style.display = 'none';
     }
     picker.appendChild(thinkingRow);
 
@@ -2180,7 +2188,9 @@ function bindScrollListener(): void {
         updateScrollButton();
     }, { passive: true });
 
-    // The scroll event handles resetting when user reaches bottom
+    // The scroll event handles both taking control and resetting.
+    // Manual scrolling must always beat auto-scroll: the instant the user
+    // moves away from the bottom, auto-scroll cedes priority.
     messages.addEventListener('scroll', () => {
         if (isProgrammaticScroll) {
             isProgrammaticScroll = false;
@@ -2188,6 +2198,8 @@ function bindScrollListener(): void {
         }
         if (isNearBottom()) {
             userHasScrolled = false;
+        } else {
+            userHasScrolled = true;
         }
         updateScrollButton();
     });
