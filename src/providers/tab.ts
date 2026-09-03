@@ -256,6 +256,28 @@ export class TabManager {
         }
 
         if (event.type === 'agent_end') {
+            if (event.willRetry) {
+                // SDK will retry — keep streaming state active
+                if (isActive) {
+                    this._hooks.post({ type: 'agentEvent', event: safeSerialize(event) });
+                }
+            } else {
+                tab.isStreaming = false;
+                tab.streamingText = '';
+                tab.streamingThinking = '';
+                tab.isThinking = false;
+                tab.thinkingStartTime = 0;
+                tab.streamingThinkingDuration = 0;
+                tab.agentStartTime = 0;
+                if (isActive) {
+                    this._hooks.setContext('pi-agent.isStreaming', false);
+                } else {
+                    tab.hasNotification = true;
+                }
+            }
+        }
+
+        if (event.type === 'agent_settled') {
             tab.isStreaming = false;
             tab.streamingText = '';
             tab.streamingThinking = '';

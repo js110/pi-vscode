@@ -216,11 +216,31 @@ function handleAgentEvent(event: any): void {
             showPreparingPlaceholder();
             break;
         case 'agent_end':
+            if (event.willRetry) {
+                // SDK will retry — keep streaming UI active
+                break;
+            }
             state.isStreaming = false;
             state.streamingText = '';
             state.streamingThinking = '';
             state.isThinking = false;
             dismissSteerToast();
+            updateStreamingUI();
+            updateInputArea();
+            break;
+        case 'auto_retry_start':
+            showRetryPlaceholder(event.attempt, event.maxAttempts, event.delayMs, event.errorMessage);
+            break;
+        case 'auto_retry_end':
+            removeRetryPlaceholder();
+            break;
+        case 'agent_settled':
+            state.isStreaming = false;
+            state.streamingText = '';
+            state.streamingThinking = '';
+            state.isThinking = false;
+            dismissSteerToast();
+            removeRetryPlaceholder();
             updateStreamingUI();
             updateInputArea();
             break;
@@ -283,9 +303,22 @@ function render(): void {
     header.appendChild(tabStrip);
     const headerActions = el('div', 'header-right');
     headerActions.innerHTML = `
-        <button class="icon-btn" id="btn-new-tab" title="New Agent"><img class="header-icon-img" src="${iconsBaseUri}/new.png" alt="new"></button>
-        <button class="icon-btn" id="btn-sessions" title="Sessions"><img class="header-icon-img" src="${iconsBaseUri}/list.png" alt="sessions"></button>
-        <button class="icon-btn" id="btn-settings" title="Settings"><img class="header-icon-img" src="${iconsBaseUri}/settings.png" alt="settings"></button>
+        <button class="icon-btn" id="btn-new-tab" title="New Agent">
+            <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <path d="M8 3v10M3 8h10"/>
+            </svg>
+        </button>
+        <button class="icon-btn" id="btn-sessions" title="Sessions">
+            <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <path d="M2 4h12M2 8h12M2 12h12"/>
+            </svg>
+        </button>
+        <button class="icon-btn" id="btn-settings" title="Settings">
+            <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <circle cx="8" cy="8" r="2"/>
+                <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/>
+            </svg>
+        </button>
     `;
     header.appendChild(headerActions);
     app.appendChild(header);
@@ -418,9 +451,9 @@ function updateTabs(): void {
         if (tab.isStreaming) {
             icon.innerHTML = '<span class="tab-spinner"></span>';
         } else if (tab.hasNotification) {
-            icon.innerHTML = `<img class="tab-icon-img" src="${iconsBaseUri}/notification.png" alt="notification">`;
+            icon.innerHTML = `<svg class="tab-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5.5a4 4 0 0 1 8 0c0 2.5 1 4 2 5H2c1-1 2-2.5 2-5zM6.5 13a1.5 1.5 0 0 0 3 0"/></svg>`;
         } else {
-            icon.innerHTML = `<img class="tab-icon-img" src="${iconsBaseUri}/chat.png" alt="chat">`;
+            icon.innerHTML = `<svg class="tab-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 3h12v8H4l-2 2V3z"/></svg>`;
         }
 
         const name = el('span', 'tab-name');
@@ -478,7 +511,7 @@ function updateInputArea(): void {
     }
 
     const steerBtnHtml = state.isStreaming
-        ? `<button id="btn-steer" class="steer-btn" title="Steer (Ctrl+Enter)"><img class="steer-icon-img" src="${iconsBaseUri}/chevrons.png" alt="steer"></button>`
+        ? `<button id="btn-steer" class="steer-btn" title="Steer (Ctrl+Enter)"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
         : '';
 
     footer.innerHTML = `
@@ -563,8 +596,8 @@ function updateQueuedMessageBanner(): void {
                     <span class="queued-item-icon">&#9675;</span>
                     <span class="queued-item-text">${escHtml(msg)}</span>
                     <span class="queued-item-actions">
-                        <button class="queued-item-btn queued-item-edit" data-index="${i}" title="Edit"><img class="queued-btn-icon" src="${iconsBaseUri}/pencil.png" alt="edit"></button>
-                        <button class="queued-item-btn queued-item-delete" data-index="${i}" title="Remove"><img class="queued-btn-icon" src="${iconsBaseUri}/trash.png" alt="remove"></button>
+                        <button class="queued-item-btn queued-item-edit" data-index="${i}" title="Edit"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/></svg></button>
+                        <button class="queued-item-btn queued-item-delete" data-index="${i}" title="Remove"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M5.5 4V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1M6 7v4M8 7v4M10 7v4M4 4l.7 9.1a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4"/></svg></button>
                     </span>
                 </div>`;
             }).join('')}
@@ -679,9 +712,9 @@ function buildWelcome(): HTMLElement {
     w.innerHTML = `
         <div class="welcome-icon">&pi;</div>
         <div class="welcome-title">Pi Agent</div>
-        <div class="welcome-subtitle">Ask anything. Pi can read, write, and execute code for you.</div>
+        <div class="welcome-subtitle">Pi reads, writes, and runs code in this workspace. Tell it what to build and it will show its work as it goes.</div>
         <div class="welcome-hints">
-            <div class="welcome-hint">Type a message to start</div>
+            <div class="welcome-hint"><kbd>Enter</kbd> Send a message</div>
             <div class="welcome-hint"><kbd>Ctrl+Shift+L</kbd> Focus chat</div>
             <div class="welcome-hint"><kbd>Ctrl+Shift+N</kbd> New session</div>
             <div class="welcome-hint"><kbd>Esc</kbd> Stop generation</div>
@@ -1047,6 +1080,22 @@ function ensurePreparingPlaceholder(): void {
     }
 }
 
+function showRetryPlaceholder(attempt: number, maxAttempts: number, delayMs: number, errorMessage: string): void {
+    removePreparingPlaceholder();
+    removeRetryPlaceholder();
+    const container = document.getElementById('streaming-message');
+    if (!container) return;
+    const ph = el('div', 'preparing-placeholder retry-placeholder');
+    ph.id = 'retry-placeholder';
+    ph.textContent = `Retrying (${attempt}/${maxAttempts}) after error: ${truncate(errorMessage, 80)}`;
+    container.appendChild(ph);
+    scrollToBottom();
+}
+
+function removeRetryPlaceholder(): void {
+    document.getElementById('retry-placeholder')?.remove();
+}
+
 function renderStreamingContent(): void {
     const container = document.getElementById('streaming-message');
     if (!container) return;
@@ -1106,18 +1155,18 @@ function renderStreamingContent(): void {
 // ── Tool rendering ──
 
 function getToolIcon(name: string): string {
-    const iconFiles: Record<string, string> = {
-        bash: 'terminal.png',
-        python: 'code.png',
-        read: 'text.png',
-        write: 'pencil.png',
-        edit: 'pencil.png',
-        glob: 'magnifying-glass.png',
-        grep: 'magnifying-glass.png',
-        list: 'folder.png',
+    const svgs: Record<string, string> = {
+        bash: `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4l4 4-4 4M8 12h6"/></svg>`,
+        python: `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 2h6v4H5zM5 10h6v4H5zM5 6a2 2 0 1 0 0-4M11 10a2 2 0 1 0 0 4"/></svg>`,
+        read: `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8v12H4zM4 5h8M4 8h5"/></svg>`,
+        write: `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/></svg>`,
+        edit: `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/></svg>`,
+        glob: `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>`,
+        grep: `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>`,
+        list: `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3h2v2H3zM3 7h2v2H3zM3 11h2v2H3zM7 3h6M7 7h6M7 11h6"/></svg>`,
     };
-    const file = iconFiles[name.toLowerCase()] ?? 'bolt.png';
-    return `<img class="tool-icon-img" src="${iconsBaseUri}/${file}" alt="${escHtml(name)}">`;
+    const file = svgs[name.toLowerCase()] ?? `<svg class="tool-icon-svg" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 2v4l2 2M12 6a6 6 0 1 1-8 0 6 6 0 0 1 8 0z"/></svg>`;
+    return file;
 }
 
 function getToolLabel(name: string, args: any): string {
