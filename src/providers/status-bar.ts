@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { TabManager } from './tab';
+import { formatTokensCompact } from '../shared/webview-text';
 
 export class StatusBarManager implements vscode.Disposable {
     private _item: vscode.StatusBarItem;
@@ -35,10 +36,10 @@ export class StatusBarManager implements vscode.Disposable {
         const stats = session.getSessionStats();
         const tokens = stats?.tokens;
         if (tokens) {
-            if (tokens.input) parts.push(`↑${formatTokens(tokens.input)}`);
-            if (tokens.output) parts.push(`↓${formatTokens(tokens.output)}`);
-            if (tokens.cacheRead) parts.push(`R${formatTokens(tokens.cacheRead)}`);
-            if (tokens.cacheWrite) parts.push(`W${formatTokens(tokens.cacheWrite)}`);
+            if (tokens.input) parts.push(`↑${formatTokensCompact(tokens.input)}`);
+            if (tokens.output) parts.push(`↓${formatTokensCompact(tokens.output)}`);
+            if (tokens.cacheRead) parts.push(`R${formatTokensCompact(tokens.cacheRead)}`);
+            if (tokens.cacheWrite) parts.push(`W${formatTokensCompact(tokens.cacheWrite)}`);
             const prompt = tokens.input + tokens.cacheRead + tokens.cacheWrite;
             if ((tokens.cacheRead > 0 || tokens.cacheWrite > 0) && prompt > 0) {
                 parts.push(`CH${((tokens.cacheRead / prompt) * 100).toFixed(1)}%`);
@@ -50,7 +51,7 @@ export class StatusBarManager implements vscode.Disposable {
 
         const usage = session.getContextUsage();
         if (usage) {
-            const windowStr = formatTokens(usage.contextWindow);
+            const windowStr = formatTokensCompact(usage.contextWindow);
             const display = usage.tokens !== null || usage.percent !== null
                 ? `${Math.round(usage.percent ?? 0)}%/${windowStr}`
                 : `?/${windowStr}`;
@@ -68,14 +69,4 @@ export class StatusBarManager implements vscode.Disposable {
         this._unsubscribe?.();
         this._item.dispose();
     }
-}
-
-/** Compact token formatting matching the Pi TUI footer. */
-function formatTokens(count: number): string {
-    if (!Number.isFinite(count) || count < 0) return '0';
-    if (count < 1000) return count.toString();
-    if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-    if (count < 1000000) return `${Math.round(count / 1000)}k`;
-    if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-    return `${Math.round(count / 1000000)}M`;
 }
