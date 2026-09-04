@@ -48,7 +48,7 @@ export class StatusBarManager implements vscode.Disposable {
             }
         }
 
-        const usage = session.session?.getContextUsage?.();
+        const usage = session.getContextUsage();
         if (usage) {
             const windowStr = formatTokens(usage.contextWindow);
             const display = usage.tokens !== null || usage.percent !== null

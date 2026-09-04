@@ -250,6 +250,18 @@ export class PiSessionManager {
         return this._session?.sessionFile;
     }
 
+    getSessionId(): string | undefined {
+        return this._session?.sessionId;
+    }
+
+    getSessionName(): string | undefined {
+        return this._session?.sessionName;
+    }
+
+    getContextUsage(): ContextUsageInfo | undefined {
+        return this._getContextUsage();
+    }
+
     private _createSessionManager(
         SessionManagerClass: PiSdk['SessionManager'],
         cwd: string,

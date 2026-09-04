@@ -332,7 +332,7 @@ export class TabManager {
     }
 
     private _updateTabName(tab: any): void {
-        const sessionName = tab.session.session?.sessionName;
+        const sessionName = tab.session.getSessionName();
         if (sessionName && tab.name !== sessionName) {
             tab.name = sessionName;
         }
@@ -454,13 +454,13 @@ export class TabManager {
                 }
                 this._emitStateChange();
                 const sessions = await tab.session.getSessions();
-                const currentId = tab.session.session?.sessionId;
+                const currentId = tab.session.getSessionId();
                 this._hooks.post({ type: 'sessions', sessions, currentSessionId: currentId });
                 break;
             }
             case 'getSessions': {
                 const sessions = await tab.session.getSessions();
-                const currentId = tab.session.session?.sessionId;
+                const currentId = tab.session.getSessionId();
                 this._hooks.post({ type: 'sessions', sessions, currentSessionId: currentId });
                 break;
             }
