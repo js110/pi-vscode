@@ -93,6 +93,27 @@ body {
     text-transform: uppercase;
     color: var(--muted);
 }
+.section-title-collapsible {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.section-title-collapsible::before {
+    content: '▸';
+    font-size: 10px;
+    transition: transform 0.15s;
+}
+.settings-section.collapsed .section-title-collapsible::before {
+    transform: rotate(0);
+}
+.settings-section:not(.collapsed) .section-title-collapsible::before {
+    transform: rotate(90deg);
+}
+.settings-section.collapsed > *:not(.section-title) {
+    display: none;
+}
 
 .setting-row {
     margin-bottom: 18px;

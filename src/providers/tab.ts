@@ -353,6 +353,10 @@ export class TabManager {
 
         switch (msg.type) {
             case 'prompt': {
+                if (tab.isStreaming) {
+                    console.log('[Pi] prompt rejected: tab is streaming');
+                    throw new Error('Agent is still processing. Please wait or queue your message.');
+                }
                 if (tab.checkpointManager.rollbackPoint !== null) {
                     tab.checkpointManager.discardSuspended();
                     tab.diffManager.discardSuspended();
@@ -438,6 +442,31 @@ export class TabManager {
                 this._updateTabName(tab);
                 this._emitStateChange();
                 break;
+            case 'renameSession': {
+                const clean = (msg.name ?? '').trim();
+                const currentPath = tab.session.getCurrentSessionPath();
+                const targetPath = msg.sessionPath;
+                if (targetPath && currentPath !== targetPath) {
+                    // 方案B：加载目标会话后改名，并停留在该会话
+                    await tab.session.loadSession(targetPath);
+                    tab.diffManager.clearAll();
+                    tab.checkpointManager.clearAll();
+                    tab.suspendedMessages = [];
+                    tab.queuedMessages = [];
+                    this._resetStreaming(tab);
+                    tab.messageMeta.clear();
+                    tab.session.setSessionName(clean);
+                    this._updateTabName(tab);
+                } else {
+                    tab.session.setSessionName(clean);
+                    this._updateTabName(tab);
+                }
+                this._emitStateChange();
+                const sessions = await tab.session.getSessions();
+                const currentId = tab.session.session?.sessionId;
+                this._hooks.post({ type: 'sessions', sessions, currentSessionId: currentId });
+                break;
+            }
             case 'getSessions': {
                 const sessions = await tab.session.getSessions();
                 const currentId = tab.session.session?.sessionId;

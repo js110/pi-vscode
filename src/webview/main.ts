@@ -60,6 +60,7 @@ const state: {
 const renderer = new marked.Renderer();
 
 let codeBlockId = 0;
+let sessionSearchQuery = '';
 renderer.code = function ({ text, lang }: { text: string; lang?: string | undefined }) {
     const id = `cb-${++codeBlockId}`;
     const langLabel = lang ? `<span class="code-lang">${escHtml(lang)}</span>` : '';
@@ -315,8 +316,8 @@ function render(): void {
         </button>
         <button class="icon-btn" id="btn-settings" title="Settings">
             <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <circle cx="8" cy="8" r="2"/>
-                <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/>
+                <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/>
+                <path d="M7 1h2l.3 1.6a5.5 5.5 0 0 1 1.5.9l1.5-.5 1 1.7-1.2 1.1a5.5 5.5 0 0 1 .5 1.7L15 7v2l-1.4.7a5.5 5.5 0 0 1-.5 1.7l1.2 1.1-1 1.7-1.5-.5a5.5 5.5 0 0 1-1.5.9L9 15H7l-.3-1.6a5.5 5.5 0 0 1-1.5-.9l-1.5.5-1-1.7 1.2-1.1a5.5 5.5 0 0 1-.5-1.7L1 9V7l1.4-.7a5.5 5.5 0 0 1 .5-1.7L1.7 3.5l1-1.7 1.5.5a5.5 5.5 0 0 1 1.5-.9L7 1z"/>
             </svg>
         </button>
     `;
@@ -400,6 +401,7 @@ function updateMessages(): void {
         const rollbackUserIdx = state.rollbackPoint;
         let dimming = false;
         let redoPlaced = false;
+        let lastUserGroup: HTMLElement | null = null;
 
         for (let i = 0; i < state.messages.length; i++) {
             const msg = state.messages[i];
@@ -419,6 +421,10 @@ function updateMessages(): void {
 
             container.insertBefore(msgEl, streamingEl);
 
+            if (role === 'user' && !dimming) {
+                lastUserGroup = msgEl;
+            }
+
             if (role === 'user' && dimming && !redoPlaced && rollbackUserIdx !== null) {
                 const redoWrap = el('div', 'redo-anchor');
                 const redoBtn = el('button', 'redo-btn');
@@ -428,6 +434,10 @@ function updateMessages(): void {
                 container.insertBefore(redoWrap, streamingEl);
                 redoPlaced = true;
             }
+        }
+
+        if (lastUserGroup) {
+            lastUserGroup.classList.add('message-group-user-latest');
         }
     }
 
@@ -1750,27 +1760,95 @@ function renderSessionList(sessions: any[], currentId?: string): void {
         return;
     }
 
+    const query = (sessionSearchQuery ?? '').toLowerCase();
+    const filtered = query
+        ? sessions.filter((s) => (s.name ?? s.id ?? '').toLowerCase().includes(query))
+        : sessions;
+
     panel.innerHTML = `
         <div class="session-header">
             <span>Sessions</span>
             <button class="icon-btn" id="btn-close-sessions" title="Close">&times;</button>
         </div>
+        <div class="session-search">
+            <svg class="session-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>
+            <input type="text" id="session-search-input" placeholder="Search sessions..." value="${escHtml(sessionSearchQuery ?? '')}" aria-label="Search sessions">
+        </div>
         <div class="session-list">
-            ${sessions.map(s => `
-                <div class="session-item ${s.id === currentId ? 'active' : ''}" data-path="${escHtml(s.path)}">
-                    <span class="session-item-name">${escHtml(s.name ?? s.id)}</span>
-                </div>
-            `).join('')}
+            ${filtered.length === 0
+                ? '<div class="session-empty">No matching sessions</div>'
+                : filtered.map(s => {
+                    const name = s.name ?? s.id ?? '';
+                    return `
+                        <div class="session-item ${s.id === currentId ? 'active' : ''}" data-path="${escHtml(s.path)}">
+                            <span class="session-item-name" title="${escHtml(name)}">${escHtml(name)}</span>
+                            <button class="session-item-rename" title="Rename session">✎</button>
+                        </div>
+                    `;
+                }).join('')}
         </div>
     `;
 
     document.getElementById('btn-close-sessions')?.addEventListener('click', () => panel?.remove());
+    const searchInput = document.getElementById('session-search-input') as HTMLInputElement | null;
+    searchInput?.addEventListener('input', () => {
+        sessionSearchQuery = searchInput.value;
+        renderSessionList(sessions, currentId);
+        const input = document.getElementById('session-search-input') as HTMLInputElement | null;
+        if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    });
+
     panel.querySelectorAll('.session-item').forEach((item) => {
-        item.addEventListener('click', () => {
+        const renameBtn = item.querySelector('.session-item-rename') as HTMLElement | null;
+        item.addEventListener('click', (ev) => {
+            if (renameBtn && (renameBtn.contains(ev.target as Node) || ev.target === renameBtn)) return;
             const sessionPath = (item as HTMLElement).dataset.path;
             if (sessionPath) {
                 vscode.postMessage({ type: 'loadSession', sessionPath });
             }
+        });
+        renameBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const sessionPath = (item as HTMLElement).dataset.path;
+            const isCurrent = item.classList.contains('active');
+            const nameSpan = item.querySelector('.session-item-name') as HTMLElement | null;
+            const originalName = nameSpan?.textContent ?? '';
+            const key = isCurrent ? '' : sessionPath ?? '';
+            if (!sessionPath || item.querySelector('.session-item-rename-input')) return;
+            if (nameSpan) { nameSpan.style.display = 'none'; }
+            renameBtn.style.display = 'none';
+            const input = document.createElement('input');
+            input.className = 'session-item-rename-input';
+            input.type = 'text';
+            input.maxLength = 100;
+            input.value = originalName;
+            input.setAttribute('aria-label', 'Rename session');
+            item.appendChild(input);
+            input.focus();
+            input.select();
+
+            const commit = (): void => {
+                const value = input.value.trim();
+                if (value && value !== originalName) {
+                    const payload: { type: 'renameSession'; name: string; sessionPath?: string } = { type: 'renameSession', name: value };
+                    if (key) { payload.sessionPath = key; }
+                    vscode.postMessage(payload);
+                }
+                input.remove();
+                if (nameSpan) { nameSpan.style.display = ''; }
+                renameBtn.style.display = '';
+            };
+            const cancel = (): void => {
+                input.remove();
+                if (nameSpan) { nameSpan.style.display = ''; }
+                renameBtn.style.display = '';
+            };
+            input.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') { commit(); }
+                else if (e.key === 'Escape') { cancel(); }
+            });
+            input.addEventListener('blur', () => { commit(); });
         });
     });
 }
@@ -1872,6 +1950,15 @@ function bindTabEvents(): void {
                 vscode.postMessage({ type: 'switchTab', tabId });
             }
         });
+        tabEl.addEventListener('dblclick', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.closest('.tab-close')) return;
+            const tabId = (tabEl as HTMLElement).dataset.tabId;
+            if (!tabId) return;
+            const tab = state.tabs.find((t) => t.id === tabId);
+            if (!tab) return;
+            startTabRename(tabEl, tab);
+        });
     });
 
     document.querySelectorAll('.tab-close').forEach((btn) => {
@@ -1883,6 +1970,50 @@ function bindTabEvents(): void {
             }
         });
     });
+}
+
+function startTabRename(tabEl: HTMLElement, tab: any): void {
+    if (tabEl.querySelector('.tab-rename-input')) return;
+    eStopPropagationNext(tabEl);
+    const nameSpan = tabEl.querySelector('.tab-name') as HTMLElement | null;
+    const input = document.createElement('input');
+    input.className = 'tab-rename-input';
+    input.type = 'text';
+    input.maxLength = 100;
+    input.value = tab.name;
+    input.setAttribute('aria-label', 'Rename session');
+    eStopPropagationNext(input);
+    const original = tab.name;
+
+    const commit = (): void => {
+        const value = input.value.trim();
+        if (value && value !== original) {
+            vscode.postMessage({ type: 'renameSession', name: value });
+        } else {
+            input.remove();
+            if (nameSpan) { nameSpan.style.display = ''; }
+        }
+    };
+    const cancel = (): void => {
+        input.remove();
+        if (nameSpan) { nameSpan.style.display = ''; }
+    };
+
+    if (nameSpan) { nameSpan.style.display = 'none'; }
+    tabEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { commit(); }
+        else if (e.key === 'Escape') { cancel(); }
+    });
+    input.addEventListener('blur', () => { commit(); });
+}
+
+function eStopPropagationNext(el: HTMLElement): void {
+    el.addEventListener('click', (e) => e.stopPropagation());
 }
 
 function bindCheckpointButtons(): void {
@@ -1970,7 +2101,11 @@ function sendMessage(): void {
     input.style.height = 'auto';
     userHasScrolled = false;
     updateScrollButton();
-    vscode.postMessage({ type: 'prompt', text });
+    if (state.isStreaming) {
+        vscode.postMessage({ type: 'queueMessage', text });
+    } else {
+        vscode.postMessage({ type: 'prompt', text });
+    }
 }
 
 function bindCopyButtons(): void {

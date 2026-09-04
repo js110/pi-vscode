@@ -182,6 +182,24 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+.tab-rename-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--fg);
+    background: var(--surface-strong);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 2px 5px;
+    outline: none;
+    font-family: var(--font-mono);
+}
+
+.tab-rename-input:focus {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 .tab-close {
     background: none;
     border: none;
@@ -380,12 +398,14 @@ body {
 
 /* ── Message groups ── */
 .message-group-user {
-    position: sticky;
-    top: 0;
-    z-index: 10;
     margin-top: 0;
     margin-bottom: 12px;
     background: var(--bg);
+}
+.message-group-user-latest {
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
 .message-group-assistant {
@@ -1187,6 +1207,70 @@ body {
 }
 .session-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-empty { padding: 16px; text-align: center; color: var(--muted); font-size: var(--fs-sm); }
+
+.session-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--hairline);
+}
+.session-search-icon {
+    flex-shrink: 0;
+    color: var(--faint);
+}
+.session-search input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--fg);
+    background: var(--surface-strong);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    outline: none;
+}
+.session-search input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.session-search input::placeholder { color: var(--faint); }
+
+.session-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.session-item-name { flex: 1; min-width: 0; }
+.session-item-rename {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--faint);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: var(--radius-sm);
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.session-item:hover .session-item-rename { opacity: 1; }
+.session-item-rename:hover { color: var(--accent); background: var(--surface-strong); }
+.session-item-rename-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--fg);
+    background: var(--surface-strong);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 2px 6px;
+    outline: none;
+    font-family: var(--font-mono);
+}
 
 /* ───────────────────────── Inline diff cards ───────────────────────── */
 

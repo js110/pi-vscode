@@ -84,7 +84,7 @@ function render(data: SettingsData): void {
             `Warn when context usage exceeds ${data.contextUsageWarningThreshold}% of the context window.`),
     ]));
 
-    const skillsSection = buildSection('Skills', [buildSkillsPlaceholder()]);
+    const skillsSection = buildSection('Skills', [buildSkillsPlaceholder()], true);
     skillsSection.id = 'skills-section';
     container.appendChild(skillsSection);
 
@@ -101,10 +101,17 @@ function render(data: SettingsData): void {
     renderSkillsSection();
 }
 
-function buildSection(title: string, children: HTMLElement[]): HTMLElement {
+function buildSection(title: string, children: HTMLElement[], collapsed = false): HTMLElement {
     const section = el('div', 'settings-section');
+    if (collapsed) { section.classList.add('collapsed'); }
     const heading = el('h2', 'section-title');
     heading.textContent = title;
+    if (collapsed) {
+        heading.classList.add('section-title-collapsible');
+        heading.addEventListener('click', () => {
+            section.classList.toggle('collapsed');
+        });
+    }
     section.appendChild(heading);
     for (const child of children) {
         section.appendChild(child);

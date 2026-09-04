@@ -97,6 +97,7 @@ export type ClientMessage =
     | { type: 'setThinkingLevel'; level: string }
     | { type: 'newSession' }
     | { type: 'loadSession'; sessionPath: string }
+    | { type: 'renameSession'; name: string; sessionPath?: string }
     | { type: 'getSessions' }
     | { type: 'getState' }
     | { type: 'approveToolCall'; toolCallId: string }

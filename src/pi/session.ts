@@ -107,7 +107,15 @@ export class PiSessionManager {
 
     async prompt(text: string): Promise<void> {
         if (!this._session) { throw new Error('Session not initialized'); }
-        await this._session.prompt(text);
+        const start = Date.now();
+        this._outputChannel.appendLine(`[prompt] called at ${new Date().toISOString()}, text="${text.substring(0, 80)}${text.length > 80 ? '...' : ''}"`);
+        try {
+            await this._session.prompt(text);
+            this._outputChannel.appendLine(`[prompt] resolved in ${Date.now() - start}ms`);
+        } catch (err: any) {
+            this._outputChannel.appendLine(`[prompt] rejected in ${Date.now() - start}ms: ${err.message ?? String(err)}`);
+            throw err;
+        }
     }
 
     async steer(text: string): Promise<void> {
@@ -230,6 +238,16 @@ export class PiSessionManager {
         this._session = session;
         this._unsubscribe = session.subscribe(this.events.asSessionListener());
         this._installToolApprovalHook(session);
+    }
+
+    setSessionName(name: string): void {
+        const s = this._session;
+        if (!s || typeof s.setSessionName !== 'function') return;
+        s.setSessionName(name);
+    }
+
+    getCurrentSessionPath(): string | undefined {
+        return this._session?.sessionFile;
     }
 
     private _createSessionManager(
