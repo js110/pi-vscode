@@ -390,32 +390,32 @@ export class PiSessionManager {
     getCommands(): CommandInfo[] {
         if (!this._session) return [];
         const commands: CommandInfo[] = [];
-        // Built-in commands (mirrors SDK's BUILTIN_SLASH_COMMANDS)
-        const builtins = [
-            { name: 'settings', description: 'Open settings menu' },
-            { name: 'model', description: 'Select model' },
-            { name: 'tree', description: 'Navigate session tree' },
-            { name: 'thinking', description: 'Set thinking level' },
-            { name: 'export', description: 'Export session' },
-            { name: 'copy', description: 'Copy last message to clipboard' },
-            { name: 'name', description: 'Set session display name' },
-            { name: 'session', description: 'Show session info and stats' },
-            { name: 'fork', description: 'Fork from a previous user message' },
-            { name: 'clone', description: 'Duplicate the current session' },
-            { name: 'login', description: 'Configure provider authentication' },
-            { name: 'logout', description: 'Remove provider authentication' },
-            { name: 'new', description: 'Start a new session' },
-            { name: 'compact', description: 'Manually compact session context' },
-            { name: 'resume', description: 'Resume a different session' },
-            { name: 'reload', description: 'Reload extensions, skills, and themes' },
+        // Built-in commands — SDK doesn't re-export BUILTIN_SLASH_COMMANDS
+        // through its public API, so we mirror the list here.
+        // Keep in sync with pi-coding-agent/dist/core/slash-commands.js.
+        const builtins: CommandInfo[] = [
+            { name: 'settings', description: 'Open settings menu', source: 'builtin' },
+            { name: 'model', description: 'Select model', source: 'builtin' },
+            { name: 'tree', description: 'Navigate session tree', source: 'builtin' },
+            { name: 'thinking', description: 'Set thinking level', source: 'builtin' },
+            { name: 'export', description: 'Export session', source: 'builtin' },
+            { name: 'copy', description: 'Copy last message to clipboard', source: 'builtin' },
+            { name: 'name', description: 'Set session display name', source: 'builtin' },
+            { name: 'session', description: 'Show session info and stats', source: 'builtin' },
+            { name: 'fork', description: 'Fork from a previous user message', source: 'builtin' },
+            { name: 'clone', description: 'Duplicate the current session', source: 'builtin' },
+            { name: 'login', description: 'Configure provider authentication', source: 'builtin' },
+            { name: 'logout', description: 'Remove provider authentication', source: 'builtin' },
+            { name: 'new', description: 'Start a new session', source: 'builtin' },
+            { name: 'compact', description: 'Manually compact session context', source: 'builtin' },
+            { name: 'resume', description: 'Resume a different session', source: 'builtin' },
+            { name: 'reload', description: 'Reload extensions, skills, and themes', source: 'builtin' },
         ];
-        for (const cmd of builtins) {
-            commands.push({ ...cmd, source: 'builtin' });
-        }
-        try {
-            // Extension-registered commands
-            const runner = (this._session as any).extensionRunner;
-            if (runner && hasFunction(runner, 'getRegisteredCommands')) {
+        commands.push(...builtins);
+        // Extension-registered commands
+        const runner = (this._session as any).extensionRunner;
+        if (runner && hasFunction(runner, 'getRegisteredCommands')) {
+            try {
                 for (const cmd of runner.getRegisteredCommands()) {
                     commands.push({
                         name: cmd.invocationName,
@@ -423,21 +423,19 @@ export class PiSessionManager {
                         source: 'extension',
                     });
                 }
+            } catch { /* ignore */ }
+        }
+        // Prompt templates
+        const templates = (this._session as any).promptTemplates;
+        if (Array.isArray(templates)) {
+            for (const tpl of templates) {
+                commands.push({
+                    name: tpl.name,
+                    description: tpl.description ?? '',
+                    source: 'prompt',
+                });
             }
-        } catch { /* ignore */ }
-        try {
-            // Prompt templates
-            const templates = (this._session as any).promptTemplates;
-            if (Array.isArray(templates)) {
-                for (const tpl of templates) {
-                    commands.push({
-                        name: tpl.name,
-                        description: tpl.description ?? '',
-                        source: 'prompt',
-                    });
-                }
-            }
-        } catch { /* ignore */ }
+        }
         return commands;
     }
 

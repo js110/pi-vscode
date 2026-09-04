@@ -83,14 +83,8 @@ export interface CommandInfo {
     name: string;
     description: string;
     source: 'extension' | 'builtin' | 'skill' | 'prompt';
-}
-
-export interface SlashMenuItem {
-    label: string;
-    description: string;
-    source: 'skill' | 'command';
-    /** For skills: the skill name. For commands: the command name. */
-    value: string;
+    /** Display label for slash menu (e.g. "/skill:name" or "/tree"). Falls back to "/{name}". */
+    label?: string;
 }
 
 export interface SessionInfo {
@@ -153,12 +147,12 @@ export type ServerMessage =
     | { type: 'confirmResult'; action: string; confirmed: boolean; payload?: any }
     | { type: 'toolCallPending'; pending: ToolCallPendingInfo }
     | { type: 'toolCallResolved'; toolCallId: string }
-    | { type: 'skills'; skills: SkillInfo[]; commands: CommandInfo[] }
+    | { type: 'skills'; skills: SkillInfo[]; commands?: CommandInfo[] }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages
 export type SettingsServerMessage =
     | { type: 'settings'; data: SettingsData }
     | { type: 'settingChanged'; key: string; value: any }
-    | { type: 'skills'; skills: SkillInfo[]; commands: CommandInfo[] }
+    | { type: 'skills'; skills: SkillInfo[] }
     | { type: 'error'; message: string };

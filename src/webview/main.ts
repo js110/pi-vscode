@@ -1,5 +1,5 @@
 import { marked } from 'marked';
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, SlashMenuItem } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo } from '../shared/protocol';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -225,11 +225,7 @@ function handleAgentEvent(event: any): void {
                 break;
             }
             // Don't clear isStreaming yet — wait for agent_settled
-            // to prevent race condition where user sends new prompt
-            // before SDK finishes internal cleanup
-            state.streamingText = '';
-            state.streamingThinking = '';
-            state.isThinking = false;
+            clearStreamingState();
             dismissSteerToast();
             updateStreamingUI();
             break;
@@ -241,9 +237,7 @@ function handleAgentEvent(event: any): void {
             break;
         case 'agent_settled':
             state.isStreaming = false;
-            state.streamingText = '';
-            state.streamingThinking = '';
-            state.isThinking = false;
+            clearStreamingState();
             dismissSteerToast();
             removeRetryPlaceholder();
             updateStreamingUI();
@@ -712,6 +706,12 @@ function showSteerToast(text: string): void {
     } else {
         container.appendChild(toast);
     }
+}
+
+function clearStreamingState(): void {
+    state.streamingText = '';
+    state.streamingThinking = '';
+    state.isThinking = false;
 }
 
 function dismissSteerToast(): void {
@@ -1975,7 +1975,7 @@ function bindTabEvents(): void {
 
 function startTabRename(tabEl: HTMLElement, tab: any): void {
     if (tabEl.querySelector('.tab-rename-input')) return;
-    eStopPropagationNext(tabEl);
+    stopClickPropagation(tabEl);
     const nameSpan = tabEl.querySelector('.tab-name') as HTMLElement | null;
     const input = document.createElement('input');
     input.className = 'tab-rename-input';
@@ -1983,7 +1983,7 @@ function startTabRename(tabEl: HTMLElement, tab: any): void {
     input.maxLength = 100;
     input.value = tab.name;
     input.setAttribute('aria-label', 'Rename session');
-    eStopPropagationNext(input);
+    stopClickPropagation(input);
     const original = tab.name;
 
     const commit = (): void => {
@@ -2013,7 +2013,7 @@ function startTabRename(tabEl: HTMLElement, tab: any): void {
     input.addEventListener('blur', () => { commit(); });
 }
 
-function eStopPropagationNext(el: HTMLElement): void {
+function stopClickPropagation(el: HTMLElement): void {
     el.addEventListener('click', (e) => e.stopPropagation());
 }
 
@@ -2128,7 +2128,7 @@ function bindCopyButtons(): void {
 // ── Slash command menu ──
 
 let slashMenuIndex = 0;
-let slashMenuItems: SlashMenuItem[] = [];
+let slashMenuItems: CommandInfo[] = [];
 
 function updateSlashMenu(input: HTMLTextAreaElement): void {
     const menu = document.getElementById('slash-menu');
@@ -2148,7 +2148,7 @@ function updateSlashMenu(input: HTMLTextAreaElement): void {
 
     const query = slashMatch[1].slice(1).toLowerCase();
     slashMenuItems = allItems.filter(item =>
-        item.label.toLowerCase().includes(query) ||
+        item.name.toLowerCase().includes(query) ||
         item.description.toLowerCase().includes(query)
     );
 
@@ -2162,24 +2162,22 @@ function updateSlashMenu(input: HTMLTextAreaElement): void {
     menu.style.display = '';
 }
 
-function buildSlashMenuItems(): SlashMenuItem[] {
-    const items: SlashMenuItem[] = [];
+function buildSlashMenuItems(): CommandInfo[] {
+    const items: CommandInfo[] = [];
     // Skills first
     for (const s of state.skills) {
         items.push({
-            label: `/skill:${s.name}`,
+            name: s.name,
             description: s.description,
             source: 'skill',
-            value: s.name,
+            label: `/skill:${s.name}`,
         });
     }
     // Then commands
     for (const c of state.commands) {
         items.push({
-            label: `/${c.name}`,
-            description: c.description,
-            source: 'command',
-            value: c.name,
+            ...c,
+            label: c.label ?? `/${c.name}`,
         });
     }
     return items;
@@ -2192,7 +2190,7 @@ function renderSlashMenu(menu: HTMLElement): void {
             ? `<span class="slash-item-desc">${escHtml(item.description)}</span>`
             : '';
         return `<div class="slash-item${active}" data-index="${i}">
-            <span class="slash-item-name">${escHtml(item.label)}</span>
+            <span class="slash-item-name">${escHtml(item.label ?? `/${item.name}`)}</span>
             ${desc}
         </div>`;
     }).join('');
@@ -2220,7 +2218,7 @@ function selectSlashItem(index: number): void {
 
     if (slashMatch) {
         const matchStart = beforeCursor.length - slashMatch[1].length;
-        const replacement = `${item.label} `;
+        const replacement = `${item.label ?? `/${item.name}`} `;
         input.value = text.slice(0, matchStart) + replacement + text.slice(cursorPos);
         const newPos = matchStart + replacement.length;
         input.setSelectionRange(newPos, newPos);
