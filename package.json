@@ -158,7 +158,7 @@
   "scripts": {
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.webview.json",
     "check": "npm run typecheck && node scripts/check-pi-api.mjs && npm run compile && npm run test:unit",
     "package": "npx @vscode/vsce package --allow-missing-repository --no-rewrite-relative-links",
     "test": "vitest",

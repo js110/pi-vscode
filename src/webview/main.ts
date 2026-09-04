@@ -1,6 +1,7 @@
-import { marked } from 'marked';
 import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo } from '../shared/protocol';
-import { escAttr, formatTimestamp, formatTokenCount, formatTokensCompact, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon, renderDiffLines } from '../shared/webview-text';
+import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon } from '../shared/webview-text';
+import { el, escHtml } from './dom';
+import { renderMarkdown, buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCard, buildModelItem, resetCodeBlockIds } from './render/messages';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -58,35 +59,7 @@ const state: {
     queuedMessages: [],
 };
 
-// ── Marked config ──
-
-const renderer = new marked.Renderer();
-
-let codeBlockId = 0;
 let sessionSearchQuery = '';
-renderer.code = function ({ text, lang }: { text: string; lang?: string | undefined }) {
-    const id = `cb-${++codeBlockId}`;
-    const langLabel = lang ? `<span class="code-lang">${escHtml(lang)}</span>` : '';
-    return `<div class="code-block-wrapper">
-        <div class="code-block-header">${langLabel}<button class="copy-btn" data-code-id="${id}">Copy</button></div>
-        <pre class="code-block-pre" id="${id}"><code class="code-block-code">${escHtml(text)}</code></pre>
-    </div>`;
-};
-
-renderer.codespan = function ({ text }: { text: string }) {
-    return `<code>${text}</code>`;
-};
-
-marked.setOptions({
-    renderer,
-    breaks: true,
-    gfm: true,
-});
-
-function renderMarkdown(text: string): string {
-    if (!text) return '';
-    return marked.parse(text) as string;
-}
 
 // ── Message handling ──
 
@@ -391,7 +364,7 @@ function updateMessages(): void {
         container.removeChild(container.firstChild);
     }
 
-    codeBlockId = 0;
+    resetCodeBlockIds();
 
     if (state.messages.length === 0 && !state.isStreaming) {
         container.insertBefore(buildWelcome(), streamingEl);
@@ -722,19 +695,6 @@ function dismissSteerToast(): void {
     setTimeout(() => toast.remove(), 300);
 }
 
-function buildWelcome(): HTMLElement {
-    const w = el('div', 'welcome');
-    w.innerHTML = `
-        <div class="welcome-icon">&pi;</div>
-        <div class="welcome-title">Pi Agent</div>
-        <div class="welcome-subtitle">Pi reads, writes, and runs code in this workspace. Tell it what to build and it will show its work as it goes.</div>
-        <div class="welcome-hints">
-            <div class="welcome-hint">Type <kbd>/</kbd> for commands and skills</div>
-        </div>
-    `;
-    return w;
-}
-
 // ── Changed Files section ──
 
 function buildChangedFilesSection(): HTMLElement {
@@ -889,51 +849,6 @@ function renderInlineFileChange(change: FileChangeInfo): void {
 }
 
 // ── Inline diff card ──
-
-function buildDiffCard(change: FileChangeInfo, msg?: any): HTMLElement {
-    const wrapper = el('div', 'tool-card-wrapper');
-
-    const card = el('div', 'diff-card');
-    card.id = `diff-${change.toolCallId}`;
-
-    const fileName = change.filePath.split('/').pop() ?? change.filePath;
-    const dirPath = change.filePath.split('/').slice(0, -1).join('/');
-
-    let statsHtml = '';
-    if (change.addedLines > 0 || change.removedLines > 0) {
-        statsHtml = `<span class="diff-stats">`;
-        if (change.addedLines > 0) statsHtml += `<span class="diff-stat-add">+${change.addedLines}</span>`;
-        if (change.removedLines > 0) statsHtml += `<span class="diff-stat-del">-${change.removedLines}</span>`;
-        statsHtml += `</span>`;
-    }
-
-    card.innerHTML = `
-        <div class="diff-file-header" data-filepath="${escHtml(change.filePath)}" data-toolcallid="${escHtml(change.toolCallId)}">
-            <span class="diff-file-icon">${change.isNew ? '&#10010;' : '&#9998;'}</span>
-            <span class="diff-file-name">${escHtml(fileName)}</span>
-            ${dirPath ? `<span class="diff-file-dir">${escHtml(dirPath)}</span>` : ''}
-            ${statsHtml}
-            ${change.isNew ? '<span class="diff-new-badge">NEW</span>' : ''}
-        </div>
-    `;
-
-    if (change.diff) {
-        const diffView = el('div', 'diff-view');
-        diffView.innerHTML = renderDiffLines(change.diff);
-        card.appendChild(diffView);
-    }
-
-    wrapper.appendChild(card);
-
-    const ts = msg?.timestamp;
-    if (ts) {
-        const footer = el('div', 'tool-footer');
-        footer.textContent = formatTimestamp(ts);
-        wrapper.appendChild(footer);
-    }
-
-    return wrapper;
-}
 
 // ── Message rendering ──
 
@@ -1128,33 +1043,6 @@ function renderStreamingContent(): void {
 }
 
 // ── Tool rendering ──
-
-function buildToolCard(tc: any): HTMLElement {
-    const card = el('div', 'tool-card');
-    const name = tc.name ?? tc.toolName ?? tc.function?.name ?? 'unknown';
-    const args = tc.args ?? tc.arguments ?? tc.input ?? tc.function?.arguments;
-    const parsedArgs = typeof args === 'string' ? tryParseJSON(args) : args;
-    const statusClass = tc._status ?? 'pending';
-
-    card.innerHTML = `
-        <div class="tool-header">
-            <span class="tool-icon">${getToolIcon(name)}</span>
-            <span class="tool-name">${escHtml(getToolLabel(name, parsedArgs))}</span>
-            ${buildStatusHtml(statusClass)}
-        </div>
-    `;
-
-    if (tc._result !== undefined) {
-        const text = extractToolResultText(tc._result);
-        if (text) {
-            const result = el('pre', 'tool-result');
-            result.textContent = text;
-            card.appendChild(result);
-        }
-    }
-
-    return card;
-}
 
 function buildToolFooter(msg: any, allMessages: any[], msgIndex: number): HTMLElement | null {
     const parts: string[] = [];
@@ -1442,28 +1330,6 @@ function bindApprovalButtons(): void {
 
 // ── Thinking block ──
 
-function buildThinkingBlock(text: string, active: boolean, durationSec?: number): HTMLElement {
-    const details = document.createElement('details');
-    details.className = `thinking-block${active ? ' active' : ''}`;
-    let label: string;
-    if (active) {
-        label = 'Thinking...';
-    } else if (durationSec && durationSec > 0) {
-        label = `Thought for ${durationSec} second${durationSec !== 1 ? 's' : ''}`;
-    } else {
-        label = 'Thought';
-    }
-    details.innerHTML = `
-        <summary class="thinking-summary">
-            <span class="thinking-indicator"></span>
-            <span class="thinking-label">${label}</span>
-            <span class="thinking-chevron">&#9656;</span>
-        </summary>
-        <div class="thinking-content">${renderMarkdown(text)}</div>
-    `;
-    return details;
-}
-
 // ── Model picker popup ──
 
 let pendingModelPicker = false;
@@ -1495,20 +1361,6 @@ function addToRecentModels(provider: string, id: string, name?: string): void {
     }
 }
 
-function buildModelItem(m: any): HTMLElement {
-    const item = el('div', 'model-item');
-    const isActive = state.model && m.id === state.model.id && m.provider === state.model.provider;
-    if (isActive) item.classList.add('active');
-    item.dataset.provider = m.provider;
-    item.dataset.modelId = m.id;
-    item.dataset.name = (m.name ?? m.id).toLowerCase();
-    item.innerHTML = `
-        <span class="model-item-check">${isActive ? '&#10003;' : ''}</span>
-        <span class="model-item-name">${escHtml(m.name ?? m.id)}</span>
-    `;
-    return item;
-}
-
 function showModelPicker(): void {
     const existing = document.getElementById('model-picker');
     if (existing) existing.remove();
@@ -1537,7 +1389,7 @@ function showModelPicker(): void {
                 m => m.id === r.id && m.provider === r.provider
             );
             if (full) {
-                list.appendChild(buildModelItem(full));
+                list.appendChild(buildModelItem(full, state.model));
             }
         }
 
@@ -1547,7 +1399,7 @@ function showModelPicker(): void {
     }
 
     for (const m of state.availableModels) {
-        list.appendChild(buildModelItem(m));
+        list.appendChild(buildModelItem(m, state.model));
     }
     picker.appendChild(list);
 
@@ -1833,11 +1685,11 @@ function bindStableEvents(): void {
 }
 
 function bindTabEvents(): void {
-    document.querySelectorAll('.tab').forEach((tabEl) => {
+    document.querySelectorAll<HTMLDivElement>('.tab').forEach((tabEl) => {
         tabEl.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
             if (target.closest('.tab-close')) return;
-            const tabId = (tabEl as HTMLElement).dataset.tabId;
+            const tabId = tabEl.dataset.tabId;
             if (tabId && tabId !== state.activeTabId) {
                 vscode.postMessage({ type: 'switchTab', tabId });
             }
@@ -1845,7 +1697,7 @@ function bindTabEvents(): void {
         tabEl.addEventListener('dblclick', (e) => {
             const target = e.target as HTMLElement;
             if (target.closest('.tab-close')) return;
-            const tabId = (tabEl as HTMLElement).dataset.tabId;
+            const tabId = tabEl.dataset.tabId;
             if (!tabId) return;
             const tab = state.tabs.find((t) => t.id === tabId);
             if (!tab) return;
@@ -2135,18 +1987,6 @@ function isSlashMenuVisible(): boolean {
 }
 
 // ── Helpers ──
-
-function el(tag: string, className?: string): HTMLElement {
-    const e = document.createElement(tag);
-    if (className) e.className = className;
-    return e;
-}
-
-function escHtml(s: string): string {
-    const div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
-}
 
 function buildMessageFooter(msg: any, index: number): HTMLElement | null {
     const role = msg.role ?? 'unknown';

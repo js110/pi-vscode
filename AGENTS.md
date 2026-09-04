@@ -10,6 +10,7 @@ Pi for VS Code is a sidebar client for the Pi coding agent SDK (`@earendil-works
 npm install          # install dependencies
 npm run compile      # build extension + webview bundles (esbuild)
 npm run watch        # watch mode
+npm run typecheck    # typecheck extension host (tsconfig.json) + webview (tsconfig.webview.json)
 npm run test:unit    # vitest unit tests
 npm run test:all     # unit + integration tests
 ```
@@ -31,7 +32,7 @@ The local IDE bridge starts with extension activation. `src/bridge/` exposes tok
 
 - **Typed message protocol**: All communication between extension host and webviews goes through typed message unions defined in `src/shared/protocol.ts`. Add new message types there before implementing handlers.
 - **Tab isolation**: Each chat tab has its own `PiSessionManager`, `DiffManager`, and `CheckpointManager`. State is never shared between tabs.
-- **No direct DOM libraries**: The webview UI is built with vanilla TypeScript and DOM APIs. No React, no framework. Rendering uses an `el()` helper for element creation and manual DOM updates.
+- **No direct DOM libraries**: The webview UI is built with vanilla TypeScript and DOM APIs. No React, no framework. Rendering uses `el()`/`escHtml()` from `src/webview/dom.ts`. Pure, state-free DOM builders live in `src/webview/render/messages.ts` (happy-dom-testable); keep them free of `state`, `vscode`, and side effects. `main.ts` is the orchestrator wiring events and live state.
 - **CSS variables**: Webview styles use VS Code's CSS custom properties (e.g. `--vscode-editor-background`) for theme compatibility. Never hardcode colors.
 - **SecretStorage for secrets**: API keys are stored via `vscode.SecretStorage`, never in `settings.json` or plaintext.
 - **Tool approval hook**: Tool call interception works by wrapping `extensionRunner.emitToolCall` on the Pi SDK's `AgentSession` after creation. This is the only point where tool execution can be blocked before it starts.
@@ -58,6 +59,8 @@ The local IDE bridge starts with extension activation. `src/bridge/` exposes tok
 | `src/providers/status-bar.ts` | Status bar item |
 | `src/utils/diff.ts` | Myers diff algorithm |
 | `src/webview/main.ts` | Chat UI (runs in webview) |
+| `src/webview/dom.ts` | `el()`/`escHtml()` DOM helpers shared across webview renderers |
+| `src/webview/render/messages.ts` | Pure message/render DOM builders (deep module, happy-dom-testable) |
 | `src/webview/settings.ts` | Settings UI (runs in webview) |
 | `src/webview/styles/main.css` | Chat styles |
 | `src/webview/styles/settings.css` | Settings page styles |
@@ -67,7 +70,7 @@ The local IDE bridge starts with extension activation. `src/bridge/` exposes tok
 
 - Never import the Pi SDK at runtime outside `src/pi/compat.ts` (`loadPiSdk()`); use type-only imports elsewhere. See "Pi SDK Upgrade Compatibility" above.
 - The webview bundles (`src/webview/`) cannot import `vscode` or Node.js modules. They are browser-only IIFE bundles.
-- `tsconfig.json` excludes `src/webview/**/*` from the main TypeScript compilation. The webview files are compiled by esbuild only.
+- `tsconfig.json` excludes `src/webview/**/*` (and its DOM tests under `src/test/unit/webview/**`) from the main Node typecheck; those files are typechecked separately by `tsconfig.webview.json` (DOM lib) and bundled by esbuild. Keep `node_modules`, `out`, `src/webview/**/*`, and `src/test/unit/webview/**/*` in `tsconfig.json`'s exclude so webview modules aren't dragged into the DOM-less main program.
 - The Pi SDK is only reached through `src/pi/compat.ts`: the bundled copy is inlined into `extension.js` by esbuild via the *string-literal* dynamic import in `loadBundledSdk()` (keep it a literal!), while the system-wide Pi copy is imported at runtime by absolute file path. See "Pi SDK Upgrade Compatibility" above.
 - `ModelRuntime` is owned by `src/pi/auth.ts`; `ModelRegistry` and sessions must share it so SecretStorage overrides and Pi's native auth/model behavior stay consistent.
 - When adding new settings, update both `package.json` (`contributes.configuration`) and `src/shared/protocol.ts` (`SettingsData` interface), then wire them in `settings-panel.ts` and `settings.ts`.
