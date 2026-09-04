@@ -88,10 +88,6 @@ function render(data: SettingsData): void {
     skillsSection.id = 'skills-section';
     container.appendChild(skillsSection);
 
-    container.appendChild(buildSection('Keyboard Shortcuts', [
-        buildShortcutsInfo(),
-    ]));
-
     container.appendChild(buildSection('Credits', [
         buildCredits(),
     ]));
@@ -239,21 +235,6 @@ function buildAuthIndicator(method: SettingsData['authMethod']): HTMLElement {
             <span class="auth-icon">${icons[method]}</span>
             <span>${labels[method]}</span>
         </div>
-    `;
-    return row;
-}
-
-function buildShortcutsInfo(): HTMLElement {
-    const row = el('div', 'setting-row shortcuts-info');
-    row.innerHTML = `
-        <div class="shortcuts-list">
-            <div class="shortcut-item"><kbd>Ctrl+Shift+L</kbd><span>Focus chat</span></div>
-            <div class="shortcut-item"><kbd>Ctrl+Shift+N</kbd><span>New session</span></div>
-            <div class="shortcut-item"><kbd>Escape</kbd><span>Stop generation</span></div>
-        </div>
-        <p class="setting-description">
-            <a href="#" id="btn-open-keybindings">Open Keyboard Shortcuts editor</a> to customize.
-        </p>
     `;
     return row;
 }

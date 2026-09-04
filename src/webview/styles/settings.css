@@ -322,31 +322,7 @@ body {
 }
 .auth-icon { font-size: var(--fs-base); flex-shrink: 0; }
 
-/* Shortcuts */
-.shortcuts-list {
-    display: flex;
-    flex-direction: column;
-    gap: 9px;
-}
-.shortcut-item {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    font-size: var(--fs-sm);
-}
-.shortcut-item kbd {
-    background: var(--surface-strong);
-    border: 1px solid var(--hairline);
-    border-radius: 5px;
-    padding: 3px 9px;
-    font-size: var(--fs-xs);
-    font-family: var(--font-mono);
-    min-width: 110px;
-    text-align: center;
-    color: var(--fg);
-    font-variant-numeric: tabular-nums;
-}
-.shortcut-item span { color: var(--muted); }
+/* Skills section */
 
 /* Toast */
 .toast {

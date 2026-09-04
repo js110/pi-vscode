@@ -130,9 +130,9 @@ export class SettingsPanel {
         try {
             const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
             const skills = await discoverSkills(cwd);
-            this._post({ type: 'skills', skills });
+            this._post({ type: 'skills', skills, commands: [] });
         } catch {
-            this._post({ type: 'skills', skills: [] });
+            this._post({ type: 'skills', skills: [], commands: [] });
         }
     }
 

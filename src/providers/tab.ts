@@ -478,7 +478,8 @@ export class TabManager {
                 break;
             case 'getSkills': {
                 const skills = tab.session.getSkills();
-                this._hooks.post({ type: 'skills', skills });
+                const commands = tab.session.getCommands();
+                this._hooks.post({ type: 'skills', skills, commands });
                 break;
             }
             case 'approveToolCall':

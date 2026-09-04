@@ -1,5 +1,5 @@
 import { marked } from 'marked';
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, SlashMenuItem } from '../shared/protocol';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -35,6 +35,7 @@ const state: {
     tabs: TabInfo[];
     activeTabId: string;
     skills: SkillInfo[];
+    commands: CommandInfo[];
     queuedMessages: string[];
 } = {
     messages: [],
@@ -52,6 +53,7 @@ const state: {
     tabs: [],
     activeTabId: '',
     skills: [],
+    commands: [],
     queuedMessages: [],
 };
 
@@ -137,6 +139,7 @@ function handleMessage(msg: ServerMessage): void {
             break;
         case 'skills':
             state.skills = msg.skills;
+            state.commands = msg.commands ?? [];
             break;
         case 'error':
             showError(msg.message);
@@ -494,8 +497,8 @@ function updateInputArea(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (input) {
         const inputHint = state.isStreaming
-            ? 'Queue a message. Ctrl+Enter steers; Esc stops.'
-            : 'Ask Pi anything...';
+            ? 'Queue a message...'
+            : 'Ask Pi anything... (type / for commands)';
         input.placeholder = state.isStreaming ? 'Queue a message...' : inputHint;
         input.title = inputHint;
         input.setAttribute('aria-label', inputHint);
@@ -521,14 +524,14 @@ function updateInputArea(): void {
     }
 
     const steerBtnHtml = state.isStreaming
-        ? `<button id="btn-steer" class="steer-btn" title="Steer (Ctrl+Enter)"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
+        ? `<button id="btn-steer" class="steer-btn" title="Steer"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
         : '';
 
     footer.innerHTML = `
         <span class="footer-model">${escHtml(modelName)}</span>
         <span class="footer-spacer"></span>
         ${contextHtml}
-        ${state.isStreaming ? '<button id="btn-abort" class="abort-btn" title="Stop generation (Esc)">&#9632; Stop</button>' : ''}
+        ${state.isStreaming ? '<button id="btn-abort" class="abort-btn" title="Stop">&#9632; Stop</button>' : ''}
         ${steerBtnHtml}
         <button id="btn-send" class="send-btn" title="${state.isStreaming ? 'Queue' : 'Send'}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     `;
@@ -724,10 +727,7 @@ function buildWelcome(): HTMLElement {
         <div class="welcome-title">Pi Agent</div>
         <div class="welcome-subtitle">Pi reads, writes, and runs code in this workspace. Tell it what to build and it will show its work as it goes.</div>
         <div class="welcome-hints">
-            <div class="welcome-hint"><kbd>Enter</kbd> Send a message</div>
-            <div class="welcome-hint"><kbd>Ctrl+Shift+L</kbd> Focus chat</div>
-            <div class="welcome-hint"><kbd>Ctrl+Shift+N</kbd> New session</div>
-            <div class="welcome-hint"><kbd>Esc</kbd> Stop generation</div>
+            <div class="welcome-hint">Type <kbd>/</kbd> for commands and skills</div>
         </div>
     `;
     return w;
@@ -2127,7 +2127,7 @@ function bindCopyButtons(): void {
 // ── Slash command menu ──
 
 let slashMenuIndex = 0;
-let slashMenuItems: SkillInfo[] = [];
+let slashMenuItems: SlashMenuItem[] = [];
 
 function updateSlashMenu(input: HTMLTextAreaElement): void {
     const menu = document.getElementById('slash-menu');
@@ -2139,15 +2139,16 @@ function updateSlashMenu(input: HTMLTextAreaElement): void {
     const beforeCursor = text.slice(0, cursorPos);
     const slashMatch = beforeCursor.match(/(?:^|\s)(\/\S*)$/);
 
-    if (!slashMatch || state.skills.length === 0) {
+    const allItems = buildSlashMenuItems();
+    if (!slashMatch || allItems.length === 0) {
         hideSlashMenu();
         return;
     }
 
     const query = slashMatch[1].slice(1).toLowerCase();
-    slashMenuItems = state.skills.filter(s =>
-        s.name.toLowerCase().includes(query) ||
-        s.description.toLowerCase().includes(query)
+    slashMenuItems = allItems.filter(item =>
+        item.label.toLowerCase().includes(query) ||
+        item.description.toLowerCase().includes(query)
     );
 
     if (slashMenuItems.length === 0) {
@@ -2160,14 +2161,37 @@ function updateSlashMenu(input: HTMLTextAreaElement): void {
     menu.style.display = '';
 }
 
+function buildSlashMenuItems(): SlashMenuItem[] {
+    const items: SlashMenuItem[] = [];
+    // Skills first
+    for (const s of state.skills) {
+        items.push({
+            label: `/skill:${s.name}`,
+            description: s.description,
+            source: 'skill',
+            value: s.name,
+        });
+    }
+    // Then commands
+    for (const c of state.commands) {
+        items.push({
+            label: `/${c.name}`,
+            description: c.description,
+            source: 'command',
+            value: c.name,
+        });
+    }
+    return items;
+}
+
 function renderSlashMenu(menu: HTMLElement): void {
-    menu.innerHTML = slashMenuItems.map((skill, i) => {
+    menu.innerHTML = slashMenuItems.map((item, i) => {
         const active = i === slashMenuIndex ? ' slash-item-active' : '';
-        const desc = skill.description
-            ? `<span class="slash-item-desc">${escHtml(skill.description)}</span>`
+        const desc = item.description
+            ? `<span class="slash-item-desc">${escHtml(item.description)}</span>`
             : '';
         return `<div class="slash-item${active}" data-index="${i}">
-            <span class="slash-item-name">/skill:${escHtml(skill.name)}</span>
+            <span class="slash-item-name">${escHtml(item.label)}</span>
             ${desc}
         </div>`;
     }).join('');
@@ -2185,8 +2209,8 @@ function selectSlashItem(index: number): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (!input) return;
 
-    const skill = slashMenuItems[index];
-    if (!skill) return;
+    const item = slashMenuItems[index];
+    if (!item) return;
 
     const text = input.value;
     const cursorPos = input.selectionStart;
@@ -2195,7 +2219,7 @@ function selectSlashItem(index: number): void {
 
     if (slashMatch) {
         const matchStart = beforeCursor.length - slashMatch[1].length;
-        const replacement = `/skill:${skill.name} `;
+        const replacement = `${item.label} `;
         input.value = text.slice(0, matchStart) + replacement + text.slice(cursorPos);
         const newPos = matchStart + replacement.length;
         input.setSelectionRange(newPos, newPos);

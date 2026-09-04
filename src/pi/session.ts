@@ -6,7 +6,7 @@ import type {
     ModelRegistry,
     ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
-import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo } from '../shared/protocol';
+import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo } from '../shared/protocol';
 import { EventRouter } from './events';
 import { loadPiSdk, getSdkSource, hasFunction, type PiSdk } from './compat';
 import { mapSkills } from './skills';
@@ -385,6 +385,60 @@ export class PiSessionManager {
         } catch {
             return [];
         }
+    }
+
+    getCommands(): CommandInfo[] {
+        if (!this._session) return [];
+        const commands: CommandInfo[] = [];
+        // Built-in commands (mirrors SDK's BUILTIN_SLASH_COMMANDS)
+        const builtins = [
+            { name: 'settings', description: 'Open settings menu' },
+            { name: 'model', description: 'Select model' },
+            { name: 'tree', description: 'Navigate session tree' },
+            { name: 'thinking', description: 'Set thinking level' },
+            { name: 'export', description: 'Export session' },
+            { name: 'copy', description: 'Copy last message to clipboard' },
+            { name: 'name', description: 'Set session display name' },
+            { name: 'session', description: 'Show session info and stats' },
+            { name: 'fork', description: 'Fork from a previous user message' },
+            { name: 'clone', description: 'Duplicate the current session' },
+            { name: 'login', description: 'Configure provider authentication' },
+            { name: 'logout', description: 'Remove provider authentication' },
+            { name: 'new', description: 'Start a new session' },
+            { name: 'compact', description: 'Manually compact session context' },
+            { name: 'resume', description: 'Resume a different session' },
+            { name: 'reload', description: 'Reload extensions, skills, and themes' },
+        ];
+        for (const cmd of builtins) {
+            commands.push({ ...cmd, source: 'builtin' });
+        }
+        try {
+            // Extension-registered commands
+            const runner = (this._session as any).extensionRunner;
+            if (runner && hasFunction(runner, 'getRegisteredCommands')) {
+                for (const cmd of runner.getRegisteredCommands()) {
+                    commands.push({
+                        name: cmd.invocationName,
+                        description: cmd.description ?? '',
+                        source: 'extension',
+                    });
+                }
+            }
+        } catch { /* ignore */ }
+        try {
+            // Prompt templates
+            const templates = (this._session as any).promptTemplates;
+            if (Array.isArray(templates)) {
+                for (const tpl of templates) {
+                    commands.push({
+                        name: tpl.name,
+                        description: tpl.description ?? '',
+                        source: 'prompt',
+                    });
+                }
+            }
+        } catch { /* ignore */ }
+        return commands;
     }
 
     getActiveToolNames(): string[] {
