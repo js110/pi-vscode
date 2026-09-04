@@ -400,7 +400,7 @@ body {
 .message-group-user {
     margin-top: 0;
     margin-bottom: 12px;
-    background: var(--bg);
+    background: transparent;
 }
 .message-group-user-latest {
     position: sticky;
@@ -417,25 +417,14 @@ body {
 
 .message + .message { margin-top: 2px; }
 
-/* User turn: a quiet, pinned surface — reads as "the prompt under review" */
+/* User turn: clean card — right-aligned, minimal */
 .message-user {
     background: var(--surface);
-    border-top: 1px solid var(--hairline);
-    border-bottom: 1px solid var(--hairline);
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
-    padding: 14px 18px 12px 18px;
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
     position: relative;
-}
-.message-user::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: var(--accent);
-    opacity: 0.5;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    margin-left: auto;
+    max-width: 92%;
 }
 
 .message-assistant { padding: 0; }
@@ -455,11 +444,11 @@ body {
 }
 
 .message-group-user > .message-footer {
-    background: var(--surface);
-    padding: 4px 18px 6px;
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
-    border-top: 1px solid var(--hairline);
+    background: transparent;
+    padding: 2px 18px 6px;
+    border-radius: 0;
     color: var(--faint);
+    text-align: right;
 }
 
 .message-group-assistant > .message-footer {
