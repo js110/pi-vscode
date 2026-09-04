@@ -262,7 +262,9 @@ export class TabManager {
                     this._hooks.post({ type: 'agentEvent', event: safeSerialize(event) });
                 }
             } else {
-                tab.isStreaming = false;
+                // Don't clear isStreaming yet — wait for agent_settled
+                // to prevent race condition where user sends new prompt
+                // before SDK finishes internal cleanup
                 tab.streamingText = '';
                 tab.streamingThinking = '';
                 tab.isThinking = false;
@@ -270,7 +272,7 @@ export class TabManager {
                 tab.streamingThinkingDuration = 0;
                 tab.agentStartTime = 0;
                 if (isActive) {
-                    this._hooks.setContext('pi-agent.isStreaming', false);
+                    this._hooks.post({ type: 'agentEvent', event: safeSerialize(event) });
                 } else {
                     tab.hasNotification = true;
                 }

@@ -224,13 +224,14 @@ function handleAgentEvent(event: any): void {
                 // SDK will retry — keep streaming UI active
                 break;
             }
-            state.isStreaming = false;
+            // Don't clear isStreaming yet — wait for agent_settled
+            // to prevent race condition where user sends new prompt
+            // before SDK finishes internal cleanup
             state.streamingText = '';
             state.streamingThinking = '';
             state.isThinking = false;
             dismissSteerToast();
             updateStreamingUI();
-            updateInputArea();
             break;
         case 'auto_retry_start':
             showRetryPlaceholder(event.attempt, event.maxAttempts, event.delayMs, event.errorMessage);
