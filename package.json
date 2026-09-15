@@ -78,6 +78,10 @@
       {
         "command": "pi-agent.moveToPrimarySidebar",
         "title": "Pi: Move Panel to Primary Sidebar (Left)"
+      },
+      {
+        "command": "pi-agent.sendToPi",
+        "title": "Pi: Send Selection to Pi"
       }
     ],
     "keybindings": [
@@ -97,6 +101,21 @@
         "when": "pi-agent.isStreaming"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "pi-agent.sendToPi",
+          "when": "editorHasSelection",
+          "group": "9_pi-agent"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "pi-agent.sendToPi",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
     "configuration": {
       "title": "Pi Agent",
       "properties": {

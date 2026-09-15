@@ -164,6 +164,11 @@ const EN = {
     'image.queueUnsupported': 'Images cannot be added while the agent is streaming',
     'image.remove': 'Remove image',
 
+    // Send to Pi (editor context menu)
+    'sendToPi.intro': 'Here is a code selection from `{path}:{range}`:',
+    'sendToPi.noSelection': 'Select some code in the editor first.',
+    'sendToPi.tooLarge': 'The selection is too large to send (max {n} characters).',
+
     // Diff card
     'diff.new': 'NEW',
 
@@ -364,6 +369,11 @@ const ZH: Record<TextKey, string> = {
     'image.invalid': '无法识别的图片数据',
     'image.queueUnsupported': '智能体回复期间无法添加图片',
     'image.remove': '移除图片',
+
+    // Send to Pi (editor context menu)
+    'sendToPi.intro': '这是 `{path}:{range}` 处的选区代码：',
+    'sendToPi.noSelection': '请先在编辑器中选中代码。',
+    'sendToPi.tooLarge': '选区过大，无法发送（上限 {n} 字符）。',
 
     'diff.new': '新建',
 

@@ -434,6 +434,60 @@ describe('TabManager', () => {
         expect(tab.session.prompt).toHaveBeenCalledWith('plain', undefined);
     });
 
+    it('sendToPi prompts the active tab when it is not streaming', async () => {
+        const tab = makeTab();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeHooks());
+        await manager.initialize();
+
+        await manager.sendToPi('look at this');
+
+        expect(tab.session.prompt).toHaveBeenCalledWith('look at this', undefined);
+        expect(tab.session.followUp).not.toHaveBeenCalled();
+    });
+
+    it('sendToPi queues via followUp while the active tab is streaming', async () => {
+        const tab = makeTab({ getFollowUpMessages: () => ['look at this'] });
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeHooks());
+        await manager.initialize();
+
+        manager.activeTab!.session.events.dispatch({ type: 'agent_start' } as any);
+        await manager.sendToPi('look at this');
+
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+        expect(tab.session.followUp).toHaveBeenCalledWith('look at this');
+        expect(manager.getState().queuedMessages).toEqual(['look at this']);
+    });
+
+    it('sendToPi resumes prompting once streaming settles', async () => {
+        const tab = makeTab();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeHooks());
+        await manager.initialize();
+
+        manager.activeTab!.session.events.dispatch({ type: 'agent_start' } as any);
+        manager.activeTab!.session.events.dispatch({ type: 'agent_settled' } as any);
+        await manager.sendToPi('look at this');
+
+        expect(tab.session.prompt).toHaveBeenCalledWith('look at this', undefined);
+    });
+
+    it('sendToPi routes to the active tab in multi-tab setups', async () => {
+        const first = makeTab();
+        const second = makeTab();
+        const factory: TabFactory = {
+            create: vi.fn(async () => first),
+        };
+        const manager = new TabManager(factory, makeHooks());
+        await manager.initialize();
+        // Replace the pool with distinct tabs for each create call.
+        (factory.create as any).mockImplementation(async () => second);
+        await manager.dispatch({ type: 'createTab' });
+
+        await manager.sendToPi('hello');
+
+        expect(second.session.prompt).toHaveBeenCalledWith('hello', undefined);
+        expect(first.session.prompt).not.toHaveBeenCalled();
+    });
+
     it('resets the compaction stage on a new session', async () => {
         let percent = 85;
         const tab = makeTab({

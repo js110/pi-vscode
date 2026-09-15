@@ -10,7 +10,13 @@ import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
 import { ApplyManager } from './providers/apply';
 import { getModelRuntime } from './pi/auth';
-import { setLang } from './shared/i18n';
+import { setLang, t } from './shared/i18n';
+import {
+    buildSelectionPrompt,
+    isSelectionTooLarge,
+    selectionLineRange,
+    MAX_SELECTION_CHARS,
+} from './providers/send-to-pi';
 import type { GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
@@ -160,6 +166,47 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('pi-agent.compact', async () => {
                 await sidebarProvider.compact();
                 vscode.window.showInformationMessage('Pi context compacted.');
+            }),
+
+            vscode.commands.registerCommand('pi-agent.sendToPi', async () => {
+                const editor = vscode.window.activeTextEditor;
+                if (!editor || editor.selection.isEmpty) {
+                    vscode.window.showInformationMessage(t('sendToPi.noSelection'));
+                    return;
+                }
+                const selection = editor.selection;
+                const code = editor.document.getText(selection);
+                if (code.trim().length === 0) {
+                    vscode.window.showInformationMessage(t('sendToPi.noSelection'));
+                    return;
+                }
+                if (isSelectionTooLarge(code)) {
+                    vscode.window.showWarningMessage(
+                        t('sendToPi.tooLarge', { n: MAX_SELECTION_CHARS }),
+                    );
+                    return;
+                }
+                const { start, end } = selectionLineRange(
+                    selection.start.line,
+                    selection.end.line,
+                    selection.end.character,
+                );
+                const promptText = buildSelectionPrompt({
+                    // Untitled / out-of-workspace documents fall back to their
+                    // label or absolute path — a stable label, not a resolvable one.
+                    displayPath: vscode.workspace.asRelativePath(editor.document.uri),
+                    startLine: start,
+                    endLine: end,
+                    languageId: editor.document.languageId,
+                    code,
+                });
+                // Reveal the panel first so the turn lands in a visible surface.
+                void vscode.commands.executeCommand('pi-agent.chat.focus');
+                try {
+                    await tabManagerRef?.sendToPi(promptText);
+                } catch (err: any) {
+                    vscode.window.showErrorMessage(err?.message ?? String(err));
+                }
             }),
 
             vscode.commands.registerCommand('pi-agent.focusChat', () => {

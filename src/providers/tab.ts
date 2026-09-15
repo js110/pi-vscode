@@ -855,6 +855,17 @@ export class TabManager {
         this._emitStateChange();
     }
 
+    /** Host entry (editor context menu): prompt, or FollowUp queue while streaming. */
+    async sendToPi(text: string): Promise<void> {
+        const tab = this._tabs.get(this._activeTabId);
+        if (!tab) return;
+        if (tab.isStreaming) {
+            await this.dispatch({ type: 'queueMessage', text });
+        } else {
+            await this.dispatch({ type: 'prompt', text });
+        }
+    }
+
     dispose(): void {
         for (const [, unsubs] of this._tabSubscriptions) {
             for (const unsub of unsubs) unsub();
