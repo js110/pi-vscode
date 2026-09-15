@@ -29,6 +29,22 @@
     font-size: 11px; color: var(--vscode-descriptionForeground);
   }
   .queue-note { margin: 4px 0 6px; padding: 6px 10px; font-size: 11.5px; }
+  .mention-popover {
+    bottom: calc(100% + 6px); left: 0; right: 0;
+    max-height: 250px; overflow-y: auto; padding-bottom: 2px;
+  }
+  .mention-popover .row-title { font-family: var(--proto-mono); font-size: 11.5px; }
+  .mention-popover .row-check { width: 16px; flex-shrink: 0; text-align: center; font-weight: 700; }
+  .mention-popover .file-ic { display: inline-flex; flex-shrink: 0; color: var(--vscode-descriptionForeground); }
+  .mention-popover .sym-ic {
+    display: inline-flex; flex-shrink: 0; width: 16px; justify-content: center;
+    font-family: var(--proto-mono); color: var(--vscode-descriptionForeground);
+  }
+  .mention-hint {
+    margin-top: 4px; padding: 6px 14px 8px;
+    border-top: 1px solid var(--proto-border);
+    font-size: 10.5px; color: var(--vscode-descriptionForeground);
+  }
 </style>
 </head>
 <body>
@@ -81,6 +97,7 @@
     <!-- 2. Tab 条：状态图标与 6.3 状态枚举对应（PRD 9.1 / 9.5） -->
     <div class="tab-strip">
       <div class="tab active">
+        <span class="tab-status" title="正在流式生成"><span class="tab-spinner" aria-hidden="true"></span></span>
         <span class="tab-title" data-i18n="tab.fixLogin">修复登录超时</span>
         <span class="tab-close">✕</span>
       </div>
@@ -232,6 +249,30 @@ change: 为 login() 增加 8s 超时与指数退避重试（+18 / -6）</div>
         </div>
       </div>
 
+      <!-- 末端异常态：压缩失败（AC-FN-26） -->
+      <div class="notice-bar error queue-note">
+        <span class="nb-icon" aria-hidden="true">⚠</span>
+        <div class="nb-body">
+          <div class="nb-title" data-i18n="nb.fail.title">压缩失败，已保留完整上下文</div>
+          <div class="nb-actions">
+            <button class="btn" data-i18n="nb.fail.retry">重试压缩</button>
+            <button class="btn" data-i18n="nb.fail.later">继续对话</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 末端异常态：上下文已满（PRD 11.4） -->
+      <div class="notice-bar error queue-note">
+        <span class="nb-icon" aria-hidden="true">⚠</span>
+        <div class="nb-body">
+          <div class="nb-title" data-i18n="nb.full.title">上下文已满（100%），无法继续发送</div>
+          <div class="nb-actions">
+            <button class="btn primary" data-i18n="nb.full.compact">压缩后继续</button>
+            <button class="btn" data-i18n="nb.full.newtab">新建 Tab</button>
+          </div>
+        </div>
+      </div>
+
       <!-- h. 改动审查入口：按轮次列出变更（PRD 9.3） -->
       <details class="changed-files" open>
         <summary>
@@ -279,14 +320,53 @@ change: 为 login() 增加 8s 超时与指数退避重试（+18 / -6）</div>
         <div class="nb-body" data-i18n="queue.demo">Pi 正在流式生成：新消息将入队，本轮结束后依序发送；Steer 可打断并转向</div>
       </div>
 
-      <div class="input-box">
-        <textarea rows="1" data-i18n-ph="ph.input" placeholder="描述任务，@ 引用文件/符号，/ 调用技能…"></textarea>
-        <div class="input-tools">
-          <button class="icon-btn" title="添加图片（当前模型支持）" aria-label="添加图片">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.8" cy="6.4" r="1.1"/><path d="M2.5 11.5 6 8.5l2.4 2 2.3-2.4 2.8 2.9"/></svg>
-          </button>
-          <button class="icon-btn" title="@ 引用文件/符号" aria-label="@ 引用" style="font-weight:600">@</button>
-          <button class="icon-btn" title="技能菜单" aria-label="技能菜单" style="font-weight:600">/</button>
+      <div class="overlay-anchor">
+        <div class="input-box">
+          <textarea rows="1" data-i18n-ph="ph.input" placeholder="描述任务，@ 引用文件/符号，/ 调用技能…"></textarea>
+          <div class="input-tools">
+            <button class="icon-btn" title="添加图片（当前模型支持）" aria-label="添加图片">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.8" cy="6.4" r="1.1"/><path d="M2.5 11.5 6 8.5l2.4 2 2.3-2.4 2.8 2.9"/></svg>
+            </button>
+            <button class="icon-btn" id="mention-toggle" title="@ 引用文件/符号" aria-label="@ 引用" style="font-weight:600">@</button>
+            <button class="icon-btn" title="技能菜单" aria-label="技能菜单" style="font-weight:600">/</button>
+          </div>
+        </div>
+
+        <!-- @-mention 补全浮层（点击 @ 展开）：文件 + 符号两组，无符号索引降级仅文件（PRD 9.2 / AC-FN-09） -->
+        <div class="popover mention-popover" id="mention-popover" hidden role="listbox" aria-label="@ 补全">
+          <div class="group-label" data-i18n="mf.files">文件</div>
+          <div class="list-row selected">
+            <span class="file-ic"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>
+            <div class="row-main">
+              <div class="row-title">src/auth.ts</div>
+              <div class="row-desc" data-i18n="mf.f1desc">本会话已引用</div>
+            </div>
+            <span class="row-check">✓</span>
+          </div>
+          <div class="list-row">
+            <span class="file-ic"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>
+            <div class="row-main"><div class="row-title">src/auth/types.ts</div></div>
+          </div>
+          <div class="list-row">
+            <span class="file-ic"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>
+            <div class="row-main"><div class="row-title">src/middleware/session.ts</div></div>
+          </div>
+          <div class="group-label" data-i18n="mf.symbols">符号</div>
+          <div class="list-row">
+            <span class="sym-ic">ƒ</span>
+            <div class="row-main">
+              <div class="row-title">login()</div>
+              <div class="row-desc">src/auth.ts</div>
+            </div>
+          </div>
+          <div class="list-row">
+            <span class="sym-ic">ƒ</span>
+            <div class="row-main">
+              <div class="row-title">withSession()</div>
+              <div class="row-desc">src/middleware/session.ts</div>
+            </div>
+          </div>
+          <div class="mention-hint" data-i18n="mf.hint">无符号索引的 workspace 自动降级为仅文件匹配（AC-FN-09）</div>
         </div>
       </div>
 
@@ -351,6 +431,16 @@ window.PI_PAGE = {
     "ms.chat": "对话",
     "ms.plan": "Plan",
     "ph.input": "描述任务，@ 引用文件/符号，/ 调用技能…",
+    "nb.fail.title": "压缩失败，已保留完整上下文",
+    "nb.fail.retry": "重试压缩",
+    "nb.fail.later": "继续对话",
+    "nb.full.title": "上下文已满（100%），无法继续发送",
+    "nb.full.compact": "压缩后继续",
+    "nb.full.newtab": "新建 Tab",
+    "mf.files": "文件",
+    "mf.symbols": "符号",
+    "mf.f1desc": "本会话已引用",
+    "mf.hint": "无符号索引的 workspace 自动降级为仅文件匹配（AC-FN-09）",
     "note.label": "对话主界面（常态）— 覆盖 PRD 9.1 / 9.2 / 9.3"
   },
   en: {
@@ -395,6 +485,16 @@ window.PI_PAGE = {
     "ms.chat": "Chat",
     "ms.plan": "Plan",
     "ph.input": "Describe a task; @ to reference files/symbols, / for skills…",
+    "nb.fail.title": "Compaction failed — full context preserved",
+    "nb.fail.retry": "Retry compaction",
+    "nb.fail.later": "Keep chatting",
+    "nb.full.title": "Context full (100%) — sending is blocked",
+    "nb.full.compact": "Compact and continue",
+    "nb.full.newtab": "New Tab",
+    "mf.files": "Files",
+    "mf.symbols": "Symbols",
+    "mf.f1desc": "Referenced in this session",
+    "mf.hint": "Workspaces without a symbol index degrade to file-only matching (AC-FN-09)",
     "note.label": "Chat main view (normal) — covers PRD 9.1 / 9.2 / 9.3"
   }
 };
@@ -412,6 +512,16 @@ window.PI_PAGE = {
     });
     document.addEventListener("click", function () { menu.hidden = true; });
     menu.addEventListener("click", function (e) { e.stopPropagation(); });
+  }
+  var mToggle = document.getElementById("mention-toggle");
+  var mPop = document.getElementById("mention-popover");
+  if (mToggle && mPop) {
+    mToggle.addEventListener("click", function (e) {
+      e.stopPropagation();
+      mPop.hidden = !mPop.hidden;
+    });
+    document.addEventListener("click", function () { mPop.hidden = true; });
+    mPop.addEventListener("click", function (e) { e.stopPropagation(); });
   }
   var cbBlock = document.getElementById("fix-codeblock");
   var cbToggle = document.getElementById("cb-toggle");

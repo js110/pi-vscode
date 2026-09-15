@@ -125,4 +125,21 @@
 
 ---
 
+## 七、N1–N8 打磨修复记录（第 2 次评审后 · 2026-09-15）
+
+| # | 修复结果 | 证据 |
+|---|---------|------|
+| N1 | **核实为已达标**：当前源码字典键即为 `panel.title`（zh/en 各一处），DOM 与字典一致；复评引用的 `panelTitle` 系旧版行号，无需修改 | ui_model_selector.html（PI_PAGE zh/en） |
+| N2 | 已修复：页 04 用户头像补 `data-i18n="youL"`，EN 模式头像随语言切换 | ui_model_selector.html:72 |
+| N3 | 已修复（文案集中层方案）：shared.js 新增 `PI_TIPS` 集中词典（40 组唯一中文 title + 新增 1 组 = 41 组 → EN），`applyLang` 全量切换 `[title]`，未收录保持原文；避免 10 页 × 字典散改 | assets/shared.js（PI_TIPS + applyTips） |
+| N4 | 已修复：3 处 ℹ(U+2139) 统一为 ⓘ(U+24D8)，信息提示符号单一化 | ui_plan_mode.html:43/216 · ui_inline_chat_editor.html:191 |
+| N5 | 已修复：⨯(U+2A2F) 统一为 ✗(U+2717)，与 ✓/✗ 状态体系对齐 | ui_inline_chat_editor.html:159 |
+| N6 | 已修复：页 02 active Tab 补流式 spinner（与页 06① 同形制），title「正在流式生成」入 PI_TIPS | ui_chat_main_normal.html（tab-strip active） |
+| N7 | 已修复：页 02 新增 @-mention 补全浮层（点击 @ 展开 / 外点收起）：文件组 3 行（含"本会话已引用"选中态）+ 符号组 2 行 + 「无符号索引降级仅文件」提示（9.2 / AC-FN-09），@ 按钮获得操作归宿 | ui_chat_main_normal.html（#mention-popover + JS） |
+| N8 | 已修复：页 02 压缩提示条旁补两条 error 变体——「压缩失败，已保留完整上下文」（重试压缩/继续对话，AC-FN-26）与「上下文已满（100%），无法继续发送」（压缩后继续/新建 Tab，11.4） | ui_chat_main_normal.html（nb.fail.* / nb.full.*） |
+
+修复后脚本化自检（.cache/check-ui-polish.js）：11 页 data-i18n ↔ PI_PAGE 双向核对通过 · U+FFFD 0 · ℹ/⨯ 残留 0 · 中文 title 全部入 PI_TIPS · shared.css 写死色值 0；headless Edge 渲染后 DOM 确认 spinner / mention-popover（默认 hidden）/ 两条 error 变体与工具条注入齐全。
+
+---
+
 *评审提示词版本：v2.0 · 第 2 次评审（修复后复评） · 2026-09-15*
