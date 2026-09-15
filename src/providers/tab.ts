@@ -3,6 +3,7 @@ import { ensureConfigDiscovered, refreshPiConfig } from '../pi/config';
 import { ApprovalMemory, type GlobalRuleStore } from '../pi/approval-memory';
 import type {
     ApprovalScope,
+    ApplyPreviewInfo,
     ClientMessage,
     ServerMessage,
     SerializedAgentState,
@@ -31,6 +32,9 @@ export interface TabManagerHooks {
     confirmDialog(message: string): Promise<boolean>;
     openSettings(): void;
     getCwd(): string;
+    applyPreview(code: string, lang: string, tabId: string): Promise<ApplyPreviewInfo | null>;
+    applyConfirm(previewId: string): Promise<{ ok: boolean; message?: string }>;
+    applyCancel(previewId: string): void;
 }
 
 interface PendingApproval {
@@ -103,6 +107,11 @@ export class TabManager {
 
     get activeTab(): Tab | undefined {
         return this._tabs.get(this._activeTabId);
+    }
+
+    /** Record pre-apply content into a specific tab's checkpoint manager. */
+    recordFileSnapshot(tabId: string, filePath: string, content: string | null): void {
+        this._tabs.get(tabId)?.checkpointManager.recordFileState(filePath, content);
     }
 
     get isStreaming(): boolean {
@@ -494,6 +503,35 @@ export class TabManager {
                 this._hooks.post({ type: 'configState', config });
                 break;
             }
+            case 'applyPreview': {
+                try {
+                    const preview = await this._hooks.applyPreview(msg.code, msg.lang, tab.id);
+                    if (preview) {
+                        this._hooks.post({ type: 'applyPreviewResult', preview });
+                    }
+                } catch (err: any) {
+                    this._hooks.post({
+                        type: 'applyResult',
+                        previewId: '',
+                        ok: false,
+                        message: err?.message ?? String(err),
+                    });
+                }
+                break;
+            }
+            case 'applyConfirm': {
+                const result = await this._hooks.applyConfirm(msg.previewId);
+                this._hooks.post({
+                    type: 'applyResult',
+                    previewId: msg.previewId,
+                    ok: result.ok,
+                    message: result.message,
+                });
+                break;
+            }
+            case 'applyCancel':
+                this._hooks.applyCancel(msg.previewId);
+                break;
             case 'getState':
                 this._hooks.post({ type: 'stateSync', state: this.getState() });
                 break;

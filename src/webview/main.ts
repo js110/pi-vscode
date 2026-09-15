@@ -1,7 +1,7 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, Lang } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang } from '../shared/protocol';
 import { isDangerousTool } from '../shared/tool-safety';
 import { t, setLang } from '../shared/i18n';
-import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon } from '../shared/webview-text';
+import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon, renderDiffLines } from '../shared/webview-text';
 import { el, escHtml } from './dom';
 import { renderMarkdown, buildWelcome, buildThinkingBlock, thinkingLabel, buildDiffCard, buildToolCard, buildModelItem, buildApprovalBadge, resetCodeBlockIds } from './render/messages';
 
@@ -44,6 +44,7 @@ const state: {
     config?: PiConfigSnapshot;
     approvalTraces: Map<string, ApprovalScope>;
     pendingApprovals: ToolCallPendingInfo[];
+    applyPreviews: ApplyPreviewInfo[];
 } = {
     messages: [],
     isStreaming: false,
@@ -64,6 +65,7 @@ const state: {
     queuedMessages: [],
     approvalTraces: new Map<string, ApprovalScope>(),
     pendingApprovals: [],
+    applyPreviews: [],
 };
 
 let sessionSearchQuery = '';
@@ -148,10 +150,27 @@ function handleMessage(msg: ServerMessage): void {
             for (const pending of state.pendingApprovals) {
                 renderToolApprovalCard(pending);
             }
+            for (const preview of state.applyPreviews) {
+                renderApplyPreviewCard(preview);
+            }
             if (state.isStreaming) {
                 ensurePreparingPlaceholder();
             }
             renderStreamingContent();
+            break;
+        }
+        case 'applyPreviewResult':
+            renderApplyPreviewCard(msg.preview);
+            break;
+        case 'applyResult': {
+            removeApplyPreviewCard(msg.previewId);
+            if (msg.message) {
+                if (msg.ok) {
+                    showNotice(msg.message);
+                } else {
+                    showError(msg.message);
+                }
+            }
             break;
         }
         case 'error':
@@ -195,6 +214,13 @@ function applyStateSync(s: SerializedAgentState): void {
     state.streamingThinkingDuration = s.streamingThinkingDuration ?? 0;
     state.queuedMessages = s.queuedMessages ?? [];
     const tabSwitched = prevTab !== state.activeTabId;
+
+    // Transient cards live in the per-tab streaming area; they are wiped on a
+    // tab switch and must not resurrect on a later langChanged.
+    if (tabSwitched) {
+        state.pendingApprovals = [];
+        state.applyPreviews = [];
+    }
 
     if (tabSwitched || !skeletonBuilt) {
         render();
@@ -453,6 +479,7 @@ function updateMessages(): void {
     }
 
     bindCopyButtons();
+    bindCodeBlockActions();
     bindCheckpointButtons();
     bindRedoButtons();
     bindDiffButtons();
@@ -1070,6 +1097,7 @@ function renderStreamingContent(): void {
     }
 
     bindCopyButtons();
+    bindCodeBlockActions();
     scrollToBottom();
 }
 
@@ -1413,6 +1441,76 @@ function bindApprovalButtons(): void {
             removeToolApprovalCard(toolCallId);
         });
     });
+}
+
+// ── Apply preview cards (code block → file) ──
+
+function renderApplyPreviewCard(preview: ApplyPreviewInfo): void {
+    const container = document.getElementById('streaming-message');
+    if (!container) return;
+
+    removePreparingPlaceholder();
+
+    if (document.getElementById(`apply-preview-${preview.previewId}`)) return;
+    if (!state.applyPreviews.some(p => p.previewId === preview.previewId)) {
+        state.applyPreviews.push(preview);
+    }
+
+    const fileName = preview.targetPath.split(/[\\/]/).pop() ?? preview.targetPath;
+    const dirPath = preview.targetPath.split(/[\\/]/).slice(0, -1).join('/');
+
+    let statsHtml = '';
+    if (preview.addedLines > 0 || preview.removedLines > 0) {
+        statsHtml = `<span class="diff-stats">`;
+        if (preview.addedLines > 0) statsHtml += `<span class="diff-stat-add">+${preview.addedLines}</span>`;
+        if (preview.removedLines > 0) statsHtml += `<span class="diff-stat-del">-${preview.removedLines}</span>`;
+        statsHtml += `</span>`;
+    }
+
+    const card = el('div', 'tool-approval-card apply-preview-card');
+    card.id = `apply-preview-${preview.previewId}`;
+    card.innerHTML = `
+        <div class="tool-header">
+            <span class="tool-icon">${preview.isNew ? '&#10010;' : '&#9998;'}</span>
+            <span class="tool-name">${escHtml(t('apply.title', { path: fileName }))}</span>
+            ${dirPath ? `<span class="diff-file-dir">${escHtml(dirPath)}</span>` : ''}
+            ${statsHtml}
+            ${preview.isNew ? `<span class="diff-new-badge">${escHtml(t('apply.newFileBadge'))}</span>` : ''}
+        </div>
+        <div class="diff-view apply-diff-view">${preview.diff ? renderDiffLines(preview.diff) : ''}</div>
+        <div class="approval-actions">
+            <button class="approval-btn approve apply-confirm" data-previewid="${escAttr(preview.previewId)}">${escHtml(t('apply.confirm'))}</button>
+            <button class="approval-btn reject apply-cancel" data-previewid="${escAttr(preview.previewId)}">${escHtml(t('apply.cancel'))}</button>
+        </div>
+    `;
+
+    container.appendChild(card);
+
+    card.querySelector('.apply-confirm')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'applyConfirm', previewId: preview.previewId });
+        removeApplyPreviewCard(preview.previewId);
+    });
+    card.querySelector('.apply-cancel')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'applyCancel', previewId: preview.previewId });
+        removeApplyPreviewCard(preview.previewId);
+    });
+
+    scrollToBottom();
+}
+
+function removeApplyPreviewCard(previewId: string): void {
+    document.getElementById(`apply-preview-${previewId}`)?.remove();
+    state.applyPreviews = state.applyPreviews.filter(p => p.previewId !== previewId);
+}
+
+function showNotice(message: string): void {
+    const container = document.getElementById('messages');
+    if (!container) return;
+    const toast = el('div', 'notice-toast');
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+    scrollToBottom();
 }
 
 // ── Thinking block ──
@@ -1990,6 +2088,43 @@ function bindCopyButtons(): void {
                 btn.textContent = t('code.copied');
                 setTimeout(() => { btn.textContent = t('code.copy'); }, 1500);
             });
+        });
+    });
+}
+
+const APPLY_DEBOUNCE_MS = 5000;
+
+function bindCodeBlockActions(): void {
+    document.querySelectorAll('.apply-btn:not([data-bound])').forEach((btn) => {
+        btn.setAttribute('data-bound', '1');
+        btn.addEventListener('click', () => {
+            const el0 = btn as HTMLElement;
+            const id = el0.dataset.applyId;
+            if (!id) return;
+            const codeEl = document.getElementById(id);
+            if (!codeEl) return;
+            // 5s debounce: silently ignore repeated clicks (PRD 11.2).
+            if (el0.hasAttribute('disabled')) return;
+            el0.setAttribute('disabled', '');
+            setTimeout(() => { el0.removeAttribute('disabled'); }, APPLY_DEBOUNCE_MS);
+            vscode.postMessage({
+                type: 'applyPreview',
+                code: codeEl.textContent ?? '',
+                lang: el0.dataset.applyLang ?? '',
+            });
+        });
+    });
+
+    document.querySelectorAll('.code-block-toggle:not([data-bound])').forEach((btn) => {
+        btn.setAttribute('data-bound', '1');
+        btn.addEventListener('click', () => {
+            const el0 = btn as HTMLElement;
+            const id = el0.dataset.toggleId;
+            if (!id) return;
+            const wrapper = document.getElementById(id)?.closest('.code-block-wrapper');
+            if (!wrapper) return;
+            const collapsed = wrapper.classList.toggle('code-block-collapsed');
+            el0.textContent = collapsed ? t('code.showMore') : t('code.showLess');
         });
     });
 }

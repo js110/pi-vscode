@@ -27,6 +27,17 @@ export type ApprovalScope = 'session' | 'global';
 
 export type Lang = 'en' | 'zh';
 
+/** Diff preview for applying a chat code block to a file (PRD C3). */
+export interface ApplyPreviewInfo {
+    previewId: string;
+    targetPath: string;
+    isNew: boolean;
+    diff: string;
+    addedLines: number;
+    removedLines: number;
+    code: string;
+}
+
 export interface ApprovalRuleInfo {
     tool: string;
     createdAt: number;
@@ -156,7 +167,10 @@ export type ClientMessage =
     | { type: 'editQueuedMessage'; index: number; text: string }
     | { type: 'removeQueuedMessage'; index: number }
     | { type: 'cancelQueue' }
-    | { type: 'refreshConfig' };
+    | { type: 'refreshConfig' }
+    | { type: 'applyPreview'; code: string; lang: string }
+    | { type: 'applyConfirm'; previewId: string }
+    | { type: 'applyCancel'; previewId: string };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =
@@ -186,6 +200,8 @@ export type ServerMessage =
     | { type: 'skills'; skills: SkillInfo[]; commands?: CommandInfo[] }
     | { type: 'configState'; config: PiConfigSnapshot }
     | { type: 'langChanged'; lang: Lang }
+    | { type: 'applyPreviewResult'; preview: ApplyPreviewInfo }
+    | { type: 'applyResult'; previewId: string; ok: boolean; message?: string }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages

@@ -127,6 +127,25 @@ const EN = {
     // Code block
     'code.copy': 'Copy',
     'code.copied': 'Copied!',
+    'code.apply': 'Apply',
+    'code.showMore': 'Show more',
+    'code.showLess': 'Show less',
+
+    // Apply preview card + host-side apply flow messages
+    'apply.title': 'Apply to {path}',
+    'apply.newFileBadge': 'New file',
+    'apply.confirm': 'Write',
+    'apply.cancel': 'Cancel',
+    'apply.applied': 'Applied to {path}.',
+    'apply.created': 'Created {path}.',
+    'apply.conflict': 'File was modified externally. Please preview again.',
+    'apply.expired': 'Preview expired. Please apply again.',
+    'apply.exists': 'File already exists. Please preview again.',
+    'apply.deleted': 'File was deleted since preview. Please preview again.',
+    'apply.dirty': 'File has unsaved editor changes. Save it and preview again.',
+    'apply.writeError': 'Failed to write file: {message}',
+    'apply.noWorkspace': 'Open a workspace folder to apply code.',
+    'apply.pickTarget': 'Choose a target file for this code block',
 
     // Diff card
     'diff.new': 'NEW',
@@ -294,6 +313,24 @@ const ZH: Record<TextKey, string> = {
 
     'code.copy': '复制',
     'code.copied': '已复制！',
+    'code.apply': '应用',
+    'code.showMore': '展开',
+    'code.showLess': '收起',
+
+    'apply.title': '应用到 {path}',
+    'apply.newFileBadge': '新文件',
+    'apply.confirm': '写入',
+    'apply.cancel': '取消',
+    'apply.applied': '已应用到 {path}。',
+    'apply.created': '已创建 {path}。',
+    'apply.conflict': '文件已被外部修改，请重新预览。',
+    'apply.expired': '预览已过期，请重新应用。',
+    'apply.exists': '文件已存在，请重新预览。',
+    'apply.deleted': '文件在预览后已被删除，请重新预览。',
+    'apply.dirty': '文件在编辑器中有未保存的修改，请先保存后重新预览。',
+    'apply.writeError': '写入文件失败：{message}',
+    'apply.noWorkspace': '请先打开工作区文件夹再应用代码。',
+    'apply.pickTarget': '选择此代码块要应用到的文件',
 
     'diff.new': '新建',
 

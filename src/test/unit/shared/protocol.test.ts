@@ -99,4 +99,38 @@ describe('Protocol types', () => {
             expect(roundTripped.type).toBe(msg.type);
         }
     });
+
+    it('apply preview/confirm messages serialize correctly', () => {
+        const clientMessages: ClientMessage[] = [
+            { type: 'applyPreview', code: 'const a = 1;', lang: 'ts' },
+            { type: 'applyConfirm', previewId: 'ap-1' },
+            { type: 'applyCancel', previewId: 'ap-1' },
+        ];
+        for (const msg of clientMessages) {
+            const roundTripped = JSON.parse(JSON.stringify(msg)) as ClientMessage;
+            expect(roundTripped.type).toBe(msg.type);
+        }
+
+        const preview: ServerMessage = {
+            type: 'applyPreviewResult',
+            preview: {
+                previewId: 'ap-1',
+                targetPath: '/w/src/a.ts',
+                isNew: false,
+                diff: '-old\n+new',
+                addedLines: 1,
+                removedLines: 1,
+                code: 'new',
+            },
+        };
+        const roundTripped = JSON.parse(JSON.stringify(preview)) as ServerMessage;
+        expect(roundTripped.type).toBe('applyPreviewResult');
+        if (roundTripped.type === 'applyPreviewResult') {
+            expect(roundTripped.preview.targetPath).toBe('/w/src/a.ts');
+            expect(roundTripped.preview.isNew).toBe(false);
+        }
+
+        const result: ServerMessage = { type: 'applyResult', previewId: 'ap-1', ok: true };
+        expect(JSON.parse(JSON.stringify(result)).ok).toBe(true);
+    });
 });

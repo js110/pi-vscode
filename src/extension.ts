@@ -8,7 +8,9 @@ import { resolveDisplayLang } from './providers/lang';
 
 import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
+import { ApplyManager } from './providers/apply';
 import { getModelRuntime } from './pi/auth';
+import { setLang } from './shared/i18n';
 import type { GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
@@ -54,6 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const secrets = context.secrets;
 
         let providerRef: SidebarProvider | undefined;
+        let tabManagerRef: TabManager | undefined;
 
         // Global (all-tabs) approval memory rules, persisted in global state.
         const globalRuleStore: GlobalRuleStore = {
@@ -73,6 +76,13 @@ export async function activate(context: vscode.ExtensionContext) {
             },
         };
 
+        // Shared i18n dictionary drives host-side strings too (apply flow).
+        setLang(resolveDisplayLang());
+
+        const applyManager = new ApplyManager((tabId, filePath, content) => {
+            tabManagerRef?.recordFileSnapshot(tabId, filePath, content);
+        });
+
         const hooks: TabManagerHooks = {
             post: (msg) => providerRef?.post(msg),
             setContext: (key, value) => { void vscode.commands.executeCommand('setContext', key, value); },
@@ -90,6 +100,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 ).then((answer): boolean => answer === 'Yes'),
             openSettings: () => void vscode.commands.executeCommand('pi-agent.openSettings'),
             getCwd: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+            applyPreview: (code, lang, tabId) => applyManager.buildPreview(code, lang, tabId),
+            applyConfirm: (previewId) => applyManager.confirm(previewId),
+            applyCancel: (previewId) => applyManager.cancel(previewId),
         };
 
         const factory: TabFactory = {
@@ -103,6 +116,7 @@ export async function activate(context: vscode.ExtensionContext) {
         };
 
         const tabManager = new TabManager(factory, hooks, globalRuleStore);
+        tabManagerRef = tabManager;
         await tabManager.initialize();
 
         const diffContentProvider = new DiffContentProvider();
@@ -171,6 +185,7 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (e.affectsConfiguration('pi-agent.displayLanguage')) {
                     const lang = resolveDisplayLang();
+                    setLang(lang);
                     sidebarProvider.post({ type: 'langChanged', lang });
                     SettingsPanel.notifyLanguage(lang);
                 }

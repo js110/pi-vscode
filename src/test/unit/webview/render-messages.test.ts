@@ -31,7 +31,31 @@ describe('renderMarkdown', () => {
         const html = renderMarkdown('```ts\nconst x = 1;\n```');
         expect(html).toContain('copy-btn');
         expect(html).toContain('code-lang');
-        expect(html).toContain('const x = 1;');
+        expect(html).toContain('<span class="hljs-keyword">const</span>');
+        expect(html).toContain('<span class="hljs-number">1</span>');
+    });
+
+    it('adds an apply button for known languages and omits it for plain text', () => {
+        const ts = renderMarkdown('```ts\nconst x = 1;\n```');
+        expect(ts).toContain('apply-btn');
+        expect(ts).toContain('data-apply-lang="ts"');
+        const plain = renderMarkdown('```\njust text\n```');
+        expect(plain).not.toContain('apply-btn');
+        expect(plain).toContain('just text');
+    });
+
+    it('escapes code that highlight.js does not know how to tokenize', () => {
+        const html = renderMarkdown('```ts\n<script>&amp;\n```');
+        expect(html).toContain('&lt;script&gt;');
+    });
+
+    it('collapses long code blocks with a toggle', () => {
+        const code = Array.from({ length: 25 }, (_, i) => `line${i}`).join('\n');
+        const html = renderMarkdown('```js\n' + code + '\n```');
+        expect(html).toContain('code-block-collapsed');
+        expect(html).toContain('code-block-toggle');
+        const short = renderMarkdown('```js\nconst x = 1;\n```');
+        expect(short).not.toContain('code-block-toggle');
     });
 
     it('returns empty string for empty input', () => {

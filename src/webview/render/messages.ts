@@ -5,6 +5,7 @@
 // `vscode` API, and render no side effects on the document, which makes them
 // directly unit-testable with happy-dom.
 import { marked } from 'marked';
+import hljs from 'highlight.js/lib/common';
 import type { FileChangeInfo } from '../../shared/protocol';
 import { t } from '../../shared/i18n';
 import {
@@ -24,12 +25,28 @@ import { el, escHtml } from '../dom';
 let codeBlockId = 0;
 const renderer = new marked.Renderer();
 
+const NON_APPLY_LANGS = new Set(['text', 'plaintext', 'plain', 'txt', '']);
+
 renderer.code = function ({ text, lang }: { text: string; lang?: string | undefined }) {
     const id = `cb-${++codeBlockId}`;
-    const langLabel = lang ? `<span class="code-lang">${escHtml(lang)}</span>` : '';
-    return `<div class="code-block-wrapper">
-        <div class="code-block-header">${langLabel}<button class="copy-btn" data-code-id="${id}">${escHtml(t('code.copy'))}</button></div>
-        <pre class="code-block-pre" id="${id}"><code class="code-block-code">${escHtml(text)}</code></pre>
+    const normalizedLang = (lang ?? '').trim().toLowerCase();
+    let highlighted: string;
+    let langLabel = lang ?? '';
+    if (normalizedLang && hljs.getLanguage(normalizedLang)) {
+        highlighted = hljs.highlight(text, { language: normalizedLang }).value;
+    } else {
+        highlighted = escHtml(text);
+    }
+    const lineCount = text.split('\n').length;
+    const collapsible = lineCount > 20;
+    const applyable = !NON_APPLY_LANGS.has(normalizedLang);
+    const applyBtn = applyable
+        ? `<button class="apply-btn" data-apply-id="${id}" data-apply-lang="${escAttr(normalizedLang)}">${escHtml(t('code.apply'))}</button>`
+        : '';
+    return `<div class="code-block-wrapper${collapsible ? ' code-block-collapsed' : ''}">
+        <div class="code-block-header">${langLabel ? `<span class="code-lang">${escHtml(langLabel)}</span>` : ''}<span class="code-block-actions">${applyBtn}<button class="copy-btn" data-code-id="${id}">${escHtml(t('code.copy'))}</button></span></div>
+        <pre class="code-block-pre" id="${id}"><code class="code-block-code hljs">${highlighted}</code></pre>
+        ${collapsible ? `<button class="code-block-toggle" data-toggle-id="${id}">${escHtml(t('code.showMore'))}</button>` : ''}
     </div>`;
 };
 
