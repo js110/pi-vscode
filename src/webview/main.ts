@@ -4,6 +4,7 @@ import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-bloc
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { t, setLang } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
+import { parseUriList } from '../shared/drop-files';
 import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon, renderDiffLines } from '../shared/webview-text';
 import { el, escHtml } from './dom';
 import { renderMarkdown, buildWelcome, buildThinkingBlock, thinkingLabel, buildDiffCard, buildToolCard, buildModelItem, buildApprovalBadge, resetCodeBlockIds } from './render/messages';
@@ -202,6 +203,21 @@ function handleMessage(msg: ServerMessage): void {
                 if (input && getMentionFragment(input)) renderMentionMenu();
             }
             break;
+        case 'dropResolved':
+            if (msg.requestId !== dropPendingRequestId) break;
+            dropPendingRequestId = -1;
+            {
+                let invalid = 0;
+                for (const result of msg.results) {
+                    if (result.status === 'file' && result.path) {
+                        insertMentionTokenAtCursor(result.path);
+                    } else if (result.status === 'invalid') {
+                        invalid++;
+                    }
+                }
+                if (invalid > 0) showError(t('mention.dropInvalid'));
+            }
+            break;
         case 'error':
             showError(msg.message);
             break;
@@ -261,6 +277,7 @@ function applyStateSync(s: SerializedAgentState): void {
         state.pendingImages = [];
         state.mentions = [];
         hideMentionMenu();
+        dropPendingRequestId = -1;
     }
 
     if (tabSwitched || !skeletonBuilt) {
@@ -2122,16 +2139,34 @@ function bindStableEvents(): void {
     });
 
     const inputContainer = document.querySelector('.input-container');
+    let dragDepth = 0;
+    inputContainer?.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragDepth++;
+        inputContainer.classList.add('drag-over');
+    });
     inputContainer?.addEventListener('dragover', (e) => {
         e.preventDefault();
     });
+    inputContainer?.addEventListener('dragleave', () => {
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) inputContainer.classList.remove('drag-over');
+    });
     inputContainer?.addEventListener('drop', (e) => {
         e.preventDefault();
-        const files = Array.from((e as DragEvent).dataTransfer?.files ?? []).filter((f) =>
-            f.type.startsWith('image/'),
-        );
+        dragDepth = 0;
+        inputContainer.classList.remove('drag-over');
+        const dt = (e as DragEvent).dataTransfer;
+        const files = Array.from(dt?.files ?? []).filter((f) => f.type.startsWith('image/'));
         if (files.length > 0) {
             addImageFiles(files);
+        }
+        // VS Code explorer drags carry paths in text/uri-list (no File
+        // objects); they ride the same injection path as @-mention.
+        const uris = parseUriList(dt?.getData('text/uri-list') ?? '');
+        if (uris.length > 0) {
+            dropPendingRequestId = ++mentionQuerySeq;
+            vscode.postMessage({ type: 'dropFiles', uris, requestId: dropPendingRequestId });
         }
     });
 }
@@ -2600,6 +2635,7 @@ let mentionSymbols: MentionSymbolItem[] = [];
 let mentionAnchor = -1;
 let mentionQuerySeq = 0;
 let mentionPendingRequestId = -1;
+let dropPendingRequestId = -1;
 let mentionDebounce: ReturnType<typeof setTimeout> | undefined;
 
 /** The active `@query` fragment ending at the caret, or null. */
@@ -2709,6 +2745,21 @@ function selectMentionItem(index: number): void {
     if (!state.mentions.includes(item.token)) state.mentions.push(item.token);
     cancelMentionQuery();
     hideMentionMenu();
+    input.focus();
+}
+
+/** Insert a dropped file's reference at the caret (AC-FN-21): the token
+ *  joins state.mentions so the host expands it exactly like @-mention. */
+function insertMentionTokenAtCursor(token: string): void {
+    const input = document.getElementById('input') as HTMLTextAreaElement | null;
+    if (!input) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    const replacement = `@${token} `;
+    input.value = input.value.slice(0, start) + replacement + input.value.slice(end);
+    const newPos = start + replacement.length;
+    input.setSelectionRange(newPos, newPos);
+    if (!state.mentions.includes(token)) state.mentions.push(token);
     input.focus();
 }
 

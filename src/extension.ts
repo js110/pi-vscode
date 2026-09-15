@@ -21,7 +21,8 @@ import {
 import type { GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
-import type { ApprovalRuleInfo, MentionSymbolItem, ServerMessage } from './shared/protocol';
+import type { ApprovalRuleInfo, DropResolveResult, MentionSymbolItem, ServerMessage } from './shared/protocol';
+import { isImagePath, relativeToWorkspace, uriToPath } from './shared/drop-files';
 
 let bridgeContext: BridgeContext | undefined;
 
@@ -110,6 +111,29 @@ async function readMentionFile(fsPath: string): Promise<string | null> {
     } catch {
         return null;
     }
+}
+
+// ── Drag-and-drop file references (AC-FN-21) ──
+
+async function resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]> {
+    const roots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    return Promise.all(
+        uris.map(async (uri): Promise<DropResolveResult> => {
+            const fsPath = uriToPath(uri);
+            if (!fsPath) return { status: 'invalid' };
+            const rel = relativeToWorkspace(fsPath, roots);
+            if (!rel) return { status: 'invalid' };
+            // Images ride the image-attach path, not the reference path.
+            if (isImagePath(rel)) return { status: 'image' };
+            try {
+                const stat = await vscode.workspace.fs.stat(vscode.Uri.file(fsPath));
+                if (stat.type !== vscode.FileType.File) return { status: 'invalid' };
+            } catch {
+                return { status: 'invalid' };
+            }
+            return { status: 'file', path: rel };
+        }),
+    );
 }
 
 /**
@@ -206,6 +230,7 @@ export async function activate(context: vscode.ExtensionContext) {
             searchSymbols: (query) => searchWorkspaceSymbols(query),
             resolveMentionPath: (path) => resolveMentionPath(path),
             readTextFile: (fsPath) => readMentionFile(fsPath),
+            resolveDroppedFiles: (uris) => resolveDroppedFiles(uris),
         };
 
         const factory: TabFactory = {

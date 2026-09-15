@@ -174,6 +174,7 @@ const EN = {
     'mention.noResults': 'No matching files or symbols',
     'mention.groupFiles': 'Files',
     'mention.groupSymbols': 'Symbols',
+    'mention.dropInvalid': 'Some dropped files cannot be referenced (must be files inside the workspace).',
 
     // Diff card
     'diff.new': 'NEW',
@@ -385,6 +386,7 @@ const ZH: Record<TextKey, string> = {
     'mention.noResults': '没有匹配的文件或符号',
     'mention.groupFiles': '文件',
     'mention.groupSymbols': '符号',
+    'mention.dropInvalid': '部分拖入的文件无法引用（需为工作区内的文件）。',
 
     'diff.new': '新建',
 

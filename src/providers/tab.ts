@@ -5,6 +5,7 @@ import type {
     ApprovalScope,
     ApplyPreviewInfo,
     ClientMessage,
+    DropResolveResult,
     MentionSymbolItem,
     ServerMessage,
     SerializedAgentState,
@@ -55,6 +56,7 @@ export interface TabManagerHooks {
     searchSymbols(query: string): Promise<MentionSymbolItem[]>;
     resolveMentionPath(path: string): Promise<string | null>;
     readTextFile(fsPath: string): Promise<string | null>;
+    resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>;
 }
 
 interface PendingApproval {
@@ -700,6 +702,11 @@ export class TabManager {
                     this._hooks.searchSymbols(msg.query),
                 ]);
                 this._hooks.post({ type: 'mentionResults', requestId: msg.requestId, files, symbols });
+                break;
+            }
+            case 'dropFiles': {
+                const results = await this._hooks.resolveDroppedFiles(msg.uris);
+                this._hooks.post({ type: 'dropResolved', requestId: msg.requestId, results });
                 break;
             }
             case 'getState':

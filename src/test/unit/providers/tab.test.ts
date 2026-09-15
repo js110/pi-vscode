@@ -4,7 +4,7 @@ import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
 import { refreshPiConfig } from '../../../pi/config';
-import type { PiConfigSnapshot } from '../../../shared/protocol';
+import type { DropResolveResult, PiConfigSnapshot } from '../../../shared/protocol';
 
 vi.mock('../../../pi/config', () => ({
     ensureConfigDiscovered: vi.fn(async () => CONFIG_SNAPSHOT),
@@ -97,6 +97,7 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         searchSymbols: vi.fn(async () => []),
         resolveMentionPath: vi.fn(async () => null),
         readTextFile: vi.fn(async () => null),
+        resolveDroppedFiles: vi.fn(async () => []),
         ...overrides,
     };
 }
@@ -592,6 +593,40 @@ describe('TabManager', () => {
             requestId: 7,
             files: ['src/a.ts'],
             symbols: [{ name: 'Tab', kind: 'Class', path: 'src/tab.ts', line: 8 }],
+        });
+        expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('answers dropFiles through the resolution hook without a state change', async () => {
+        const hooks = makeHooks({
+            resolveDroppedFiles: vi.fn(async (): Promise<DropResolveResult[]> => [
+                { status: 'file', path: 'src/a.ts' },
+                { status: 'image' },
+                { status: 'invalid' },
+            ]),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => makeTab()) }, hooks);
+        await manager.initialize();
+
+        const listener = vi.fn();
+        manager.onStateChange(listener);
+        await manager.dispatch({
+            type: 'dropFiles',
+            uris: ['file:///w/src/a.ts', 'file:///w/img.png', 'file:///w/outside.txt'],
+            requestId: 9,
+        });
+
+        expect(hooks.resolveDroppedFiles).toHaveBeenCalledWith([
+            'file:///w/src/a.ts', 'file:///w/img.png', 'file:///w/outside.txt',
+        ]);
+        expect(hooks.post).toHaveBeenCalledWith({
+            type: 'dropResolved',
+            requestId: 9,
+            results: [
+                { status: 'file', path: 'src/a.ts' },
+                { status: 'image' },
+                { status: 'invalid' },
+            ],
         });
         expect(listener).not.toHaveBeenCalled();
     });

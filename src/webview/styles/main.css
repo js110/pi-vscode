@@ -1038,6 +1038,12 @@ body {
     transition: opacity 0.3s ease;
 }
 
+/* Drop target highlight while dragging files over the composer */
+.input-container.drag-over {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 /* ── Input ── */
 .input-area {
     padding: 11px 14px 3px;

@@ -176,7 +176,8 @@ export type ClientMessage =
     | { type: 'applyCancel'; previewId: string }
     | { type: 'compactionAccept' }
     | { type: 'compactionDismiss' }
-    | { type: 'mentionQuery'; query: string; requestId: number };
+    | { type: 'mentionQuery'; query: string; requestId: number }
+    | { type: 'dropFiles'; uris: string[]; requestId: number };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =
@@ -195,6 +196,13 @@ export interface MentionSymbolItem {
     kind: string;
     path: string;
     line: number;
+}
+
+/** Per-URI outcome of a drag-and-drop file resolution. */
+export interface DropResolveResult {
+    status: 'file' | 'image' | 'invalid';
+    /** Workspace-relative posix path when status === 'file'. */
+    path?: string;
 }
 
 export type ServerMessage =
@@ -217,6 +225,7 @@ export type ServerMessage =
     | { type: 'applyResult'; previewId: string; ok: boolean; message?: string }
     | { type: 'compactionResult'; ok: boolean }
     | { type: 'mentionResults'; requestId: number; files: string[]; symbols: MentionSymbolItem[] }
+    | { type: 'dropResolved'; requestId: number; results: DropResolveResult[] }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages
