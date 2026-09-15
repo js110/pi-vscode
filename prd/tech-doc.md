@@ -18,7 +18,7 @@
 | # | 组件 | 位置 | 职责与关键规则 |
 |---|------|------|---------------|
 | C1 | 配置发现 ConfigDiscovery | `src/pi/config.ts`（新） | 激活时只读发现：auth.json 凭证、models.json 模型（SDK ModelRegistry + 自定义合并语义）、loadSkills 技能、会话目录列表；状态机（未检测/已发现/错误态/刷新中/部分可用）按 PRD 6.3；解析失败保留旧列表 + 文件级错误；拉取式热刷新（打开选择器/手动），无后台监听；**永不写 `~/.pi/agent`** |
-| C2 | 审批记忆 ApprovalMemory | `src/providers/approval-memory.ts`（新） | 规则 {tool, scope: session\|global, createdAt}；session 档挂 TabManager 随 Tab 清除，global 档存 globalState；危险工具（bash/powerShell 等 shell 执行类）永不命中、禁止记忆；命中自动放行 → 产生痕迹条目（来源=记忆）；未命中走既有审批卡 round-trip，卡上新增"允许并记住（本会话/全局）"；设置页列表/逐条撤销（即时生效）/一键清空 |
+| C2 | 审批记忆 ApprovalMemory | `src/pi/approval-memory.ts（新）+ src/shared/tool-safety.ts（危险工具判定单源）`（新） | 规则 {tool, scope: session\|global, createdAt}；session 档挂 TabManager 随 Tab 清除，global 档存 globalState；危险工具（bash/powerShell 等 shell 执行类）永不命中、禁止记忆；命中自动放行 → 产生痕迹条目（来源=记忆）；未命中走既有审批卡 round-trip，卡上新增"允许并记住（本会话/全局）"；设置页列表/逐条撤销（即时生效）/一键清空 |
 | C3 | 代码块高亮 + Apply | webview render + 宿主 `providers/apply.ts`（新） | highlight.js 本地打包（禁 CDN）；Apply → 宿主计算目标文件候选 + Myers diff 预览回传 → 确认经 WorkspaceEdit 写入 → 纳入 CheckpointManager 一步撤销；预览与确认间文件 mtime 变化 → 冲突阻止（11.2）；防抖 5s |
 | C4 | 流式增量渲染 | `webview/main.ts` 渲染管线改造 | 每 delta 只 patch 最后一条 assistant 消息块（不整块重绘）；marked 解析按消息节流（rAF 合帧）；代码块/表格增量重建；滚动锚定；目标 AC-OP-01（≥2000 token 无卡顿） |
 | C5 | 压缩提示流 | `src/pi/session.ts` + webview | 监听 context 用量（SDK calculateContextTokens / queue 事件）；超阈值（配置 contextUsageWarningThreshold，默认 80%）发提示条（保留清单：计划/TODO/队列未发送消息）；确认 → SDK 原生 compact；失败保持原上下文提示（11.4）；"暂不"同区间不重复、90% 重新提示；保留手动 /compact |
