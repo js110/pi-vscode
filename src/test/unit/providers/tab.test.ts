@@ -3,6 +3,24 @@ import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from '../
 import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
+import { refreshPiConfig } from '../../../pi/config';
+import type { PiConfigSnapshot } from '../../../shared/protocol';
+
+vi.mock('../../../pi/config', () => ({
+    ensureConfigDiscovered: vi.fn(async () => CONFIG_SNAPSHOT),
+    refreshPiConfig: vi.fn(async () => CONFIG_SNAPSHOT),
+}));
+
+const CONFIG_SNAPSHOT: PiConfigSnapshot = {
+    status: 'ok',
+    agentDir: '/home/u/.pi/agent',
+    agentDirExists: true,
+    providers: ['deepseek'],
+    models: [{ provider: 'deepseek', id: 'deepseek-chat' }],
+    skills: [],
+    errors: [],
+    discoveredAt: 1_000,
+};
 
 function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
     const events = new EventRouter();
@@ -60,6 +78,7 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         showMessage: vi.fn(),
         confirmDialog: vi.fn(async () => false),
         openSettings: vi.fn(),
+        getCwd: vi.fn(() => '/work'),
         ...overrides,
     };
 }
@@ -152,5 +171,24 @@ describe('TabManager', () => {
 
         manager.dispose();
         expect(manager.getState().tabs).toBeUndefined();
+    });
+
+    it('posts the config snapshot and refreshes it on request', async () => {
+        const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
+        const hooks = makeHooks();
+        const manager = new TabManager(factory, hooks);
+        await manager.initialize();
+
+        await manager.postConfigSnapshot();
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'configState', config: CONFIG_SNAPSHOT } as any),
+        );
+
+        vi.mocked(hooks.post).mockClear();
+        await manager.dispatch({ type: 'refreshConfig' });
+        expect(refreshPiConfig).toHaveBeenCalledWith('/work');
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'configState', config: CONFIG_SNAPSHOT } as any),
+        );
     });
 });

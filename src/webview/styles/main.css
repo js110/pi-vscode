@@ -298,6 +298,48 @@ body {
 .model-list::-webkit-scrollbar { width: 4px; }
 .model-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
 
+/* ── Pi config discovery banner (stats / issues) ── */
+
+.config-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface);
+}
+.config-stats {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-micro);
+    color: var(--faint);
+    font-family: var(--font-mono);
+}
+.config-issue {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-micro);
+    color: var(--error-fg);
+    font-family: var(--font-mono);
+}
+.config-refresh {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    font-size: var(--fs-micro);
+    color: var(--fg);
+    background: var(--surface-strong);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.config-refresh:hover { background: var(--surface-hover); }
+
 .model-item {
     display: flex;
     align-items: center;

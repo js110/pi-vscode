@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot } from '../shared/protocol';
 import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon } from '../shared/webview-text';
 import { el, escHtml } from './dom';
 import { renderMarkdown, buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCard, buildModelItem, resetCodeBlockIds } from './render/messages';
@@ -39,6 +39,7 @@ const state: {
     skills: SkillInfo[];
     commands: CommandInfo[];
     queuedMessages: string[];
+    config?: PiConfigSnapshot;
 } = {
     messages: [],
     isStreaming: false,
@@ -114,6 +115,12 @@ function handleMessage(msg: ServerMessage): void {
         case 'skills':
             state.skills = msg.skills;
             state.commands = msg.commands ?? [];
+            break;
+        case 'configState':
+            state.config = msg.config;
+            if (document.getElementById('model-picker')) {
+                showModelPicker();
+            }
             break;
         case 'error':
             showError(msg.message);
@@ -1361,6 +1368,40 @@ function addToRecentModels(provider: string, id: string, name?: string): void {
     }
 }
 
+function buildConfigBanner(): HTMLElement | null {
+    const config = state.config;
+    if (!config) return null;
+
+    const banner = el('div', 'config-banner');
+    if (config.status === 'not-found') {
+        const msg = el('div', 'config-issue');
+        msg.textContent = `Pi config not found at ${config.agentDir} — install Pi or check the agent directory.`;
+        banner.appendChild(msg);
+    } else {
+        const stats = el('div', 'config-stats');
+        stats.textContent = `Read from Pi: ${config.providers.length} provider${config.providers.length === 1 ? '' : 's'}` +
+            ` · ${config.models.length} model${config.models.length === 1 ? '' : 's'}` +
+            ` · ${config.skills.length} skill${config.skills.length === 1 ? '' : 's'}`;
+        banner.appendChild(stats);
+        if (config.status === 'partial' || config.status === 'error') {
+            const issue = el('div', 'config-issue');
+            issue.textContent = config.errors[0]
+                ? `Config issue (${config.errors[0].source}): ${config.errors[0].message}`
+                : 'Some Pi config sources could not be read.';
+            banner.appendChild(issue);
+        }
+    }
+
+    const refresh = el('button', 'config-refresh');
+    refresh.textContent = 'Re-check';
+    refresh.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'refreshConfig' });
+    });
+    banner.appendChild(refresh);
+    return banner;
+}
+
 function showModelPicker(): void {
     const existing = document.getElementById('model-picker');
     if (existing) existing.remove();
@@ -1376,6 +1417,9 @@ function showModelPicker(): void {
     searchInput.placeholder = 'Search models...';
     searchInput.type = 'text';
     picker.appendChild(searchInput);
+
+    const configBanner = buildConfigBanner();
+    if (configBanner) picker.appendChild(configBanner);
 
     const list = el('div', 'model-list');
 

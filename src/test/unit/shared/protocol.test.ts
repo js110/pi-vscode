@@ -12,6 +12,7 @@ describe('Protocol types', () => {
             { type: 'getModels' },
             { type: 'getSessions' },
             { type: 'getState' },
+            { type: 'refreshConfig' },
         ];
 
         for (const msg of messages) {
@@ -36,6 +37,19 @@ describe('Protocol types', () => {
             { type: 'stateSync', state },
             { type: 'error', message: 'something went wrong' },
             { type: 'models', models: [{ provider: 'ollama', id: 'test', name: 'Test' }] },
+            {
+                type: 'configState',
+                config: {
+                    status: 'ok',
+                    agentDir: '/home/u/.pi/agent',
+                    agentDirExists: true,
+                    providers: ['ollama'],
+                    models: [{ provider: 'ollama', id: 'test' }],
+                    skills: [],
+                    errors: [],
+                    discoveredAt: 0,
+                },
+            },
         ];
 
         for (const msg of messages) {

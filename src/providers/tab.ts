@@ -1,4 +1,5 @@
 import type { PiSessionManager } from '../pi/session';
+import { ensureConfigDiscovered, refreshPiConfig } from '../pi/config';
 import type {
     ClientMessage,
     ServerMessage,
@@ -27,6 +28,7 @@ export interface TabManagerHooks {
     showMessage(message: string): void;
     confirmDialog(message: string): Promise<boolean>;
     openSettings(): void;
+    getCwd(): string;
 }
 
 interface PendingApproval {
@@ -97,6 +99,12 @@ export class TabManager {
             const idx = this._stateListeners.indexOf(listener);
             if (idx >= 0) this._stateListeners.splice(idx, 1);
         };
+    }
+
+    /** Push the cached config discovery snapshot (discovering on first call). */
+    async postConfigSnapshot(): Promise<void> {
+        const config = await ensureConfigDiscovered(this._hooks.getCwd());
+        this._hooks.post({ type: 'configState', config });
     }
 
     getState(): SerializedAgentState {
@@ -462,6 +470,11 @@ export class TabManager {
                 const sessions = await tab.session.getSessions();
                 const currentId = tab.session.getSessionId();
                 this._hooks.post({ type: 'sessions', sessions, currentSessionId: currentId });
+                break;
+            }
+            case 'refreshConfig': {
+                const config = await refreshPiConfig(this._hooks.getCwd());
+                this._hooks.post({ type: 'configState', config });
                 break;
             }
             case 'getState':

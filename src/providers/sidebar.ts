@@ -40,6 +40,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         this.post({ type: 'ready' });
         this.post({ type: 'stateSync', state: this._tabManager.getState() });
+        void this._tabManager.postConfigSnapshot();
     }
 
     post(message: ServerMessage): void {

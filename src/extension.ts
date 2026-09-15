@@ -67,6 +67,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     vscode.window.showWarningMessage(message, { modal: true }, 'Yes'),
                 ).then((answer): boolean => answer === 'Yes'),
             openSettings: () => void vscode.commands.executeCommand('pi-agent.openSettings'),
+            getCwd: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
         };
 
         const factory: TabFactory = {

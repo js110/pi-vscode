@@ -94,6 +94,27 @@ export interface SessionInfo {
     lastModified?: number;
 }
 
+export type ConfigStatus = 'not-found' | 'ok' | 'partial' | 'error';
+
+export type ConfigSource = 'agentDir' | 'models' | 'skills';
+
+export interface ConfigIssue {
+    source: ConfigSource;
+    message: string;
+}
+
+/** Read-only discovery of the user's Pi configuration (~/.pi/agent). */
+export interface PiConfigSnapshot {
+    status: ConfigStatus;
+    agentDir: string;
+    agentDirExists: boolean;
+    providers: string[];
+    models: ModelInfo[];
+    skills: SkillInfo[];
+    errors: ConfigIssue[];
+    discoveredAt: number;
+}
+
 // Webview -> Extension messages
 export type ClientMessage =
     | { type: 'prompt'; text: string; images?: string[] }
@@ -124,7 +145,8 @@ export type ClientMessage =
     | { type: 'queueMessage'; text: string }
     | { type: 'editQueuedMessage'; index: number; text: string }
     | { type: 'removeQueuedMessage'; index: number }
-    | { type: 'cancelQueue' };
+    | { type: 'cancelQueue' }
+    | { type: 'refreshConfig' };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =
@@ -148,6 +170,7 @@ export type ServerMessage =
     | { type: 'toolCallPending'; pending: ToolCallPendingInfo }
     | { type: 'toolCallResolved'; toolCallId: string }
     | { type: 'skills'; skills: SkillInfo[]; commands?: CommandInfo[] }
+    | { type: 'configState'; config: PiConfigSnapshot }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages
