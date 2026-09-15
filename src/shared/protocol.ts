@@ -83,6 +83,7 @@ export interface SerializedAgentState {
     thinkingStartTime?: number;
     streamingThinkingDuration?: number;
     queuedMessages?: string[];
+    compactionPrompt?: number | null;
 }
 
 export interface ModelInfo {
@@ -170,7 +171,9 @@ export type ClientMessage =
     | { type: 'refreshConfig' }
     | { type: 'applyPreview'; code: string; lang: string }
     | { type: 'applyConfirm'; previewId: string }
-    | { type: 'applyCancel'; previewId: string };
+    | { type: 'applyCancel'; previewId: string }
+    | { type: 'compactionAccept' }
+    | { type: 'compactionDismiss' };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =
@@ -202,6 +205,7 @@ export type ServerMessage =
     | { type: 'langChanged'; lang: Lang }
     | { type: 'applyPreviewResult'; preview: ApplyPreviewInfo }
     | { type: 'applyResult'; previewId: string; ok: boolean; message?: string }
+    | { type: 'compactionResult'; ok: boolean }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages

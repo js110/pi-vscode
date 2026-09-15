@@ -1474,6 +1474,58 @@ body {
     text-align: center;
 }
 
+/* ───────────────────────── Compaction banner ───────────────────────── */
+
+.compaction-banner {
+    margin: 0 12px 6px;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--warning-fg) 45%, transparent);
+    background: color-mix(in srgb, var(--warning-fg) 8%, transparent);
+    font-size: var(--fs-sm);
+}
+
+.compaction-banner-title {
+    display: block;
+    font-weight: 600;
+    color: var(--warning-fg);
+}
+
+.compaction-banner-hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+}
+
+.compaction-banner-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.compaction-btn {
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--fg);
+    font-size: var(--fs-sm);
+    cursor: pointer;
+}
+
+.compaction-btn.compaction-accept {
+    border-color: color-mix(in srgb, var(--warning-fg) 55%, transparent);
+    color: var(--warning-fg);
+}
+
+.compaction-btn.compaction-accept:hover {
+    background: color-mix(in srgb, var(--warning-fg) 12%, transparent);
+}
+
+.compaction-btn.compaction-dismiss:hover {
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
 .diff-line {
     padding: 0 12px;
     white-space: pre;

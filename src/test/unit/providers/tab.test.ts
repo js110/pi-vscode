@@ -90,6 +90,7 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         })),
         applyConfirm: vi.fn(async () => ({ ok: true })),
         applyCancel: vi.fn(),
+        getCompactionThreshold: vi.fn(() => 80),
         ...overrides,
     };
 }
@@ -201,6 +202,205 @@ describe('TabManager', () => {
         expect(hooks.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'configState', config: CONFIG_SNAPSHOT } as any),
         );
+    });
+
+    it('prompts compaction once per stage as usage crosses the threshold', async () => {
+        let percent: number = 82;
+        const tab = makeTab({
+            getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(82);
+
+        // Still inside the threshold band: the same prompt persists, no escalation.
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(82);
+
+        // Crossing 90% escalates to the final prompt.
+        percent = 92;
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(92);
+    });
+
+    it('dismisses the compaction banner until the 90% escalation', async () => {
+        let percent: number = 85;
+        const tab = makeTab({
+            getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(85);
+
+        await manager.dispatch({ type: 'compactionDismiss' });
+        expect(manager.getState().compactionPrompt).toBeNull();
+
+        // Dismissal at the threshold stage does not resurrect; 90% does.
+        percent = 86;
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBeNull();
+
+        percent = 93;
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(93);
+    });
+
+    it('runs the native compact on accept and reports success', async () => {
+        let percent = 85;
+        const tab = makeTab({
+            getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
+            compact: vi.fn(async () => {
+                percent = 5;
+            }),
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        vi.mocked(hooks.post).mockClear();
+
+        await manager.dispatch({ type: 'compactionAccept' });
+        expect(tab.session.compact).toHaveBeenCalled();
+        expect(hooks.post).toHaveBeenCalledWith({ type: 'compactionResult', ok: true });
+        expect(manager.getState().compactionPrompt).toBeNull();
+    });
+
+    it('reports compaction failure without throwing and keeps the re-prompt stage', async () => {
+        let percent = 85;
+        const tab = makeTab({
+            getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
+            compact: vi.fn(async () => {
+                throw new Error('boom');
+            }),
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        vi.mocked(hooks.post).mockClear();
+
+        await expect(manager.dispatch({ type: 'compactionAccept' })).resolves.toBeUndefined();
+        expect(hooks.post).toHaveBeenCalledWith({ type: 'compactionResult', ok: false });
+        expect(manager.getState().compactionPrompt).toBeNull();
+
+        // The failed threshold compact still escalates at 90%.
+        percent = 91;
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(91);
+    });
+
+    it('does not re-prompt right after an accepted compact while usage stays high', async () => {
+        let percent = 85;
+        const tab = makeTab({
+            getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(85);
+
+        // compact() succeeds but usage is recomputed lazily and stays high:
+        // the banner must not instantly re-appear after an explicit accept.
+        await manager.dispatch({ type: 'compactionAccept' });
+        expect(manager.getState().compactionPrompt).toBeNull();
+
+        // Once usage falls under the threshold the stage re-arms, so a later
+        // climb prompts fresh.
+        percent = 40;
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        percent = 84;
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(84);
+    });
+
+    it('ignores a second accept while a compact is in flight', async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const tab = makeTab({
+            getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent: 85 }) as any,
+            compact: vi.fn(async () => {
+                await gate;
+            }),
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        const first = manager.dispatch({ type: 'compactionAccept' });
+        const second = manager.dispatch({ type: 'compactionAccept' });
+        release();
+        await Promise.all([first, second]);
+        expect(tab.session.compact).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the compaction prompt per tab across switches', async () => {
+        let call = 0;
+        const factory: TabFactory = {
+            create: vi.fn(async () =>
+                makeTab(
+                    call++ === 0
+                        ? { getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent: 88 }) as any }
+                        : {},
+                ),
+            ),
+        };
+        const manager = new TabManager(factory, makeHooks());
+        await manager.initialize();
+
+        const highId = manager.getState().activeTabId!;
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(88);
+
+        // Creating a tab activates it, so the low-usage tab takes over.
+        await manager.dispatch({ type: 'createTab' });
+        const lowId = manager.getState().activeTabId!;
+        expect(lowId).not.toBe(highId);
+        expect(manager.getState().compactionPrompt).toBeNull();
+
+        // The high tab's prompt stays parked per tab and returns on switch.
+        await manager.dispatch({ type: 'switchTab', tabId: highId });
+        expect(manager.getState().compactionPrompt).toBe(88);
+
+        await manager.dispatch({ type: 'switchTab', tabId: lowId });
+        expect(manager.getState().compactionPrompt).toBeNull();
+    });
+
+    it('resets the compaction stage on a new session', async () => {
+        let percent = 85;
+        const tab = makeTab({
+            getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
+            newSession: vi.fn(async () => {
+                percent = 5;
+            }),
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(85);
+
+        // A fresh session drops the usage, so no prompt is pending.
+        await manager.dispatch({ type: 'newSession' });
+        expect(manager.getState().compactionPrompt).toBeNull();
+
+        // When the context fills up again the prompt fires like new.
+        percent = 85;
+        await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
+        expect(manager.getState().compactionPrompt).toBe(85);
     });
 
     it('auto-approves remembered tools and posts a memory trace', async () => {

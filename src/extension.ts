@@ -103,6 +103,14 @@ export async function activate(context: vscode.ExtensionContext) {
             applyPreview: (code, lang, tabId) => applyManager.buildPreview(code, lang, tabId),
             applyConfirm: (previewId) => applyManager.confirm(previewId),
             applyCancel: (previewId) => applyManager.cancel(previewId),
+            getCompactionThreshold: () => {
+                const raw = Number(
+                    vscode.workspace
+                        .getConfiguration('pi-agent')
+                        .get<number>('contextUsageWarningThreshold', 80),
+                );
+                return Number.isFinite(raw) ? Math.max(1, Math.min(100, raw)) : 80;
+            },
         };
 
         const factory: TabFactory = {

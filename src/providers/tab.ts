@@ -11,6 +11,7 @@ import type {
 } from '../shared/protocol';
 import { DiffManager } from './diff';
 import { CheckpointManager } from './checkpoint';
+import { decideCompactionPrompt, type CompactionStage } from '../shared/compaction';
 
 export interface Tab {
     id: string;
@@ -35,6 +36,7 @@ export interface TabManagerHooks {
     applyPreview(code: string, lang: string, tabId: string): Promise<ApplyPreviewInfo | null>;
     applyConfirm(previewId: string): Promise<{ ok: boolean; message?: string }>;
     applyCancel(previewId: string): void;
+    getCompactionThreshold(): number;
 }
 
 interface PendingApproval {
@@ -87,6 +89,9 @@ export class TabManager {
         approvalMemory: ApprovalMemory;
         queuedMessages: string[];
         isStreaming: boolean;
+        compactionStage: CompactionStage;
+        compactionPrompt: number | null;
+        compactionInFlight: boolean;
     }>();
     private _activeTabId = '';
     private _tabSubscriptions = new Map<string, (() => void)[]>();
@@ -158,6 +163,7 @@ export class TabManager {
         if (tab.queuedMessages.length > 0) {
             state.queuedMessages = tab.queuedMessages;
         }
+        state.compactionPrompt = tab.compactionPrompt;
 
         let assistantOrdinal = 0;
         for (let i = 0; i < state.messages.length; i++) {
@@ -213,6 +219,9 @@ export class TabManager {
             approvalMemory: new ApprovalMemory(this._globalRules),
             queuedMessages: [],
             isStreaming: false,
+            compactionStage: 'none' as const,
+            compactionPrompt: null,
+            compactionInFlight: false,
         };
     }
 
@@ -251,7 +260,32 @@ export class TabManager {
     }
 
     private _emitStateChange(): void {
+        this._checkCompaction();
         for (const listener of this._stateListeners) listener();
+    }
+
+    private _checkCompaction(): void {
+        const tab = this._tabs.get(this._activeTabId);
+        if (!tab) return;
+        const percent = tab.session.getContextUsage()?.percent;
+        if (percent == null || !Number.isFinite(percent)) return;
+        const threshold = this._hooks.getCompactionThreshold();
+        if (percent < threshold) {
+            // Usage fell back under the threshold (compact, rollback): close
+            // the banner and re-arm so the next climb prompts fresh.
+            if (tab.compactionPrompt !== null || tab.compactionStage !== 'none') {
+                tab.compactionPrompt = null;
+                tab.compactionStage = 'none';
+            }
+            return;
+        }
+        const next = decideCompactionPrompt(percent, threshold, tab.compactionStage);
+        if (next) {
+            tab.compactionStage = next;
+            tab.compactionPrompt = percent;
+        } else if (tab.compactionPrompt !== null) {
+            tab.compactionPrompt = percent;
+        }
     }
 
     private _handleTabEvent(tab: any, event: any): void {
@@ -453,6 +487,8 @@ export class TabManager {
                 tab.messageMeta.clear();
                 tab.suspendedMessages = [];
                 tab.queuedMessages = [];
+                tab.compactionStage = 'none';
+                tab.compactionPrompt = null;
                 tab.name = 'New Agent';
                 this._emitStateChange();
                 break;
@@ -462,6 +498,8 @@ export class TabManager {
                 tab.checkpointManager.clearAll();
                 tab.suspendedMessages = [];
                 tab.queuedMessages = [];
+                tab.compactionStage = 'none';
+                tab.compactionPrompt = null;
                 this._resetStreaming(tab);
                 tab.messageMeta.clear();
                 this._updateTabName(tab);
@@ -531,6 +569,30 @@ export class TabManager {
             }
             case 'applyCancel':
                 this._hooks.applyCancel(msg.previewId);
+                break;
+            case 'compactionAccept': {
+                if (tab.compactionInFlight) break;
+                tab.compactionInFlight = true;
+                try {
+                    await tab.session.compact();
+                    tab.compactionInFlight = false;
+                    tab.compactionPrompt = null;
+                    // stateSync first: the banner must clear before the result
+                    // lands, or the live buttons linger for one tick.
+                    this._emitStateChange();
+                    this._hooks.post({ type: 'compactionResult', ok: true });
+                } catch {
+                    // Keep the stage: a failed compact still gets the 90% re-prompt.
+                    tab.compactionInFlight = false;
+                    tab.compactionPrompt = null;
+                    this._emitStateChange();
+                    this._hooks.post({ type: 'compactionResult', ok: false });
+                }
+                break;
+            }
+            case 'compactionDismiss':
+                tab.compactionPrompt = null;
+                this._emitStateChange();
                 break;
             case 'getState':
                 this._hooks.post({ type: 'stateSync', state: this.getState() });

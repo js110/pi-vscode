@@ -46,6 +46,8 @@ const state: {
     approvalTraces: Map<string, ApprovalScope>;
     pendingApprovals: ToolCallPendingInfo[];
     applyPreviews: ApplyPreviewInfo[];
+    compactionPrompt: number | null;
+    compactionBusy: boolean;
 } = {
     messages: [],
     isStreaming: false,
@@ -67,6 +69,8 @@ const state: {
     approvalTraces: new Map<string, ApprovalScope>(),
     pendingApprovals: [],
     applyPreviews: [],
+    compactionPrompt: null,
+    compactionBusy: false,
 };
 
 let sessionSearchQuery = '';
@@ -174,6 +178,13 @@ function handleMessage(msg: ServerMessage): void {
             }
             break;
         }
+        case 'compactionResult':
+            state.compactionBusy = false;
+            if (!msg.ok) {
+                showError(t('compact.failed'));
+            }
+            updateCompactionBanner();
+            break;
         case 'error':
             showError(msg.message);
             break;
@@ -214,6 +225,7 @@ function applyStateSync(s: SerializedAgentState): void {
     state.thinkingStartTime = s.thinkingStartTime ?? 0;
     state.streamingThinkingDuration = s.streamingThinkingDuration ?? 0;
     state.queuedMessages = s.queuedMessages ?? [];
+    state.compactionPrompt = s.compactionPrompt ?? null;
     const tabSwitched = prevTab !== state.activeTabId;
 
     // Transient cards live in the per-tab streaming area; they are wiped on a
@@ -221,6 +233,7 @@ function applyStateSync(s: SerializedAgentState): void {
     if (tabSwitched) {
         state.pendingApprovals = [];
         state.applyPreviews = [];
+        state.compactionBusy = false;
     }
 
     if (tabSwitched || !skeletonBuilt) {
@@ -235,6 +248,7 @@ function applyStateSync(s: SerializedAgentState): void {
         updateInputArea();
         updateChangedFiles();
         updateQueuedMessageBanner();
+        updateCompactionBanner();
         if (state.isStreaming) {
             ensurePreparingPlaceholder();
         }
@@ -395,8 +409,12 @@ function render(): void {
     scrollWrap.appendChild(scrollBtn);
     app.appendChild(scrollWrap);
 
-    // Input container: changed-files slot + queued section + slash menu + input-area (persistent textarea) + footer
+    // Input container: changed-files slot + compaction banner + queued section + slash menu + input-area (persistent textarea) + footer
     const inputContainer = el('div', 'input-container');
+    const compactionBanner = el('div', 'compaction-banner');
+    compactionBanner.id = 'compaction-banner';
+    compactionBanner.style.display = 'none';
+    inputContainer.appendChild(compactionBanner);
     const queuedSection = document.createElement('details');
     queuedSection.className = 'queued-section';
     queuedSection.id = 'queued-section';
@@ -429,6 +447,7 @@ function render(): void {
     updateMessages();
     updateInputArea();
     updateChangedFiles();
+    updateCompactionBanner();
     scrollToBottom();
 }
 
@@ -666,6 +685,50 @@ function updateQueuedMessageBanner(): void {
     `;
 
     bindQueuedItemEvents(section);
+}
+
+function updateCompactionBanner(): void {
+    const banner = document.getElementById('compaction-banner');
+    if (!banner) return;
+    if (state.compactionPrompt == null) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
+    }
+    banner.style.display = '';
+    if (state.compactionBusy) {
+        banner.innerHTML = `
+            <span class="compaction-banner-title">${escHtml(t('compact.compacting'))}</span>
+            <span class="compaction-banner-actions">
+                <button class="compaction-btn compaction-dismiss" id="compaction-dismiss">${escHtml(t('compact.dismiss'))}</button>
+            </span>
+        `;
+        document.getElementById('compaction-dismiss')?.addEventListener('click', () => {
+            state.compactionPrompt = null;
+            state.compactionBusy = false;
+            updateCompactionBanner();
+            vscode.postMessage({ type: 'compactionDismiss' });
+        });
+        return;
+    }
+    banner.innerHTML = `
+        <span class="compaction-banner-title">${escHtml(t('compact.bannerTitle', { n: Math.round(state.compactionPrompt) }))}</span>
+        <span class="compaction-banner-hint">${escHtml(t('compact.bannerHint'))}</span>
+        <span class="compaction-banner-actions">
+            <button class="compaction-btn compaction-accept" id="compaction-accept">${escHtml(t('compact.accept'))}</button>
+            <button class="compaction-btn compaction-dismiss" id="compaction-dismiss">${escHtml(t('compact.dismiss'))}</button>
+        </span>
+    `;
+    document.getElementById('compaction-accept')?.addEventListener('click', () => {
+        state.compactionBusy = true;
+        updateCompactionBanner();
+        vscode.postMessage({ type: 'compactionAccept' });
+    });
+    document.getElementById('compaction-dismiss')?.addEventListener('click', () => {
+        state.compactionPrompt = null;
+        updateCompactionBanner();
+        vscode.postMessage({ type: 'compactionDismiss' });
+    });
 }
 
 function bindQueuedItemEvents(section: HTMLElement): void {
