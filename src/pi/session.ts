@@ -7,6 +7,7 @@ import type {
     ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
 import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo } from '../shared/protocol';
+import { modelSupportsImages, type ImagePayload } from '../shared/image-input';
 import { EventRouter } from './events';
 import { loadPiSdk, getSdkSource, hasFunction, type PiSdk } from './compat';
 import { mapSkills } from './skills';
@@ -105,12 +106,12 @@ export class PiSessionManager {
         }
     }
 
-    async prompt(text: string): Promise<void> {
+    async prompt(text: string, images?: ImagePayload[]): Promise<void> {
         if (!this._session) { throw new Error('Session not initialized'); }
         const start = Date.now();
-        this._outputChannel.appendLine(`[prompt] called at ${new Date().toISOString()}, text="${text.substring(0, 80)}${text.length > 80 ? '...' : ''}"`);
+        this._outputChannel.appendLine(`[prompt] called at ${new Date().toISOString()}, text="${text.substring(0, 80)}${text.length > 80 ? '...' : ''}"${images ? `, images=${images.length}` : ''}`);
         try {
-            await this._session.prompt(text);
+            await this._session.prompt(text, images && images.length > 0 ? { images } : undefined);
             this._outputChannel.appendLine(`[prompt] resolved in ${Date.now() - start}ms`);
         } catch (err: any) {
             this._outputChannel.appendLine(`[prompt] rejected in ${Date.now() - start}ms: ${err.message ?? String(err)}`);
@@ -322,6 +323,10 @@ export class PiSessionManager {
         const m = this._session?.model;
         if (!m) { return undefined; }
         return { provider: getProviderId(m), id: m.id, name: m.name };
+    }
+
+    supportsImages(): boolean {
+        return modelSupportsImages(this._session?.model as { input?: unknown } | undefined);
     }
 
     getThinkingLevel(): string | undefined {

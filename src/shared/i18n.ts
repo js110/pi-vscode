@@ -155,6 +155,15 @@ const EN = {
     'compact.compacting': 'Compacting context…',
     'compact.failed': 'Compaction failed — context kept. You can retry with /compact.',
 
+    // Image input
+    'image.attach': 'Attach image',
+    'image.unsupported': 'The current model does not support image input',
+    'image.tooLarge': 'Image is too large (max 5 MB)',
+    'image.tooMany': 'Too many images (max {n})',
+    'image.invalid': 'Unsupported image data',
+    'image.queueUnsupported': 'Images cannot be added while the agent is streaming',
+    'image.remove': 'Remove image',
+
     // Diff card
     'diff.new': 'NEW',
 
@@ -346,6 +355,15 @@ const ZH: Record<TextKey, string> = {
     'compact.dismiss': '暂不',
     'compact.compacting': '正在压缩上下文…',
     'compact.failed': '压缩失败——已保留原上下文，可稍后用 /compact 重试。',
+
+    // Image input
+    'image.attach': '添加图片',
+    'image.unsupported': '当前模型不支持图片输入',
+    'image.tooLarge': '图片过大（上限 5 MB）',
+    'image.tooMany': '图片数量超限（最多 {n} 张）',
+    'image.invalid': '无法识别的图片数据',
+    'image.queueUnsupported': '智能体回复期间无法添加图片',
+    'image.remove': '移除图片',
 
     'diff.new': '新建',
 

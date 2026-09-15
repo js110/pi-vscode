@@ -1,6 +1,7 @@
 import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang } from '../shared/protocol';
 import { isDangerousTool } from '../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
+import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { t, setLang } from '../shared/i18n';
 import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon, renderDiffLines } from '../shared/webview-text';
 import { el, escHtml } from './dom';
@@ -48,6 +49,8 @@ const state: {
     applyPreviews: ApplyPreviewInfo[];
     compactionPrompt: number | null;
     compactionBusy: boolean;
+    pendingImages: string[];
+    supportsImages: boolean;
 } = {
     messages: [],
     isStreaming: false,
@@ -71,6 +74,8 @@ const state: {
     applyPreviews: [],
     compactionPrompt: null,
     compactionBusy: false,
+    pendingImages: [],
+    supportsImages: false,
 };
 
 let sessionSearchQuery = '';
@@ -226,6 +231,13 @@ function applyStateSync(s: SerializedAgentState): void {
     state.streamingThinkingDuration = s.streamingThinkingDuration ?? 0;
     state.queuedMessages = s.queuedMessages ?? [];
     state.compactionPrompt = s.compactionPrompt ?? null;
+    state.supportsImages = s.supportsImages ?? false;
+    if (!state.supportsImages && state.pendingImages.length > 0) {
+        // The model can switch under attached images; drop them rather than
+        // delivering to a text-only model.
+        state.pendingImages = [];
+        updateImageChips();
+    }
     const tabSwitched = prevTab !== state.activeTabId;
 
     // Transient cards live in the per-tab streaming area; they are wiped on a
@@ -234,6 +246,7 @@ function applyStateSync(s: SerializedAgentState): void {
         state.pendingApprovals = [];
         state.applyPreviews = [];
         state.compactionBusy = false;
+        state.pendingImages = [];
     }
 
     if (tabSwitched || !skeletonBuilt) {
@@ -249,6 +262,7 @@ function applyStateSync(s: SerializedAgentState): void {
         updateChangedFiles();
         updateQueuedMessageBanner();
         updateCompactionBanner();
+        updateImageChips();
         if (state.isStreaming) {
             ensurePreparingPlaceholder();
         }
@@ -424,6 +438,17 @@ function render(): void {
     slashMenu.id = 'slash-menu';
     slashMenu.style.display = 'none';
     inputContainer.appendChild(slashMenu);
+    const imageChips = el('div', 'image-chips');
+    imageChips.id = 'image-chips';
+    imageChips.style.display = 'none';
+    inputContainer.appendChild(imageChips);
+    const imageFileInput = document.createElement('input');
+    imageFileInput.type = 'file';
+    imageFileInput.id = 'image-file-input';
+    imageFileInput.accept = 'image/*';
+    imageFileInput.multiple = true;
+    imageFileInput.style.display = 'none';
+    inputContainer.appendChild(imageFileInput);
     const area = el('div', 'input-area');
     area.innerHTML = `<textarea id="input" placeholder="${escHtml(t('input.ask'))}" rows="1"></textarea>`;
     inputContainer.appendChild(area);
@@ -448,6 +473,7 @@ function render(): void {
     updateInputArea();
     updateChangedFiles();
     updateCompactionBanner();
+    updateImageChips();
     scrollToBottom();
 }
 
@@ -594,12 +620,17 @@ function updateInputArea(): void {
         ? `<button id="btn-steer" class="steer-btn" title="${escHtml(t('input.steer'))}"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
         : '';
 
+    const attachBtnHtml = state.supportsImages && !state.isStreaming
+        ? `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.2l-5.3 5.3a3.4 3.4 0 0 1-4.8-4.8l5.4-5.4a2.3 2.3 0 0 1 3.2 3.2L6.6 10.9a1.15 1.15 0 0 1-1.6-1.6l4.9-4.9"/></svg></button>`
+        : '';
+
     footer.innerHTML = `
         <span class="footer-model">${escHtml(modelName)}</span>
         <span class="footer-spacer"></span>
         ${contextHtml}
         ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}
         ${steerBtnHtml}
+        ${attachBtnHtml}
         <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.queueSend') : t('input.send'))}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     `;
 
@@ -631,6 +662,12 @@ function updateInputArea(): void {
 
     const abortBtn = document.getElementById('btn-abort');
     abortBtn?.addEventListener('click', () => vscode.postMessage({ type: 'abort' }));
+
+    const attachBtn = document.getElementById('btn-attach');
+    attachBtn?.addEventListener('click', () => {
+        const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
+        fileInput?.click();
+    });
 
     document.querySelector('.footer-model')?.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1025,6 +1062,12 @@ function renderMessage(msg: any, index: number, turnNumber?: number): HTMLElemen
             const content = el('div', 'message-content');
             content.innerHTML = renderMarkdown(text);
             wrapper.appendChild(content);
+        }
+        for (const src of extractUserImages(msg)) {
+            const img = el('img', 'message-image') as HTMLImageElement;
+            img.src = src;
+            img.alt = '';
+            wrapper.appendChild(img);
         }
         group.appendChild(wrapper);
 
@@ -2011,6 +2054,42 @@ function bindStableEvents(): void {
     newTabBtn?.addEventListener('click', () => vscode.postMessage({ type: 'createTab' }));
     sessionsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'getSessions' }));
     settingsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
+
+    const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
+    fileInput?.addEventListener('change', () => {
+        if (fileInput.files && fileInput.files.length > 0) {
+            addImageFiles(Array.from(fileInput.files));
+        }
+        fileInput.value = '';
+    });
+
+    input?.addEventListener('paste', (e) => {
+        const files: File[] = [];
+        for (const item of Array.from(e.clipboardData?.items ?? [])) {
+            if (item.kind === 'file') {
+                const f = item.getAsFile();
+                if (f) files.push(f);
+            }
+        }
+        if (files.length > 0) {
+            e.preventDefault();
+            addImageFiles(files);
+        }
+    });
+
+    const inputContainer = document.querySelector('.input-container');
+    inputContainer?.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+    inputContainer?.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const files = Array.from((e as DragEvent).dataTransfer?.files ?? []).filter((f) =>
+            f.type.startsWith('image/'),
+        );
+        if (files.length > 0) {
+            addImageFiles(files);
+        }
+    });
 }
 
 function bindTabEvents(): void {
@@ -2169,16 +2248,117 @@ function sendMessage(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (!input) return;
     const text = input.value.trim();
-    if (!text) return;
+    if (!text && state.pendingImages.length === 0) return;
+    const images = state.pendingImages.length > 0 ? [...state.pendingImages] : undefined;
+    if (state.isStreaming) {
+        // Images can only ride a direct prompt. Streaming may have started
+        // after they were attached (e.g. auto-compaction) — refuse and keep
+        // the draft instead of silently dropping them.
+        if (images) {
+            showError(t('image.queueUnsupported'));
+            return;
+        }
+        vscode.postMessage({ type: 'queueMessage', text });
+        input.value = '';
+        input.style.height = 'auto';
+        userHasScrolled = false;
+        updateScrollButton();
+        return;
+    }
+    imageReadGeneration++;
     input.value = '';
     input.style.height = 'auto';
+    state.pendingImages = [];
+    updateImageChips();
     userHasScrolled = false;
     updateScrollButton();
-    if (state.isStreaming) {
-        vscode.postMessage({ type: 'queueMessage', text });
-    } else {
-        vscode.postMessage({ type: 'prompt', text });
+    vscode.postMessage({ type: 'prompt', text, images });
+}
+
+let imageReadGeneration = 0;
+
+function addImageFiles(files: File[]): void {
+    if (!state.supportsImages) {
+        showNotice(t('image.unsupported'));
+        return;
     }
+    if (state.isStreaming) {
+        showNotice(t('image.queueUnsupported'));
+        return;
+    }
+    const candidates = files.filter((f) => f.type.startsWith('image/'));
+    const slots = MAX_IMAGES_PER_PROMPT - state.pendingImages.length;
+    if (candidates.length > slots) {
+        showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }));
+    }
+    const gen = imageReadGeneration;
+    for (const file of candidates.slice(0, Math.max(0, slots))) {
+        if (file.size > MAX_IMAGE_BYTES) {
+            showError(t('image.tooLarge'));
+            continue;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (gen !== imageReadGeneration) return;
+            const dataUrl = String(reader.result ?? '');
+            if (!dataUrl.startsWith('data:image/')) {
+                showError(t('image.invalid'));
+                return;
+            }
+            if (state.pendingImages.length >= MAX_IMAGES_PER_PROMPT) {
+                showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }));
+                return;
+            }
+            state.pendingImages.push(dataUrl);
+            updateImageChips();
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function updateImageChips(): void {
+    const container = document.getElementById('image-chips');
+    if (!container) return;
+    if (state.pendingImages.length === 0) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    container.style.display = '';
+    container.innerHTML = state.pendingImages
+        .map(
+            (src, i) => `
+        <span class="image-chip">
+            <img class="image-chip-thumb" src="${escAttr(src)}" alt="">
+            <button class="image-chip-remove" data-index="${i}" title="${escHtml(t('image.remove'))}">&#10005;</button>
+        </span>
+    `,
+        )
+        .join('');
+    container.querySelectorAll('.image-chip-remove').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt((btn as HTMLElement).dataset.index ?? '-1', 10);
+            if (idx >= 0) {
+                state.pendingImages.splice(idx, 1);
+                updateImageChips();
+            }
+        });
+    });
+}
+
+/** Image attachments on a persisted user message (pi ImageContent items). */
+function extractUserImages(msg: any): string[] {
+    if (!Array.isArray(msg.content)) return [];
+    const sources: string[] = [];
+    for (const c of msg.content) {
+        if ((c.type !== 'image' && c.type !== 'image_url') || c.data == null) continue;
+        const mime =
+            typeof c.mimeType === 'string' && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(c.mimeType)
+                ? c.mimeType
+                : 'image/png';
+        sources.push(`data:${mime};base64,${String(c.data).replace(/[^A-Za-z0-9+/=]/g, '')}`);
+    }
+    return sources;
 }
 
 function bindCopyButtons(): void {

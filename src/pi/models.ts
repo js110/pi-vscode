@@ -1,5 +1,6 @@
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import type { ModelInfo } from '../shared/protocol';
+import { modelSupportsImages } from '../shared/image-input';
 import { loadPiSdk } from './compat';
 import { getModelRuntime } from './auth';
 
@@ -19,6 +20,7 @@ export function getAvailableModels(registry: ModelRegistry): ModelInfo[] {
         provider: String(m.provider),
         id: m.id,
         name: m.name,
+        supportsImages: modelSupportsImages(m as { input?: unknown }),
     }));
 }
 

@@ -84,12 +84,14 @@ export interface SerializedAgentState {
     streamingThinkingDuration?: number;
     queuedMessages?: string[];
     compactionPrompt?: number | null;
+    supportsImages?: boolean;
 }
 
 export interface ModelInfo {
     provider: string;
     id: string;
     name?: string;
+    supportsImages?: boolean;
 }
 
 export interface SkillInfo {

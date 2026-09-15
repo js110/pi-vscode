@@ -12,6 +12,8 @@ import type {
 import { DiffManager } from './diff';
 import { CheckpointManager } from './checkpoint';
 import { decideCompactionPrompt, type CompactionStage } from '../shared/compaction';
+import { preparePromptImages, type ImagePayload } from '../shared/image-input';
+import { t } from '../shared/i18n';
 
 export interface Tab {
     id: string;
@@ -164,6 +166,7 @@ export class TabManager {
             state.queuedMessages = tab.queuedMessages;
         }
         state.compactionPrompt = tab.compactionPrompt;
+        state.supportsImages = tab.session.supportsImages();
 
         let assistantOrdinal = 0;
         for (let i = 0; i < state.messages.length; i++) {
@@ -416,6 +419,26 @@ export class TabManager {
                     console.log('[Pi] prompt rejected: tab is streaming');
                     throw new Error('Agent is still processing. Please wait or queue your message.');
                 }
+                let images: ImagePayload[] | undefined;
+                if (msg.images && msg.images.length > 0) {
+                    const prepared = preparePromptImages(msg.images);
+                    if (!prepared.ok) {
+                        const message =
+                            prepared.reason === 'tooMany'
+                                ? t('image.tooMany', { n: prepared.count })
+                                : prepared.reason === 'tooLarge'
+                                  ? t('image.tooLarge')
+                                  : t('image.invalid');
+                        this._hooks.post({ type: 'error', message });
+                        break;
+                    }
+                    // The model may have been switched after the images were attached.
+                    if (!tab.session.supportsImages()) {
+                        this._hooks.post({ type: 'error', message: t('image.unsupported') });
+                        break;
+                    }
+                    images = prepared.images;
+                }
                 if (tab.checkpointManager.rollbackPoint !== null) {
                     tab.checkpointManager.discardSuspended();
                     tab.diffManager.discardSuspended();
@@ -425,7 +448,7 @@ export class TabManager {
                 const turnIdx = tab.turnCounter;
                 tab.checkpointManager.startTurn(turnIdx);
                 tab.diffManager.setCurrentTurn(turnIdx);
-                await tab.session.prompt(msg.text);
+                await tab.session.prompt(msg.text, images);
                 break;
             }
             case 'steer':

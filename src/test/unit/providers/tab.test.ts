@@ -45,6 +45,8 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
         getSessionStats: () => undefined,
         setModel: vi.fn(async () => {}),
         setThinkingLevel: () => {},
+        prompt: vi.fn(async () => {}),
+        supportsImages: () => false,
         newSession: vi.fn(async () => {}),
         loadSession: vi.fn(async () => {}),
         setToolApprovalHandler: () => {},
@@ -376,6 +378,60 @@ describe('TabManager', () => {
 
         await manager.dispatch({ type: 'switchTab', tabId: lowId });
         expect(manager.getState().compactionPrompt).toBeNull();
+    });
+
+    it('passes prompt images through to the session', async () => {
+        const tab = makeTab({ supportsImages: () => true });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+        await manager.dispatch({ type: 'prompt', text: 'look', images: [png] });
+
+        expect(tab.session.prompt).toHaveBeenCalledWith('look', [
+            { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUg==' },
+        ]);
+    });
+
+    it('rejects prompt images when the model cannot accept them', async () => {
+        const tab = makeTab({ supportsImages: () => false });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+        await manager.dispatch({ type: 'prompt', text: 'look', images: [png] });
+
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'error' } as any),
+        );
+    });
+
+    it('rejects invalid prompt images without starting a turn', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'prompt', text: 'look', images: ['data:image/png;base64,###'] });
+
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'error' } as any),
+        );
+    });
+
+    it('sends a text-only prompt without an images option', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'prompt', text: 'plain' });
+
+        expect(tab.session.prompt).toHaveBeenCalledWith('plain', undefined);
     });
 
     it('resets the compaction stage on a new session', async () => {

@@ -1526,6 +1526,72 @@ body {
     background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
+/* ───────────────────────── Image input ───────────────────────── */
+
+.attach-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.attach-btn:hover {
+    color: var(--fg);
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.image-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 12px 2px;
+}
+
+.image-chip {
+    position: relative;
+    display: inline-block;
+}
+
+.image-chip-thumb {
+    display: block;
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--hairline);
+}
+
+.image-chip-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--vscode-button-background, #4a4a4a);
+    color: var(--vscode-button-foreground, #ffffff);
+    font-size: 9px;
+    line-height: 16px;
+    text-align: center;
+    cursor: pointer;
+}
+
+.message-image {
+    display: block;
+    max-width: 280px;
+    max-height: 200px;
+    margin-top: 6px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--hairline);
+}
+
 .diff-line {
     padding: 0 12px;
     white-space: pre;
