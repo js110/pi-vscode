@@ -1,5 +1,6 @@
 import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang } from '../shared/protocol';
 import { isDangerousTool } from '../shared/tool-safety';
+import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
 import { t, setLang } from '../shared/i18n';
 import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon, renderDiffLines } from '../shared/webview-text';
 import { el, escHtml } from './dom';
@@ -323,7 +324,21 @@ function handleStreamingDelta(ae: any): void {
         case 'text_end':
             break;
     }
-    renderStreamingContent();
+    scheduleStreamingRender();
+}
+
+// ── Streaming render pipeline ──
+
+// Deltas can arrive faster than frames — coalesce to one render per frame.
+let streamRenderQueued = false;
+
+function scheduleStreamingRender(): void {
+    if (streamRenderQueued) return;
+    streamRenderQueued = true;
+    requestAnimationFrame(() => {
+        streamRenderQueued = false;
+        renderStreamingContent();
+    });
 }
 
 // ── Rendering ──
@@ -750,6 +765,7 @@ function clearStreamingState(): void {
     state.streamingText = '';
     state.streamingThinking = '';
     state.isThinking = false;
+    streamBlocks = [];
 }
 
 function dismissSteerToast(): void {
@@ -1058,6 +1074,7 @@ function renderStreamingContent(): void {
     removePreparingPlaceholder();
 
     if (!container.querySelector('.message')) {
+        streamBlocks = [];
         container.innerHTML = `
             <div class="message message-assistant">
                 <details class="thinking-block active" open id="streaming-thinking" style="display:none">
@@ -1093,12 +1110,37 @@ function renderStreamingContent(): void {
 
     const textEl = document.getElementById('streaming-text');
     if (textEl) {
-        textEl.innerHTML = renderMarkdown(state.streamingText);
+        patchStreamingTextBlocks(textEl);
     }
 
     bindCopyButtons();
     bindCodeBlockActions();
     scrollToBottom();
+}
+
+// Block-level incremental render (PRD C4): only blocks after the unchanged
+// prefix are re-parsed and re-rendered on each delta.
+let streamBlocks: string[] = [];
+
+function patchStreamingTextBlocks(textEl: HTMLElement): void {
+    const next = splitStreamBlocks(state.streamingText);
+    let from = computeUnchangedPrefix(streamBlocks, next);
+    if (textEl.children.length !== streamBlocks.length) {
+        from = 0; // DOM desynced (rebuilt skeleton) — patch everything
+    }
+
+    while (textEl.children.length > next.length) {
+        textEl.lastElementChild?.remove();
+    }
+    for (let i = from; i < next.length; i++) {
+        let blockEl = textEl.children[i] as HTMLElement | undefined;
+        if (!blockEl) {
+            blockEl = el('div', 'stream-block');
+            textEl.appendChild(blockEl);
+        }
+        blockEl.innerHTML = renderMarkdown(next[i]);
+    }
+    streamBlocks = next;
 }
 
 // ── Tool rendering ──

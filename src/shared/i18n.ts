@@ -147,6 +147,14 @@ const EN = {
     'apply.noWorkspace': 'Open a workspace folder to apply code.',
     'apply.pickTarget': 'Choose a target file for this code block',
 
+    // Compaction prompt flow
+    'compact.bannerTitle': 'Context is {n}% full',
+    'compact.bannerHint': 'Compaction summarizes earlier history and keeps queued messages.',
+    'compact.accept': 'Compact now',
+    'compact.dismiss': 'Not now',
+    'compact.compacting': 'Compacting context…',
+    'compact.failed': 'Compaction failed — context kept. You can retry with /compact.',
+
     // Diff card
     'diff.new': 'NEW',
 
@@ -331,6 +339,13 @@ const ZH: Record<TextKey, string> = {
     'apply.writeError': '写入文件失败：{message}',
     'apply.noWorkspace': '请先打开工作区文件夹再应用代码。',
     'apply.pickTarget': '选择此代码块要应用到的文件',
+
+    'compact.bannerTitle': '上下文已使用 {n}%',
+    'compact.bannerHint': '压缩将摘要较早的对话历史，并保留队列中未发送的消息。',
+    'compact.accept': '立即压缩',
+    'compact.dismiss': '暂不',
+    'compact.compacting': '正在压缩上下文…',
+    'compact.failed': '压缩失败——已保留原上下文，可稍后用 /compact 重试。',
 
     'diff.new': '新建',
 
