@@ -1,8 +1,9 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem } from '../shared/protocol';
 import { isDangerousTool } from '../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { t, setLang } from '../shared/i18n';
+import { hasMentionToken } from '../shared/mention';
 import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon, renderDiffLines } from '../shared/webview-text';
 import { el, escHtml } from './dom';
 import { renderMarkdown, buildWelcome, buildThinkingBlock, thinkingLabel, buildDiffCard, buildToolCard, buildModelItem, buildApprovalBadge, resetCodeBlockIds } from './render/messages';
@@ -51,6 +52,7 @@ const state: {
     compactionBusy: boolean;
     pendingImages: string[];
     supportsImages: boolean;
+    mentions: string[];
 } = {
     messages: [],
     isStreaming: false,
@@ -76,6 +78,7 @@ const state: {
     compactionBusy: false,
     pendingImages: [],
     supportsImages: false,
+    mentions: [],
 };
 
 let sessionSearchQuery = '';
@@ -190,6 +193,15 @@ function handleMessage(msg: ServerMessage): void {
             }
             updateCompactionBanner();
             break;
+        case 'mentionResults':
+            if (msg.requestId !== mentionPendingRequestId) break;
+            mentionFiles = msg.files;
+            mentionSymbols = msg.symbols;
+            {
+                const input = document.getElementById('input') as HTMLTextAreaElement | null;
+                if (input && getMentionFragment(input)) renderMentionMenu();
+            }
+            break;
         case 'error':
             showError(msg.message);
             break;
@@ -247,6 +259,8 @@ function applyStateSync(s: SerializedAgentState): void {
         state.applyPreviews = [];
         state.compactionBusy = false;
         state.pendingImages = [];
+        state.mentions = [];
+        hideMentionMenu();
     }
 
     if (tabSwitched || !skeletonBuilt) {
@@ -438,6 +452,10 @@ function render(): void {
     slashMenu.id = 'slash-menu';
     slashMenu.style.display = 'none';
     inputContainer.appendChild(slashMenu);
+    const mentionMenu = el('div', 'mention-menu');
+    mentionMenu.id = 'mention-menu';
+    mentionMenu.style.display = 'none';
+    inputContainer.appendChild(mentionMenu);
     const imageChips = el('div', 'image-chips');
     imageChips.id = 'image-chips';
     imageChips.style.display = 'none';
@@ -1993,6 +2011,31 @@ function bindStableEvents(): void {
     const settingsBtn = document.getElementById('btn-settings');
 
     input?.addEventListener('keydown', (e) => {
+        if (isMentionMenuVisible()) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const items = buildMentionMenuItems();
+                mentionMenuIndex = Math.min(mentionMenuIndex + 1, items.length - 1);
+                renderMentionMenu();
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                mentionMenuIndex = Math.max(mentionMenuIndex - 1, 0);
+                renderMentionMenu();
+                return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                selectMentionItem(mentionMenuIndex);
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                hideMentionMenu();
+                return;
+            }
+        }
         if (isSlashMenuVisible()) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -2049,6 +2092,7 @@ function bindStableEvents(): void {
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 200) + 'px';
         updateSlashMenu(input);
+        updateMentionMenu(input);
     });
 
     newTabBtn?.addEventListener('click', () => vscode.postMessage({ type: 'createTab' }));
@@ -2250,6 +2294,11 @@ function sendMessage(): void {
     const text = input.value.trim();
     if (!text && state.pendingImages.length === 0) return;
     const images = state.pendingImages.length > 0 ? [...state.pendingImages] : undefined;
+    // Only refs still present in the draft as whole tokens are real; the rest
+    // were deleted by the user while editing.
+    const mentions = state.mentions.filter((tok) => hasMentionToken(text, tok));
+    state.mentions = [];
+    hideMentionMenu();
     if (state.isStreaming) {
         // Images can only ride a direct prompt. Streaming may have started
         // after they were attached (e.g. auto-compaction) — refuse and keep
@@ -2272,7 +2321,12 @@ function sendMessage(): void {
     updateImageChips();
     userHasScrolled = false;
     updateScrollButton();
-    vscode.postMessage({ type: 'prompt', text, images });
+    vscode.postMessage({
+        type: 'prompt',
+        text,
+        images,
+        mentions: mentions.length > 0 ? mentions : undefined,
+    });
 }
 
 let imageReadGeneration = 0;
@@ -2530,6 +2584,149 @@ function hideSlashMenu(): void {
 function isSlashMenuVisible(): boolean {
     const menu = document.getElementById('slash-menu');
     return !!menu && menu.style.display !== 'none' && slashMenuItems.length > 0;
+}
+
+// ── @-mention completion menu ──
+
+interface MentionMenuItem {
+    token: string;
+    label: string;
+    desc: string;
+}
+
+let mentionMenuIndex = 0;
+let mentionFiles: string[] = [];
+let mentionSymbols: MentionSymbolItem[] = [];
+let mentionAnchor = -1;
+let mentionQuerySeq = 0;
+let mentionPendingRequestId = -1;
+let mentionDebounce: ReturnType<typeof setTimeout> | undefined;
+
+/** The active `@query` fragment ending at the caret, or null. */
+function getMentionFragment(input: HTMLTextAreaElement): { anchor: number; query: string } | null {
+    const cursor = input.selectionStart ?? input.value.length;
+    const beforeCursor = input.value.slice(0, cursor);
+    const match = beforeCursor.match(/(?:^|\s)@([^\s@]*)$/);
+    if (!match) return null;
+    return { anchor: beforeCursor.length - match[1].length - 1, query: match[1] };
+}
+
+function updateMentionMenu(input: HTMLTextAreaElement): void {
+    const fragment = getMentionFragment(input);
+    if (!fragment) {
+        cancelMentionQuery();
+        hideMentionMenu();
+        return;
+    }
+    mentionAnchor = fragment.anchor;
+    if (mentionDebounce) clearTimeout(mentionDebounce);
+    const seq = ++mentionQuerySeq;
+    mentionDebounce = setTimeout(() => {
+        mentionPendingRequestId = seq;
+        vscode.postMessage({ type: 'mentionQuery', query: fragment.query, requestId: seq });
+    }, 120);
+}
+
+function cancelMentionQuery(): void {
+    if (mentionDebounce) clearTimeout(mentionDebounce);
+    mentionDebounce = undefined;
+    mentionPendingRequestId = -1;
+    mentionAnchor = -1;
+}
+
+function buildMentionMenuItems(): MentionMenuItem[] {
+    const files = mentionFiles.map((p) => ({ token: p, label: p, desc: '' }));
+    const symbols = mentionSymbols.map((s) => ({
+        token: `${s.path}:${s.line}`,
+        label: s.name,
+        desc: `${s.kind} · ${s.path}:${s.line}`,
+    }));
+    return [...files, ...symbols];
+}
+
+function renderMentionMenu(): void {
+    const menu = document.getElementById('mention-menu');
+    if (!menu) return;
+    const items = buildMentionMenuItems();
+    if (items.length === 0) {
+        menu.innerHTML = `<div class="mention-item-empty">${escHtml(t('mention.noResults'))}</div>`;
+        mentionMenuIndex = 0;
+        menu.style.display = '';
+        return;
+    }
+    mentionMenuIndex = Math.min(mentionMenuIndex, items.length - 1);
+    const renderRange = (list: MentionMenuItem[], offset: number) =>
+        list.map((item, i) => renderMentionItem(item, offset + i)).join('');
+    const fileGroup = mentionFiles.length > 0
+        ? `<div class="mention-group">${escHtml(t('mention.groupFiles'))}</div>`
+        : '';
+    const symbolGroup = mentionSymbols.length > 0
+        ? `<div class="mention-group">${escHtml(t('mention.groupSymbols'))}</div>`
+        : '';
+    menu.innerHTML =
+        fileGroup +
+        renderRange(items.slice(0, mentionFiles.length), 0) +
+        symbolGroup +
+        renderRange(items.slice(mentionFiles.length), mentionFiles.length);
+    menu.querySelectorAll('.mention-item').forEach((node) => {
+        node.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            const idx = parseInt((node as HTMLElement).dataset.index ?? '0', 10);
+            selectMentionItem(idx);
+        });
+    });
+    menu.style.display = '';
+}
+
+function renderMentionItem(item: MentionMenuItem, i: number): string {
+    const active = i === mentionMenuIndex ? ' mention-item-active' : '';
+    const desc = item.desc ? `<span class="mention-item-desc">${escHtml(item.desc)}</span>` : '';
+    return `<div class="mention-item${active}" data-index="${i}">
+        <span class="mention-item-name">@${escHtml(item.label)}</span>
+        ${desc}
+    </div>`;
+}
+
+function selectMentionItem(index: number): void {
+    const input = document.getElementById('input') as HTMLTextAreaElement | null;
+    if (!input) return;
+    // The anchor may be stale if the caret moved since the popup opened
+    // (e.g. a click elsewhere). Revalidate against the live fragment.
+    const fragment = getMentionFragment(input);
+    if (!fragment) {
+        cancelMentionQuery();
+        hideMentionMenu();
+        return;
+    }
+    mentionAnchor = fragment.anchor;
+    const item = buildMentionMenuItems()[index];
+    if (!item) return;
+    const cursor = input.selectionStart ?? input.value.length;
+    const replacement = `@${item.token} `;
+    input.value = input.value.slice(0, mentionAnchor) + replacement + input.value.slice(cursor);
+    const newPos = mentionAnchor + replacement.length;
+    input.setSelectionRange(newPos, newPos);
+    if (!state.mentions.includes(item.token)) state.mentions.push(item.token);
+    cancelMentionQuery();
+    hideMentionMenu();
+    input.focus();
+}
+
+function hideMentionMenu(): void {
+    const menu = document.getElementById('mention-menu');
+    if (menu) {
+        menu.style.display = 'none';
+        menu.innerHTML = '';
+    }
+    mentionFiles = [];
+    mentionSymbols = [];
+    mentionMenuIndex = 0;
+}
+
+function isMentionMenuVisible(): boolean {
+    const menu = document.getElementById('mention-menu');
+    // A "no results" hint must not swallow Enter — only real items do.
+    return !!menu && menu.style.display !== 'none' && buildMentionMenuItems().length > 0;
 }
 
 // ── Helpers ──

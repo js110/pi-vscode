@@ -5,6 +5,7 @@ import type {
     ApprovalScope,
     ApplyPreviewInfo,
     ClientMessage,
+    MentionSymbolItem,
     ServerMessage,
     SerializedAgentState,
     TabInfo,
@@ -13,6 +14,17 @@ import { DiffManager } from './diff';
 import { CheckpointManager } from './checkpoint';
 import { decideCompactionPrompt, type CompactionStage } from '../shared/compaction';
 import { preparePromptImages, type ImagePayload } from '../shared/image-input';
+import {
+    parseMentionToken,
+    hasMentionToken,
+    stripMentions,
+    buildMentionContext,
+    truncateMentionContent,
+    extractLines,
+    MAX_MENTION_FILE_CHARS,
+    MENTION_CONTEXT_WINDOW_LINES,
+    type MentionContextEntry,
+} from '../shared/mention';
 import { t } from '../shared/i18n';
 
 export interface Tab {
@@ -39,6 +51,10 @@ export interface TabManagerHooks {
     applyConfirm(previewId: string): Promise<{ ok: boolean; message?: string }>;
     applyCancel(previewId: string): void;
     getCompactionThreshold(): number;
+    searchFiles(query: string): Promise<string[]>;
+    searchSymbols(query: string): Promise<MentionSymbolItem[]>;
+    resolveMentionPath(path: string): Promise<string | null>;
+    readTextFile(fsPath: string): Promise<string | null>;
 }
 
 interface PendingApproval {
@@ -291,6 +307,46 @@ export class TabManager {
         }
     }
 
+    /**
+     * Validate @-mention tokens at send time (AC-FN-23): refs whose file no
+     * longer exists are reported and stripped from the message; valid refs
+     * stay visible as `@token` and their content is appended for the model.
+     * Tokens the user already deleted from the draft are silently ignored.
+     */
+    private async _expandMentions(
+        text: string,
+        tokens: string[],
+    ): Promise<{ text: string; invalid: string[] }> {
+        const seen = new Set<string>();
+        const valid: MentionContextEntry[] = [];
+        const invalid: string[] = [];
+        for (const token of tokens) {
+            if (seen.has(token) || !hasMentionToken(text, token)) continue;
+            seen.add(token);
+            const ref = parseMentionToken(token);
+            if (!ref) {
+                invalid.push(token);
+                continue;
+            }
+            const fsPath = await this._hooks.resolveMentionPath(ref.path);
+            if (!fsPath) {
+                invalid.push(token);
+                continue;
+            }
+            const raw = await this._hooks.readTextFile(fsPath);
+            if (raw === null) {
+                invalid.push(token);
+                continue;
+            }
+            const content = ref.line
+                ? extractLines(raw, ref.line, MENTION_CONTEXT_WINDOW_LINES)
+                : truncateMentionContent(raw, MAX_MENTION_FILE_CHARS);
+            valid.push({ token, ref, content });
+        }
+        const stripped = stripMentions(text, invalid);
+        return { text: stripped + buildMentionContext(valid), invalid };
+    }
+
     private _handleTabEvent(tab: any, event: any): void {
         const isActive = tab.id === this._activeTabId;
 
@@ -439,6 +495,27 @@ export class TabManager {
                     }
                     images = prepared.images;
                 }
+                let text = msg.text;
+                if (msg.mentions && msg.mentions.length > 0) {
+                    const resolved = await this._expandMentions(text, msg.mentions);
+                    if (resolved.invalid.length > 0) {
+                        this._hooks.post({
+                            type: 'error',
+                            message: t('mention.deleted', { path: resolved.invalid.join(', ') }),
+                        });
+                    }
+                    // Nothing left after stripping dead refs and no images:
+                    // skip the turn entirely.
+                    if (!resolved.text.trim() && !(images && images.length > 0)) {
+                        break;
+                    }
+                    text = resolved.text;
+                }
+                // Mention expansion awaits fs I/O; the streaming state may have
+                // flipped during it. Re-check to avoid two concurrent turns.
+                if (tab.isStreaming) {
+                    throw new Error('Agent is still processing. Please wait or queue your message.');
+                }
                 if (tab.checkpointManager.rollbackPoint !== null) {
                     tab.checkpointManager.discardSuspended();
                     tab.diffManager.discardSuspended();
@@ -448,7 +525,7 @@ export class TabManager {
                 const turnIdx = tab.turnCounter;
                 tab.checkpointManager.startTurn(turnIdx);
                 tab.diffManager.setCurrentTurn(turnIdx);
-                await tab.session.prompt(msg.text, images);
+                await tab.session.prompt(text, images);
                 break;
             }
             case 'steer':
@@ -617,6 +694,14 @@ export class TabManager {
                 tab.compactionPrompt = null;
                 this._emitStateChange();
                 break;
+            case 'mentionQuery': {
+                const [files, symbols] = await Promise.all([
+                    this._hooks.searchFiles(msg.query),
+                    this._hooks.searchSymbols(msg.query),
+                ]);
+                this._hooks.post({ type: 'mentionResults', requestId: msg.requestId, files, symbols });
+                break;
+            }
             case 'getState':
                 this._hooks.post({ type: 'stateSync', state: this.getState() });
                 break;

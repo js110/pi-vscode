@@ -140,7 +140,7 @@ export interface PiConfigSnapshot {
 
 // Webview -> Extension messages
 export type ClientMessage =
-    | { type: 'prompt'; text: string; images?: string[] }
+    | { type: 'prompt'; text: string; images?: string[]; mentions?: string[] }
     | { type: 'steer'; text: string }
     | { type: 'followUp'; text: string }
     | { type: 'abort' }
@@ -175,7 +175,8 @@ export type ClientMessage =
     | { type: 'applyConfirm'; previewId: string }
     | { type: 'applyCancel'; previewId: string }
     | { type: 'compactionAccept' }
-    | { type: 'compactionDismiss' };
+    | { type: 'compactionDismiss' }
+    | { type: 'mentionQuery'; query: string; requestId: number };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =
@@ -189,6 +190,13 @@ export type SettingsClientMessage =
     | { type: 'clearApprovalRules' };
 
 // Extension -> Webview messages
+export interface MentionSymbolItem {
+    name: string;
+    kind: string;
+    path: string;
+    line: number;
+}
+
 export type ServerMessage =
     | { type: 'ready' }
     | { type: 'stateSync'; state: SerializedAgentState }
@@ -208,6 +216,7 @@ export type ServerMessage =
     | { type: 'applyPreviewResult'; preview: ApplyPreviewInfo }
     | { type: 'applyResult'; previewId: string; ok: boolean; message?: string }
     | { type: 'compactionResult'; ok: boolean }
+    | { type: 'mentionResults'; requestId: number; files: string[]; symbols: MentionSymbolItem[] }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages

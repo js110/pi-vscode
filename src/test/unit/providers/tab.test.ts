@@ -93,6 +93,10 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         applyConfirm: vi.fn(async () => ({ ok: true })),
         applyCancel: vi.fn(),
         getCompactionThreshold: vi.fn(() => 80),
+        searchFiles: vi.fn(async () => []),
+        searchSymbols: vi.fn(async () => []),
+        resolveMentionPath: vi.fn(async () => null),
+        readTextFile: vi.fn(async () => null),
         ...overrides,
     };
 }
@@ -569,5 +573,138 @@ describe('TabManager', () => {
         expect(hooks.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'toolCallPending' } as any),
         );
+    });
+
+    it('answers mention queries through the search hooks without a state change', async () => {
+        const hooks = makeHooks({
+            searchFiles: vi.fn(async () => ['src/a.ts']),
+            searchSymbols: vi.fn(async () => [{ name: 'Tab', kind: 'Class', path: 'src/tab.ts', line: 8 }]),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => makeTab()) }, hooks);
+        await manager.initialize();
+
+        const listener = vi.fn();
+        manager.onStateChange(listener);
+        await manager.dispatch({ type: 'mentionQuery', query: 'tab', requestId: 7 });
+
+        expect(hooks.post).toHaveBeenCalledWith({
+            type: 'mentionResults',
+            requestId: 7,
+            files: ['src/a.ts'],
+            symbols: [{ name: 'Tab', kind: 'Class', path: 'src/tab.ts', line: 8 }],
+        });
+        expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('expands a valid mention with the file content on prompt', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks({
+            resolveMentionPath: vi.fn(async (p: string) => (p === 'src/a.ts' ? '/abs/a.ts' : null)),
+            readTextFile: vi.fn(async () => 'const a = 1;'),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'prompt', text: 'explain @src/a.ts please', mentions: ['src/a.ts'] });
+
+        const sent = vi.mocked(tab.session.prompt).mock.calls[0][0];
+        expect(sent).toContain('explain @src/a.ts please');
+        expect(sent).toContain('@src/a.ts:\n```ts\nconst a = 1;\n```');
+    });
+
+    it('strips invalid mentions, reports them, and still prompts', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks({
+            resolveMentionPath: vi.fn(async () => null),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'prompt', text: 'look at @gone.ts now', mentions: ['gone.ts'] });
+
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'error' } as any),
+        );
+        expect(tab.session.prompt).toHaveBeenCalledWith('look at now', undefined);
+    });
+
+    it('skips the turn when every mention is invalid and the remaining text is empty', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks({
+            resolveMentionPath: vi.fn(async () => null),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'prompt', text: '@gone.ts', mentions: ['gone.ts'] });
+
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'error' } as any),
+        );
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+    });
+
+    it('ignores mentions that no longer appear in the message text', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks({
+            resolveMentionPath: vi.fn(async () => '/abs/a.ts'),
+            readTextFile: vi.fn(async () => 'A'),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        // The user deleted the @token from the draft before sending.
+        await manager.dispatch({ type: 'prompt', text: 'plain question', mentions: ['src/a.ts'] });
+
+        expect(hooks.resolveMentionPath).not.toHaveBeenCalled();
+        expect(tab.session.prompt).toHaveBeenCalledWith('plain question', undefined);
+    });
+
+    it('does not expand a file token that only survives as a symbol-token prefix', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks({
+            resolveMentionPath: vi.fn(async () => '/abs/a.ts'),
+            readTextFile: vi.fn(async () => 'l1\nl2'),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        // '@src/a.ts' is not in the draft as a whole token — only
+        // '@src/a.ts:42' is. The file ref must not be expanded too.
+        await manager.dispatch({
+            type: 'prompt',
+            text: 'explain @src/a.ts:42',
+            mentions: ['src/a.ts', 'src/a.ts:42'],
+        });
+
+        expect(hooks.resolveMentionPath).toHaveBeenCalledTimes(1);
+        const sent = vi.mocked(tab.session.prompt).mock.calls[0][0];
+        expect(sent).not.toContain('@src/a.ts:\n');
+        expect(sent).toContain('@src/a.ts:42:');
+    });
+
+    it('re-checks streaming after mention expansion to avoid a double turn', async () => {
+        const tab = makeTab();
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const hooks = makeHooks({
+            resolveMentionPath: vi.fn(async (p: string) => {
+                await gate;
+                return p === 'src/a.ts' ? '/abs/a.ts' : null;
+            }),
+            readTextFile: vi.fn(async () => 'A'),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        const dispatching = manager.dispatch({
+            type: 'prompt', text: 'explain @src/a.ts please', mentions: ['src/a.ts'],
+        });
+        // While the host is expanding mentions, the agent starts streaming
+        // (e.g. a queued follow-up drained first).
+        manager.activeTab!.session.events.dispatch({ type: 'agent_start' } as any);
+        release();
+        await expect(dispatching).rejects.toThrow(/still processing/i);
+        expect(tab.session.prompt).not.toHaveBeenCalled();
     });
 });

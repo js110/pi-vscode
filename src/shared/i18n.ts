@@ -169,6 +169,12 @@ const EN = {
     'sendToPi.noSelection': 'Select some code in the editor first.',
     'sendToPi.tooLarge': 'The selection is too large to send (max {n} characters).',
 
+    // @-mention
+    'mention.deleted': 'Referenced file no longer exists: {path}',
+    'mention.noResults': 'No matching files or symbols',
+    'mention.groupFiles': 'Files',
+    'mention.groupSymbols': 'Symbols',
+
     // Diff card
     'diff.new': 'NEW',
 
@@ -374,6 +380,11 @@ const ZH: Record<TextKey, string> = {
     'sendToPi.intro': '这是 `{path}:{range}` 处的选区代码：',
     'sendToPi.noSelection': '请先在编辑器中选中代码。',
     'sendToPi.tooLarge': '选区过大，无法发送（上限 {n} 字符）。',
+    // @-mention
+    'mention.deleted': '引用的文件已不存在：{path}',
+    'mention.noResults': '没有匹配的文件或符号',
+    'mention.groupFiles': '文件',
+    'mention.groupSymbols': '符号',
 
     'diff.new': '新建',
 

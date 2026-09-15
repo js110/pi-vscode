@@ -2144,6 +2144,50 @@ body {
     white-space: nowrap;
 }
 
+/* ── @-mention completion menu ── */
+.mention-menu {
+    max-height: 220px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface-strong);
+}
+.mention-group {
+    padding: 4px 14px 2px;
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.mention-item {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 14px;
+    cursor: pointer;
+    gap: 2px;
+}
+.mention-item:hover { background: var(--surface-hover); }
+.mention-item-active { background: var(--surface-active); }
+.mention-item-name {
+    font-size: var(--fs-sm);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mention-item-desc {
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mention-item-empty {
+    padding: 8px 14px;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+}
+
 /* ── Reduced motion: calm the pulse in place of movement ── */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

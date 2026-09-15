@@ -11,6 +11,7 @@ import { CheckpointManager } from './providers/checkpoint';
 import { ApplyManager } from './providers/apply';
 import { getModelRuntime } from './pi/auth';
 import { setLang, t } from './shared/i18n';
+import { fuzzyFilterFiles, MAX_MENTION_RESULTS } from './shared/mention';
 import {
     buildSelectionPrompt,
     isSelectionTooLarge,
@@ -20,12 +21,96 @@ import {
 import type { GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
-import type { ApprovalRuleInfo, ServerMessage } from './shared/protocol';
+import type { ApprovalRuleInfo, MentionSymbolItem, ServerMessage } from './shared/protocol';
 
 let bridgeContext: BridgeContext | undefined;
 
 const SIDEBAR_PLACEMENT_KEY = 'pi-agent.sidebarPlacementDone';
 const APPROVAL_RULES_KEY = 'pi-agent.approvalRules.global';
+
+// ── @-mention workspace glue (AC-FN-21/22) ──
+
+const MENTION_FILE_TTL_MS = 5000;
+const MENTION_FILE_SNAPSHOT_LIMIT = 3000;
+const MENTION_SEARCH_EXCLUDE = '**/{node_modules,.git}/**';
+const MENTION_READ_HARD_CAP = 5 * 1024 * 1024;
+
+let mentionFileSnapshot: { at: number; files: string[] } | null = null;
+
+async function searchWorkspaceFiles(query: string): Promise<string[]> {
+    if (!mentionFileSnapshot || Date.now() - mentionFileSnapshot.at > MENTION_FILE_TTL_MS) {
+        const uris = await vscode.workspace.findFiles(
+            '**/*',
+            MENTION_SEARCH_EXCLUDE,
+            MENTION_FILE_SNAPSHOT_LIMIT,
+        );
+        mentionFileSnapshot = {
+            at: Date.now(),
+            files: uris.map((u) => vscode.workspace.asRelativePath(u).replace(/\\/g, '/')),
+        };
+    }
+    return fuzzyFilterFiles(mentionFileSnapshot.files, query, MAX_MENTION_RESULTS);
+}
+
+async function searchWorkspaceSymbols(query: string): Promise<MentionSymbolItem[]> {
+    if (!query.trim()) return [];
+    try {
+        const infos = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+            'vscode.executeWorkspaceSymbolProvider',
+            query,
+        );
+        if (!Array.isArray(infos)) return [];
+        return infos.slice(0, 30).map((si) => ({
+            name: si.name,
+            kind: vscode.SymbolKind[si.kind] ?? 'Symbol',
+            path: vscode.workspace.asRelativePath(si.location.uri).replace(/\\/g, '/'),
+            line: si.location.range.start.line + 1,
+        }));
+    } catch {
+        return []; // AC-FN-22: no symbol index → file-only degradation.
+    }
+}
+
+async function resolveMentionPath(relPath: string): Promise<string | null> {
+    const folders = vscode.workspace.workspaceFolders;
+    const parts = relPath.split('/');
+    if (!folders || parts.includes('..')) return null;
+    for (const folder of folders) {
+        const uri = vscode.Uri.joinPath(folder.uri, ...parts);
+        try {
+            const stat = await vscode.workspace.fs.stat(uri);
+            if (stat.type === vscode.FileType.File) return uri.fsPath;
+        } catch {
+            // Not in this workspace root — try the next one.
+        }
+    }
+    // Multi-root workspaces: asRelativePath prefixes the root's name
+    // ("root-name/src/a.ts"). Strip that first segment and retry against
+    // the folder whose name matches.
+    if (parts.length > 1) {
+        const root = folders.find((f) => f.name === parts[0]);
+        if (root) {
+            const uri = vscode.Uri.joinPath(root.uri, ...parts.slice(1));
+            try {
+                const stat = await vscode.workspace.fs.stat(uri);
+                if (stat.type === vscode.FileType.File) return uri.fsPath;
+            } catch {
+                // Root-name prefix guessed wrong — give up.
+            }
+        }
+    }
+    return null;
+}
+
+async function readMentionFile(fsPath: string): Promise<string | null> {
+    try {
+        const data = await vscode.workspace.fs.readFile(vscode.Uri.file(fsPath));
+        // Hard cap only; the mention module applies the user-facing limit + note.
+        return Buffer.from(data.subarray(0, MENTION_READ_HARD_CAP)).toString('utf-8');
+    } catch {
+        return null;
+    }
+}
 
 /**
  * Move the Pi panel view between workbench areas. The view must be focused
@@ -117,6 +202,10 @@ export async function activate(context: vscode.ExtensionContext) {
                 );
                 return Number.isFinite(raw) ? Math.max(1, Math.min(100, raw)) : 80;
             },
+            searchFiles: (query) => searchWorkspaceFiles(query),
+            searchSymbols: (query) => searchWorkspaceSymbols(query),
+            resolveMentionPath: (path) => resolveMentionPath(path),
+            readTextFile: (fsPath) => readMentionFile(fsPath),
         };
 
         const factory: TabFactory = {

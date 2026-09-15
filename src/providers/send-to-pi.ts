@@ -6,6 +6,7 @@
  */
 
 import { t } from '../shared/i18n';
+import { fenceFor } from '../shared/mention';
 
 export const MAX_SELECTION_CHARS = 40_000;
 
@@ -39,13 +40,6 @@ export function selectionLineRange(
         end = endLine;
     }
     return { start, end };
-}
-
-/** Closing fence must out-run any backtick run inside the code. */
-function fenceFor(code: string): string {
-    const runs = code.match(/^`{3,}/gm);
-    const maxRun = runs ? Math.max(...runs.map((r) => r.length)) : 0;
-    return '`'.repeat(Math.max(3, maxRun + 1));
 }
 
 export function buildSelectionPrompt(ctx: SelectionContext): string {
