@@ -1,4 +1,5 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, PlanSnapshot, PlanStepStatus } from '../shared/protocol';
+import { PLAN_DANGEROUS_REASON } from '../shared/protocol';
 import { isDangerousTool } from '../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
@@ -54,6 +55,7 @@ const state: {
     pendingImages: string[];
     supportsImages: boolean;
     mentions: string[];
+    plan: PlanSnapshot | null;
 } = {
     messages: [],
     isStreaming: false,
@@ -80,6 +82,7 @@ const state: {
     pendingImages: [],
     supportsImages: false,
     mentions: [],
+    plan: null,
 };
 
 let sessionSearchQuery = '';
@@ -260,6 +263,7 @@ function applyStateSync(s: SerializedAgentState): void {
     state.queuedMessages = s.queuedMessages ?? [];
     state.compactionPrompt = s.compactionPrompt ?? null;
     state.supportsImages = s.supportsImages ?? false;
+    state.plan = s.plan ?? null;
     if (!state.supportsImages && state.pendingImages.length > 0) {
         // The model can switch under attached images; drop them rather than
         // delivering to a text-only model.
@@ -293,6 +297,7 @@ function applyStateSync(s: SerializedAgentState): void {
         updateChangedFiles();
         updateQueuedMessageBanner();
         updateCompactionBanner();
+        updatePlanCard();
         updateImageChips();
         if (state.isStreaming) {
             ensurePreparingPlaceholder();
@@ -460,6 +465,10 @@ function render(): void {
     compactionBanner.id = 'compaction-banner';
     compactionBanner.style.display = 'none';
     inputContainer.appendChild(compactionBanner);
+    const planCard = el('div', 'plan-card');
+    planCard.id = 'plan-card';
+    planCard.style.display = 'none';
+    inputContainer.appendChild(planCard);
     const queuedSection = document.createElement('details');
     queuedSection.className = 'queued-section';
     queuedSection.id = 'queued-section';
@@ -508,6 +517,7 @@ function render(): void {
     updateInputArea();
     updateChangedFiles();
     updateCompactionBanner();
+    updatePlanCard();
     updateImageChips();
     scrollToBottom();
 }
@@ -659,10 +669,15 @@ function updateInputArea(): void {
         ? `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.2l-5.3 5.3a3.4 3.4 0 0 1-4.8-4.8l5.4-5.4a2.3 2.3 0 0 1 3.2 3.2L6.6 10.9a1.15 1.15 0 0 1-1.6-1.6l4.9-4.9"/></svg></button>`
         : '';
 
+    const planPhase = state.plan?.phase ?? 'off';
+    const planToggleable = planPhase === 'off' || planPhase === 'planning' || planPhase === 'awaitingApproval';
+    const planBtnHtml = `<button id="btn-plan" class="plan-btn${planPhase !== 'off' ? ' active' : ''}"${planToggleable ? '' : ' disabled'} title="${escHtml(t('plan.modeTitle'))}">${escHtml(t('plan.mode'))}</button>`;
+
     footer.innerHTML = `
         <span class="footer-model">${escHtml(modelName)}</span>
         <span class="footer-spacer"></span>
         ${contextHtml}
+        ${planBtnHtml}
         ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}
         ${steerBtnHtml}
         ${attachBtnHtml}
@@ -702,6 +717,16 @@ function updateInputArea(): void {
     attachBtn?.addEventListener('click', () => {
         const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
         fileInput?.click();
+    });
+
+    const planBtn = document.getElementById('btn-plan');
+    planBtn?.addEventListener('click', () => {
+        const phase = state.plan?.phase ?? 'off';
+        if (phase === 'off') {
+            vscode.postMessage({ type: 'planStart' });
+        } else if (phase === 'planning' || phase === 'awaitingApproval') {
+            vscode.postMessage({ type: 'planCancel' });
+        }
     });
 
     document.querySelector('.footer-model')?.addEventListener('click', (e) => {
@@ -871,6 +896,153 @@ function bindQueuedItemEvents(section: HTMLElement): void {
             }
         });
     });
+}
+
+// ── Plan card (PRD C8/C9) ──
+
+function planStepIcon(status: PlanStepStatus): string {
+    switch (status) {
+        case 'running': return '<span class="plan-step-icon running">&#9684;</span>';
+        case 'done': return '<span class="plan-step-icon done">&#10003;</span>';
+        case 'failed': return '<span class="plan-step-icon failed">&#10007;</span>';
+        case 'cancelled': return '<span class="plan-step-icon cancelled">&#8212;</span>';
+        default: return '<span class="plan-step-icon pending">&#9675;</span>';
+    }
+}
+
+function movePlanStep(from: number, to: number): void {
+    const plan = state.plan;
+    if (!plan) return;
+    const titles = plan.steps.map((s) => s.title);
+    if (from < 0 || from >= titles.length || to < 0 || to >= titles.length) return;
+    const [moved] = titles.splice(from, 1);
+    titles.splice(to, 0, moved);
+    vscode.postMessage({ type: 'planSetSteps', titles });
+}
+
+function updatePlanCard(): void {
+    const card = document.getElementById('plan-card');
+    if (!card) return;
+    const plan = state.plan;
+    if (!plan || plan.phase === 'off') {
+        card.style.display = 'none';
+        card.innerHTML = '';
+        return;
+    }
+    card.style.display = '';
+
+    const stepsHtml = (editable: boolean) => plan.steps.map((step, i) => {
+        const actions = editable
+            ? `<span class="plan-step-actions">
+                <button class="plan-step-btn plan-step-up" data-index="${i}" title="${escHtml(t('plan.stepUp'))}"${i === 0 ? ' disabled' : ''}>&#8593;</button>
+                <button class="plan-step-btn plan-step-down" data-index="${i}" title="${escHtml(t('plan.stepDown'))}"${i === plan.steps.length - 1 ? ' disabled' : ''}>&#8595;</button>
+                <button class="plan-step-btn plan-step-remove" data-index="${i}" title="${escHtml(t('plan.stepRemove'))}">&#10005;</button>
+            </span>`
+            : '';
+        return `<div class="plan-step plan-step-${step.status}" data-index="${i}">
+            ${planStepIcon(step.status)}
+            <span class="plan-step-title">${escHtml(step.title)}</span>
+            ${actions}
+        </div>`;
+    }).join('');
+
+    let body = '';
+    switch (plan.phase) {
+        case 'planning':
+            body = `
+                <div class="plan-card-header"><span class="plan-spinner"></span>${escHtml(t('plan.planning'))}</div>
+                <div class="plan-card-actions">
+                    <button class="plan-btn plan-secondary" id="plan-cancel">${escHtml(t('plan.cancel'))}</button>
+                </div>`;
+            break;
+        case 'awaitingApproval': {
+            const canApprove = plan.steps.length > 0;
+            body = `
+                <div class="plan-card-header">${escHtml(t('plan.awaiting'))}</div>
+                <div class="plan-steps">${stepsHtml(true)}</div>
+                <div class="plan-card-actions">
+                    <button class="plan-btn plan-secondary" id="plan-replan">${escHtml(t('plan.replan'))}</button>
+                    <button class="plan-btn plan-primary" id="plan-approve"${canApprove ? '' : ' disabled'}>${escHtml(t('plan.approve'))}</button>
+                </div>`;
+            break;
+        }
+        case 'executing':
+            body = `
+                <div class="plan-card-header">${escHtml(t('plan.executing'))}</div>
+                <div class="plan-steps">${stepsHtml(false)}</div>
+                <div class="plan-card-hint">${escHtml(t('plan.escHint'))}</div>`;
+            break;
+        case 'paused': {
+            const reason = plan.pausedReason === PLAN_DANGEROUS_REASON
+                ? t('plan.pausedDangerous')
+                : t('plan.pausedStep', { reason: plan.pausedReason ?? '' });
+            body = `
+                <div class="plan-card-header paused">${escHtml(t('plan.paused'))}</div>
+                <div class="plan-card-hint">${escHtml(reason)}</div>
+                <div class="plan-steps">${stepsHtml(false)}</div>
+                <div class="plan-card-actions">
+                    <button class="plan-btn plan-primary" id="plan-resume">${escHtml(t('plan.resume'))}</button>
+                    <button class="plan-btn plan-secondary" id="plan-adjust">${escHtml(t('plan.adjust'))}</button>
+                    <button class="plan-btn plan-danger" id="plan-abandon">${escHtml(t('plan.abandon'))}</button>
+                </div>`;
+            break;
+        }
+        case 'done':
+            body = `
+                <div class="plan-card-header done">${escHtml(t('plan.done'))}</div>
+                <div class="plan-steps">${stepsHtml(false)}</div>
+                <div class="plan-card-actions">
+                    <button class="plan-btn plan-secondary" id="plan-close">${escHtml(t('plan.close'))}</button>
+                </div>`;
+            break;
+        case 'interrupted': {
+            const done = plan.steps.filter((s) => s.status === 'done').length;
+            body = `
+                <div class="plan-card-header paused">${escHtml(t('plan.interrupted', { done, total: plan.steps.length }))}</div>
+                <div class="plan-steps">${stepsHtml(false)}</div>
+                <div class="plan-card-actions">
+                    <button class="plan-btn plan-primary" id="plan-restart">${escHtml(t('plan.replan'))}</button>
+                    <button class="plan-btn plan-secondary" id="plan-close">${escHtml(t('plan.close'))}</button>
+                </div>`;
+            break;
+        }
+    }
+    card.innerHTML = body;
+    bindPlanCard();
+}
+
+function bindPlanCard(): void {
+    const post = (message: ClientMessage) => vscode.postMessage(message);
+    document.getElementById('plan-cancel')?.addEventListener('click', () => post({ type: 'planCancel' }));
+    document.getElementById('plan-replan')?.addEventListener('click', () => post({ type: 'planReplan' }));
+    document.getElementById('plan-approve')?.addEventListener('click', () => post({ type: 'planApprove' }));
+    document.getElementById('plan-resume')?.addEventListener('click', () => post({ type: 'planResume' }));
+    document.getElementById('plan-abandon')?.addEventListener('click', () => post({ type: 'planAbandon' }));
+    document.getElementById('plan-restart')?.addEventListener('click', () => post({ type: 'planStart' }));
+    document.getElementById('plan-adjust')?.addEventListener('click', () => {
+        const plan = state.plan;
+        if (!plan) return;
+        post({ type: 'planAdjust', titles: plan.steps.map((s) => s.title) });
+    });
+    document.querySelectorAll('#plan-card #plan-close').forEach((btn) =>
+        btn.addEventListener('click', () => post({ type: 'planClose' })));
+    document.querySelectorAll('#plan-card .plan-step-up').forEach((btn) =>
+        btn.addEventListener('click', () => {
+            const i = Number((btn as HTMLElement).dataset.index);
+            movePlanStep(i, i - 1);
+        }));
+    document.querySelectorAll('#plan-card .plan-step-down').forEach((btn) =>
+        btn.addEventListener('click', () => {
+            const i = Number((btn as HTMLElement).dataset.index);
+            movePlanStep(i, i + 1);
+        }));
+    document.querySelectorAll('#plan-card .plan-step-remove').forEach((btn) =>
+        btn.addEventListener('click', () => {
+            const plan = state.plan;
+            const i = Number((btn as HTMLElement).dataset.index);
+            if (!plan) return;
+            post({ type: 'planSetSteps', titles: plan.steps.map((s) => s.title).filter((_, j) => j !== i) });
+        }));
 }
 
 function showSteerToast(text: string): void {

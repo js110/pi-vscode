@@ -461,6 +461,16 @@ export class PiSessionManager {
         return this._session.getActiveToolNames();
     }
 
+    /** Restrict the active toolset (takes effect on the next agent turn). */
+    setActiveToolsByName(toolNames: string[]): void {
+        if (!this._session || !hasFunction(this._session, 'setActiveToolsByName')) { return; }
+        try {
+            this._session.setActiveToolsByName(toolNames);
+        } catch (err: any) {
+            this._outputChannel.appendLine(`[pi-compat] setActiveToolsByName failed: ${err?.message ?? err}`);
+        }
+    }
+
     getMessages(): any[] {
         try {
             return (this._session as any)?.state?.messages ?? [];

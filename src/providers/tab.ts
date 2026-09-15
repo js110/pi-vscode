@@ -11,6 +11,7 @@ import type {
     SerializedAgentState,
     TabInfo,
 } from '../shared/protocol';
+import { PLAN_DANGEROUS_REASON } from '../shared/protocol';
 import { DiffManager } from './diff';
 import { CheckpointManager } from './checkpoint';
 import { decideCompactionPrompt, type CompactionStage } from '../shared/compaction';
@@ -27,6 +28,41 @@ import {
     type MentionContextEntry,
 } from '../shared/mention';
 import { t } from '../shared/i18n';
+import { isDangerousTool } from '../shared/tool-safety';
+import {
+    PlanMachine,
+    parsePlanBlock,
+    PLAN_CREDENTIAL_TOOLS,
+    PLAN_READONLY_TOOLS,
+} from './plan';
+
+function planningPrompt(task: string): string {
+    return `${task}\n\nYou are in Plan mode: use read-only tools only. Analyze the task, then end your reply with the final plan in a fenced block tagged \`plan\` — one short imperative step per line and nothing else inside the block.`;
+}
+
+function replanPrompt(feedback?: string): string {
+    const reason = feedback && feedback.trim() ? `:\n\n${feedback.trim()}` : '.';
+    return `The current plan needs adjustment${reason}\n\nRe-plan accordingly and end your reply with the updated plan in a fenced block tagged \`plan\` — one short imperative step per line.`;
+}
+
+function stepPrompt(step: string, index: number, total: number): string {
+    return `Plan step ${index + 1}/${total}: ${step}\n\nExecute exactly this step of the approved plan now. Do not start any other step.`;
+}
+
+/** Per-tab Plan mode runtime: the pure machine plus tab-glue bookkeeping. */
+interface PlanRuntime {
+    machine: PlanMachine;
+    /** Active toolset saved before the read-only restriction; null = unrestricted. */
+    savedTools: string[] | null;
+    /** Bumped to invalidate an in-flight step-execution driver. */
+    runId: number;
+    driverActive: boolean;
+    /** Set when the user aborted during a planning turn (suppresses no-plan error). */
+    abortSeen: boolean;
+    /** Plan steps parsed from the planning turn's own message_end (queued
+     *  turns may drain in the same run, so settle-time parsing is unreliable). */
+    capturedSteps: string[] | null;
+}
 
 export interface Tab {
     id: string;
@@ -112,6 +148,7 @@ export class TabManager {
         compactionStage: CompactionStage;
         compactionPrompt: number | null;
         compactionInFlight: boolean;
+        plan: PlanRuntime;
     }>();
     private _activeTabId = '';
     private _tabSubscriptions = new Map<string, (() => void)[]>();
@@ -185,6 +222,7 @@ export class TabManager {
         }
         state.compactionPrompt = tab.compactionPrompt;
         state.supportsImages = tab.session.supportsImages();
+        state.plan = tab.plan.machine.snapshot();
 
         let assistantOrdinal = 0;
         for (let i = 0; i < state.messages.length; i++) {
@@ -243,6 +281,14 @@ export class TabManager {
             compactionStage: 'none' as const,
             compactionPrompt: null,
             compactionInFlight: false,
+            plan: {
+                machine: new PlanMachine(),
+                savedTools: null,
+                runId: 0,
+                driverActive: false,
+                abortSeen: false,
+                capturedSteps: null,
+            },
         };
     }
 
@@ -382,6 +428,12 @@ export class TabManager {
                 });
             }
             tab.streamingThinkingDuration = 0;
+            if (tab.plan.machine.snapshot().phase === 'planning') {
+                const titles = parsePlanBlock(this._assistantText(event.message));
+                if (titles.length > 0) {
+                    tab.plan.capturedSteps = titles;
+                }
+            }
         }
 
         if (event.type === 'agent_end') {
@@ -405,6 +457,7 @@ export class TabManager {
 
         if (event.type === 'agent_settled') {
             this._resetStreaming(tab);
+            this._maybeFinishPlanning(tab);
             if (isActive) {
                 this._hooks.setContext('pi-agent.isStreaming', false);
             } else {
@@ -518,6 +571,9 @@ export class TabManager {
                 if (tab.isStreaming) {
                     throw new Error('Agent is still processing. Please wait or queue your message.');
                 }
+                if (tab.plan.machine.snapshot().phase === 'planning') {
+                    text = planningPrompt(text);
+                }
                 if (tab.checkpointManager.rollbackPoint !== null) {
                     tab.checkpointManager.discardSuspended();
                     tab.diffManager.discardSuspended();
@@ -564,9 +620,23 @@ export class TabManager {
             case 'followUp':
                 await tab.session.followUp(msg.text);
                 break;
-            case 'abort':
+            case 'abort': {
+                const planPhase = tab.plan.machine.snapshot().phase;
+                if (planPhase === 'executing') {
+                    tab.plan.runId++;
+                    tab.plan.machine.interrupt();
+                    // Drop dangling approval cards, as planAbandon does.
+                    const danglingIds = [...tab.pendingApprovals.keys()];
+                    for (const id of danglingIds) {
+                        this._resolveToolApproval(tab, id, false);
+                    }
+                    this._emitStateChange();
+                } else if (planPhase === 'planning') {
+                    tab.plan.abortSeen = true;
+                }
                 await tab.session.abort();
                 break;
+            }
             case 'getModels': {
                 this._postModels(tab);
                 break;
@@ -591,6 +661,7 @@ export class TabManager {
                 tab.queuedMessages = [];
                 tab.compactionStage = 'none';
                 tab.compactionPrompt = null;
+                this._resetPlan(tab);
                 tab.name = 'New Agent';
                 this._emitStateChange();
                 break;
@@ -604,6 +675,7 @@ export class TabManager {
                 tab.compactionPrompt = null;
                 this._resetStreaming(tab);
                 tab.messageMeta.clear();
+                this._resetPlan(tab);
                 this._updateTabName(tab);
                 this._emitStateChange();
                 break;
@@ -709,6 +781,88 @@ export class TabManager {
                 this._hooks.post({ type: 'dropResolved', requestId: msg.requestId, results });
                 break;
             }
+            case 'planStart': {
+                if (tab.isStreaming) {
+                    throw new Error('Agent is still processing. Please wait or queue your message.');
+                }
+                const phase = tab.plan.machine.snapshot().phase;
+                if (phase === 'interrupted') {
+                    tab.plan.machine.restartPlanning();
+                } else if (!tab.plan.machine.startPlanning()) {
+                    break;
+                }
+                tab.plan.capturedSteps = null;
+                this._restrictPlanTools(tab);
+                this._emitStateChange();
+                break;
+            }
+            case 'planCancel':
+                if (tab.plan.machine.cancel()) {
+                    this._restorePlanTools(tab);
+                    this._emitStateChange();
+                }
+                break;
+            case 'planApprove': {
+                if (tab.isStreaming) {
+                    throw new Error('Agent is still processing. Please wait or queue your message.');
+                }
+                if (tab.plan.machine.approve()) {
+                    this._emitStateChange();
+                    void this._runPlanSteps(tab);
+                }
+                break;
+            }
+            case 'planReplan': {
+                if (tab.isStreaming) {
+                    throw new Error('Agent is still processing. Please wait or queue your message.');
+                }
+                if (!tab.plan.machine.replan()) break;
+                tab.plan.capturedSteps = null;
+                this._restrictPlanTools(tab);
+                this._emitStateChange();
+                await tab.session.prompt(replanPrompt(msg.feedback));
+                break;
+            }
+            case 'planSetSteps':
+                if (tab.plan.machine.setSteps(msg.titles)) {
+                    this._emitStateChange();
+                }
+                break;
+            case 'planAdjust':
+                if (tab.plan.machine.adjust(msg.titles)) {
+                    this._emitStateChange();
+                }
+                break;
+            case 'planResume': {
+                if (tab.isStreaming) {
+                    throw new Error('Agent is still processing. Please wait or queue your message.');
+                }
+                if (tab.plan.machine.resume()) {
+                    this._emitStateChange();
+                    void this._runPlanSteps(tab);
+                }
+                break;
+            }
+            case 'planAbandon': {
+                if (!tab.plan.machine.abandon()) break;
+                tab.plan.runId++;
+                // Drop any dangling approval card so its promise cannot leak.
+                const danglingIds = [...tab.pendingApprovals.keys()];
+                for (const id of danglingIds) {
+                    this._resolveToolApproval(tab, id, false);
+                }
+                this._emitStateChange();
+                if (tab.isStreaming) {
+                    await tab.session.abort();
+                }
+                break;
+            }
+            case 'planClose':
+                if (tab.plan.machine.close()) {
+                    this._restorePlanTools(tab);
+                    this._emitStateChange();
+                }
+                break;
             case 'getState':
                 this._hooks.post({ type: 'stateSync', state: this.getState() });
                 break;
@@ -720,6 +874,7 @@ export class TabManager {
             }
             case 'approveToolCall':
                 this._resolveToolApproval(tab, msg.toolCallId, true);
+                this._maybeResumeAfterPlanCard(tab);
                 break;
             case 'rejectToolCall':
                 this._resolveToolApproval(tab, msg.toolCallId, false);
@@ -739,6 +894,7 @@ export class TabManager {
                     });
                 }
                 this._resolveToolApproval(tab, msg.toolCallId, true);
+                this._maybeResumeAfterPlanCard(tab);
                 break;
             }
             case 'openFile':
@@ -826,6 +982,26 @@ export class TabManager {
     }
 
     private _requestToolApproval(tab: any, toolCallId: string, toolName: string, args: any): Promise<boolean> {
+        const planSnap = tab.plan.machine.snapshot();
+        if (planSnap.phase === 'executing' && PLAN_CREDENTIAL_TOOLS.includes(toolName) && !isDangerousTool(toolName)) {
+            // 计划批准凭据：计划内非危险核心工具放行，留痕来源 = Plan。
+            if (tab.id === this._activeTabId) {
+                this._hooks.post({
+                    type: 'approvalTrace',
+                    toolCallId,
+                    toolName,
+                    scope: 'session',
+                    source: 'plan',
+                });
+            }
+            return Promise.resolve(true);
+        }
+        if (planSnap.phase === 'executing' && isDangerousTool(toolName) && planSnap.currentStep >= 0) {
+            // 危险工具例外：弹卡并让当前步骤进入失败暂停态（PRD 9.5）。
+            tab.plan.machine.fail(planSnap.currentStep, PLAN_DANGEROUS_REASON);
+            this._emitStateChange();
+        }
+
         const decision = tab.approvalMemory.check(toolName);
         if (decision.approved) {
             if (tab.id === this._activeTabId) {
@@ -859,6 +1035,135 @@ export class TabManager {
             if (tab.id === this._activeTabId) {
                 this._hooks.post({ type: 'toolCallResolved', toolCallId });
             }
+        }
+    }
+
+    // ── Plan mode glue (PRD C8/C9) ──
+
+    private _restrictPlanTools(tab: any): void {
+        if (tab.plan.savedTools !== null) return;
+        const active = tab.session.getActiveToolNames();
+        tab.plan.savedTools = active;
+        tab.session.setActiveToolsByName(active.filter((n: string) => PLAN_READONLY_TOOLS.includes(n)));
+    }
+
+    private _restorePlanTools(tab: any): void {
+        if (tab.plan.savedTools === null) return;
+        const saved = tab.plan.savedTools;
+        tab.plan.savedTools = null;
+        tab.session.setActiveToolsByName(saved);
+    }
+
+    private _resetPlan(tab: any): void {
+        this._restorePlanTools(tab);
+        tab.plan = {
+            machine: new PlanMachine(),
+            savedTools: null,
+            // Monotonic: a zombie driver from the disposed runtime must see a
+            // runId mismatch and exit instead of touching the fresh plan.
+            runId: tab.plan.runId + 1,
+            driverActive: false,
+            abortSeen: false,
+            capturedSteps: null,
+        };
+    }
+
+    /**
+     * On approval-card resolution, a plan paused on the dangerous-tool card
+     * resumes the current step (批准后从当前步继续). While the paused turn is
+     * still streaming the live driver picks the resumed state up; otherwise a
+     * fresh driver retries the step.
+     */
+    private _maybeResumeAfterPlanCard(tab: any): void {
+        const snap = tab.plan.machine.snapshot();
+        if (snap.phase !== 'paused' || snap.pausedReason !== PLAN_DANGEROUS_REASON) return;
+        if (tab.pendingApprovals.size > 0) return;
+        if (tab.plan.machine.resume()) {
+            this._emitStateChange();
+            void this._runPlanSteps(tab);
+        }
+    }
+
+    /** Extract plain text from an SDK assistant message (content blocks or raw). */
+    private _assistantText(msg: any): string {
+        const content = msg?.content;
+        return Array.isArray(content)
+            ? content
+                  .filter((p: any) => p?.type === 'text')
+                  .map((p: any) => p?.text ?? '')
+                  .join('\n')
+            : String(content ?? '');
+    }
+
+    /**
+     * Finish a planning turn: prefer the plan captured from the planning
+     * turn's own message_end (a queued follow-up may drain inside the same
+     * run, making settle-time last-message parsing unreliable), falling back
+     * to the last assistant message. Success moves the machine to 待批准 and
+     * restores the toolset; failure keeps 规划中 (with an error unless the
+     * user aborted the turn).
+     */
+    private _maybeFinishPlanning(tab: any): void {
+        if (tab.plan.machine.snapshot().phase !== 'planning') return;
+        const wasAborted = tab.plan.abortSeen;
+        tab.plan.abortSeen = false;
+
+        let titles = tab.plan.capturedSteps ?? [];
+        tab.plan.capturedSteps = null;
+        if (titles.length === 0) {
+            const msgs = tab.session.getMessages();
+            for (let i = msgs.length - 1; i >= 0; i--) {
+                if (msgs[i]?.role === 'assistant') {
+                    titles = parsePlanBlock(this._assistantText(msgs[i]));
+                    break;
+                }
+            }
+        }
+
+        if (titles.length > 0 && tab.plan.machine.planProduced(titles)) {
+            this._restorePlanTools(tab);
+            this._emitStateChange();
+            return;
+        }
+        if (!wasAborted && tab.id === this._activeTabId) {
+            this._hooks.post({ type: 'error', message: t('plan.noPlan') });
+        }
+        this._emitStateChange();
+    }
+
+    /**
+     * Sequential per-step executor: one agent turn per plan step. Single-flight
+     * per tab (a live driver picks up resumed state); invalidated by runId on
+     * interrupt/abandon.
+     */
+    private async _runPlanSteps(tab: any): Promise<void> {
+        if (tab.plan.driverActive) return;
+        tab.plan.driverActive = true;
+        const runId = tab.plan.runId;
+        try {
+            for (;;) {
+                const snap = tab.plan.machine.snapshot();
+                if (snap.phase !== 'executing' || runId !== tab.plan.runId) return;
+                const idx = snap.steps.findIndex((s: any) => s.status !== 'done' && s.status !== 'cancelled');
+                if (idx < 0) return;
+                const total = snap.steps.length;
+                if (!tab.plan.machine.stepStarted(idx)) return;
+                this._emitStateChange();
+                try {
+                    await tab.session.prompt(stepPrompt(snap.steps[idx].title, idx, total));
+                } catch (err: any) {
+                    if (runId !== tab.plan.runId) return;
+                    tab.plan.machine.fail(idx, String(err?.message ?? err));
+                    this._emitStateChange();
+                    return;
+                }
+                if (runId !== tab.plan.runId) return;
+                if (tab.plan.machine.snapshot().phase !== 'executing') return;
+                tab.plan.machine.stepDone(idx);
+                this._emitStateChange();
+            }
+        } finally {
+            tab.plan.driverActive = false;
         }
     }
 
