@@ -8,13 +8,15 @@ import { SettingsPanel } from './providers/settings-panel';
 import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
 import { getModelRuntime } from './pi/auth';
+import type { GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
-import type { ServerMessage } from './shared/protocol';
+import type { ApprovalRuleInfo, ServerMessage } from './shared/protocol';
 
 let bridgeContext: BridgeContext | undefined;
 
 const SIDEBAR_PLACEMENT_KEY = 'pi-agent.sidebarPlacementDone';
+const APPROVAL_RULES_KEY = 'pi-agent.approvalRules.global';
 
 /**
  * Move the Pi panel view between workbench areas. The view must be focused
@@ -51,6 +53,25 @@ export async function activate(context: vscode.ExtensionContext) {
         const secrets = context.secrets;
 
         let providerRef: SidebarProvider | undefined;
+
+        // Global (all-tabs) approval memory rules, persisted in global state.
+        const globalRuleStore: GlobalRuleStore = {
+            load: () => {
+                const raw = context.globalState.get<unknown>(APPROVAL_RULES_KEY);
+                if (!Array.isArray(raw)) return [];
+                return raw.filter(
+                    (r): r is ApprovalRuleInfo =>
+                        !!r && typeof r === 'object'
+                        && typeof (r as ApprovalRuleInfo).tool === 'string'
+                        && (r as ApprovalRuleInfo).tool.length > 0
+                        && typeof (r as ApprovalRuleInfo).createdAt === 'number',
+                );
+            },
+            save: (rules) => {
+                void context.globalState.update(APPROVAL_RULES_KEY, rules);
+            },
+        };
+
         const hooks: TabManagerHooks = {
             post: (msg) => providerRef?.post(msg),
             setContext: (key, value) => { void vscode.commands.executeCommand('setContext', key, value); },
@@ -80,7 +101,7 @@ export async function activate(context: vscode.ExtensionContext) {
             },
         };
 
-        const tabManager = new TabManager(factory, hooks);
+        const tabManager = new TabManager(factory, hooks, globalRuleStore);
         await tabManager.initialize();
 
         const diffContentProvider = new DiffContentProvider();
@@ -134,6 +155,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 SettingsPanel.show(
                     context.extensionUri,
                     secrets,
+                    globalRuleStore,
                     async (provider, key) => {
                         const runtime = await getModelRuntime();
                         if (key) {

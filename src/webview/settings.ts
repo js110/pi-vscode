@@ -1,4 +1,4 @@
-import type { SettingsClientMessage, SettingsServerMessage, SettingsData, SkillInfo } from '../shared/protocol';
+import type { ApprovalRuleInfo, SettingsClientMessage, SettingsServerMessage, SettingsData, SkillInfo } from '../shared/protocol';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: SettingsClientMessage): void;
@@ -10,6 +10,7 @@ const vscode = acquireVsCodeApi();
 
 let currentSettings: SettingsData | null = null;
 let loadedSkills: SkillInfo[] = [];
+let approvalRules: ApprovalRuleInfo[] = [];
 
 window.addEventListener('message', (event) => {
     const msg = event.data as SettingsServerMessage;
@@ -27,6 +28,10 @@ window.addEventListener('message', (event) => {
         case 'skills':
             loadedSkills = msg.skills;
             renderSkillsSection();
+            break;
+        case 'approvalRules':
+            approvalRules = msg.rules;
+            renderApprovalSection();
             break;
         case 'error':
             showToast(msg.message, 'error');
@@ -74,6 +79,10 @@ function render(data: SettingsData): void {
         buildTextarea('allowedTools', 'Allowed Tools', data.allowedTools.join(', '),
             'Comma-separated list of tool names to allow (e.g. read, grep, bash). Leave empty to allow all.'),
     ]));
+
+    const approvalSection = buildSection('Approval Memory', [buildApprovalPlaceholder()]);
+    approvalSection.id = 'approval-section';
+    container.appendChild(approvalSection);
 
     container.appendChild(buildSection('Session Behavior', [
         buildToggle('autoSaveSessions', 'Auto-save sessions', data.autoSaveSessions,
@@ -252,6 +261,79 @@ function buildSkillsPlaceholder(): HTMLElement {
     return row;
 }
 
+function buildApprovalPlaceholder(): HTMLElement {
+    const row = el('div', 'setting-row');
+    row.id = 'approval-rules';
+    row.innerHTML = `<p class="setting-description">Loading approval rules...</p>`;
+    return row;
+}
+
+function renderApprovalSection(): void {
+    const container = document.getElementById('approval-rules');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    const description = el('p', 'setting-description');
+    description.textContent =
+        'Tools you chose to "Remember" from approval cards, allowed in every tab. '
+        + 'Shell tools are never remembered. Changes take effect immediately.';
+    container.appendChild(description);
+
+    if (approvalRules.length === 0) {
+        const empty = el('p', 'setting-description approval-empty');
+        empty.textContent = 'No global approval rules yet.';
+        container.appendChild(empty);
+        return;
+    }
+
+    const list = el('div', 'approval-rules-list');
+    for (const rule of approvalRules) {
+        const item = el('div', 'approval-rule-item');
+        const name = el('span', 'approval-rule-tool');
+        name.textContent = rule.tool;
+        const date = el('span', 'approval-rule-date');
+        date.textContent = `since ${formatDate(rule.createdAt)}`;
+        const revoke = el('button', 'setting-btn danger approval-rule-revoke');
+        revoke.textContent = 'Revoke';
+        revoke.dataset.tool = rule.tool;
+        item.append(name, date, revoke);
+        list.appendChild(item);
+    }
+    container.appendChild(list);
+
+    const clearRow = el('div', 'approval-clear-row');
+    const clear = el('button', 'setting-btn secondary');
+    clear.id = 'btn-clear-approval-rules';
+    clear.textContent = `Clear all (${approvalRules.length})`;
+    clearRow.appendChild(clear);
+    container.appendChild(clearRow);
+
+    bindApprovalEvents();
+}
+
+function formatDate(ts: number): string {
+    try {
+        return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+        return '';
+    }
+}
+
+function bindApprovalEvents(): void {
+    document.querySelectorAll('.approval-rule-revoke').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const tool = (btn as HTMLElement).dataset.tool!;
+            vscode.postMessage({ type: 'revokeApprovalRule', tool });
+        });
+    });
+
+    const clearBtn = document.getElementById('btn-clear-approval-rules');
+    clearBtn?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'clearApprovalRules' });
+    });
+}
+
 function renderSkillsSection(): void {
     const container = document.getElementById('skills-list');
     if (!container) return;
@@ -390,3 +472,4 @@ function escHtml(s: string): string {
 
 vscode.postMessage({ type: 'getSettings' });
 vscode.postMessage({ type: 'getSkills' });
+vscode.postMessage({ type: 'getApprovalRules' });

@@ -23,6 +23,13 @@ export interface ToolCallPendingInfo {
     args: any;
 }
 
+export type ApprovalScope = 'session' | 'global';
+
+export interface ApprovalRuleInfo {
+    tool: string;
+    createdAt: number;
+}
+
 export interface FileChangeInfo {
     filePath: string;
     toolCallId: string;
@@ -131,6 +138,7 @@ export type ClientMessage =
     | { type: 'getState' }
     | { type: 'approveToolCall'; toolCallId: string }
     | { type: 'rejectToolCall'; toolCallId: string }
+    | { type: 'rememberToolApproval'; toolCallId: string; scope: ApprovalScope }
     | { type: 'openFile'; filePath: string }
     | { type: 'openDiff'; filePath: string; toolCallId: string }
     | { type: 'undoFileChange'; filePath: string; toolCallId: string }
@@ -154,7 +162,10 @@ export type SettingsClientMessage =
     | { type: 'updateSetting'; key: string; value: any }
     | { type: 'setApiKey'; provider: string; key: string }
     | { type: 'clearApiKey'; provider: string }
-    | { type: 'getSkills' };
+    | { type: 'getSkills' }
+    | { type: 'getApprovalRules' }
+    | { type: 'revokeApprovalRule'; tool: string }
+    | { type: 'clearApprovalRules' };
 
 // Extension -> Webview messages
 export type ServerMessage =
@@ -169,6 +180,7 @@ export type ServerMessage =
     | { type: 'confirmResult'; action: string; confirmed: boolean; payload?: any }
     | { type: 'toolCallPending'; pending: ToolCallPendingInfo }
     | { type: 'toolCallResolved'; toolCallId: string }
+    | { type: 'approvalTrace'; toolCallId: string; toolName: string; scope: ApprovalScope }
     | { type: 'skills'; skills: SkillInfo[]; commands?: CommandInfo[] }
     | { type: 'configState'; config: PiConfigSnapshot }
     | { type: 'error'; message: string };
@@ -178,4 +190,5 @@ export type SettingsServerMessage =
     | { type: 'settings'; data: SettingsData }
     | { type: 'settingChanged'; key: string; value: any }
     | { type: 'skills'; skills: SkillInfo[] }
+    | { type: 'approvalRules'; rules: ApprovalRuleInfo[] }
     | { type: 'error'; message: string };

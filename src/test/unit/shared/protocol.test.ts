@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import type { ClientMessage, ServerMessage, SerializedAgentState } from '../../../shared/protocol';
+import type {
+    ClientMessage,
+    ServerMessage,
+    SerializedAgentState,
+    SettingsClientMessage,
+    SettingsServerMessage,
+} from '../../../shared/protocol';
 
 describe('Protocol types', () => {
     it('client messages serialize correctly', () => {
@@ -13,6 +19,7 @@ describe('Protocol types', () => {
             { type: 'getSessions' },
             { type: 'getState' },
             { type: 'refreshConfig' },
+            { type: 'rememberToolApproval', toolCallId: 't1', scope: 'session' },
         ];
 
         for (const msg of messages) {
@@ -50,6 +57,7 @@ describe('Protocol types', () => {
                     discoveredAt: 0,
                 },
             },
+            { type: 'approvalTrace', toolCallId: 't2', toolName: 'write', scope: 'global' },
         ];
 
         for (const msg of messages) {
@@ -70,5 +78,25 @@ describe('Protocol types', () => {
         const parsed = JSON.parse(JSON.stringify(msg));
         expect(parsed.state.isStreaming).toBe(true);
         expect(parsed.state.streamingMessage).toBeDefined();
+    });
+
+    it('settings messages for approval rules serialize correctly', () => {
+        const clientMessages: SettingsClientMessage[] = [
+            { type: 'getApprovalRules' },
+            { type: 'revokeApprovalRule', tool: 'write' },
+            { type: 'clearApprovalRules' },
+        ];
+        for (const msg of clientMessages) {
+            const roundTripped = JSON.parse(JSON.stringify(msg)) as SettingsClientMessage;
+            expect(roundTripped.type).toBe(msg.type);
+        }
+
+        const serverMessages: SettingsServerMessage[] = [
+            { type: 'approvalRules', rules: [{ tool: 'write', createdAt: 1_000 }] },
+        ];
+        for (const msg of serverMessages) {
+            const roundTripped = JSON.parse(JSON.stringify(msg)) as SettingsServerMessage;
+            expect(roundTripped.type).toBe(msg.type);
+        }
     });
 });

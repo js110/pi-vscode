@@ -405,6 +405,47 @@ body {
     text-transform: uppercase;
 }
 
+/* Approval memory: global rule list */
+.approval-empty { font-style: italic; }
+.approval-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+.approval-rule-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 12px;
+    background: var(--surface-strong);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+}
+.approval-rule-tool {
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--fg);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.approval-rule-date {
+    flex: 1;
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+}
+.approval-rule-revoke { flex-shrink: 0; }
+.approval-clear-row {
+    margin-top: 9px;
+    display: flex;
+    justify-content: flex-end;
+}
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         transition-duration: 0.001ms !important;

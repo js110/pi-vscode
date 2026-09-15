@@ -1,6 +1,8 @@
 import type { PiSessionManager } from '../pi/session';
 import { ensureConfigDiscovered, refreshPiConfig } from '../pi/config';
+import { ApprovalMemory, type GlobalRuleStore } from '../pi/approval-memory';
 import type {
+    ApprovalScope,
     ClientMessage,
     ServerMessage,
     SerializedAgentState,
@@ -33,6 +35,7 @@ export interface TabManagerHooks {
 
 interface PendingApproval {
     resolve: (approved: boolean) => void;
+    toolName: string;
 }
 
 interface MessageMeta {
@@ -43,6 +46,17 @@ interface MessageMeta {
 let tabIdCounter = 0;
 function nextTabId(): string {
     return `tab-${++tabIdCounter}`;
+}
+
+/** Non-persistent fallback used when the host supplies no store. */
+function inMemoryGlobalRuleStore(): GlobalRuleStore {
+    let rules: import('../shared/protocol').ApprovalRuleInfo[] = [];
+    return {
+        load: () => rules.map((r) => ({ ...r })),
+        save: (next) => {
+            rules = next.map((r) => ({ ...r }));
+        },
+    };
 }
 
 function safeSerialize(obj: any): any {
@@ -66,6 +80,7 @@ export class TabManager {
         messageMeta: Map<number, MessageMeta>;
         hasNotification: boolean;
         pendingApprovals: Map<string, PendingApproval>;
+        approvalMemory: ApprovalMemory;
         queuedMessages: string[];
         isStreaming: boolean;
     }>();
@@ -76,6 +91,7 @@ export class TabManager {
     constructor(
         private _factory: TabFactory,
         private _hooks: TabManagerHooks,
+        private _globalRules: GlobalRuleStore = inMemoryGlobalRuleStore(),
     ) {}
 
     async initialize(): Promise<void> {
@@ -185,6 +201,7 @@ export class TabManager {
             messageMeta: new Map<number, MessageMeta>(),
             hasNotification: false,
             pendingApprovals: new Map<string, PendingApproval>(),
+            approvalMemory: new ApprovalMemory(this._globalRules),
             queuedMessages: [],
             isStreaming: false,
         };
@@ -492,6 +509,23 @@ export class TabManager {
             case 'rejectToolCall':
                 this._resolveToolApproval(tab, msg.toolCallId, false);
                 break;
+            case 'rememberToolApproval': {
+                const pending = tab.pendingApprovals.get(msg.toolCallId);
+                if (!pending) break;
+                const toolName = pending.toolName;
+                const scope: ApprovalScope = msg.scope === 'global' ? 'global' : 'session';
+                tab.approvalMemory.remember(toolName, scope);
+                if (tab.id === this._activeTabId) {
+                    this._hooks.post({
+                        type: 'approvalTrace',
+                        toolCallId: msg.toolCallId,
+                        toolName,
+                        scope,
+                    });
+                }
+                this._resolveToolApproval(tab, msg.toolCallId, true);
+                break;
+            }
             case 'openFile':
                 this._hooks.openFile(msg.filePath);
                 break;
@@ -577,8 +611,21 @@ export class TabManager {
     }
 
     private _requestToolApproval(tab: any, toolCallId: string, toolName: string, args: any): Promise<boolean> {
+        const decision = tab.approvalMemory.check(toolName);
+        if (decision.approved) {
+            if (tab.id === this._activeTabId) {
+                this._hooks.post({
+                    type: 'approvalTrace',
+                    toolCallId,
+                    toolName,
+                    scope: decision.scope ?? 'session',
+                });
+            }
+            return Promise.resolve(true);
+        }
+
         return new Promise<boolean>((resolve) => {
-            tab.pendingApprovals.set(toolCallId, { resolve });
+            tab.pendingApprovals.set(toolCallId, { resolve, toolName });
 
             if (tab.id === this._activeTabId) {
                 this._hooks.post({

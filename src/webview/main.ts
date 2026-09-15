@@ -1,7 +1,8 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope } from '../shared/protocol';
+import { isDangerousTool } from '../shared/tool-safety';
 import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon } from '../shared/webview-text';
 import { el, escHtml } from './dom';
-import { renderMarkdown, buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCard, buildModelItem, resetCodeBlockIds } from './render/messages';
+import { renderMarkdown, buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCard, buildModelItem, buildApprovalBadge, resetCodeBlockIds } from './render/messages';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -40,6 +41,7 @@ const state: {
     commands: CommandInfo[];
     queuedMessages: string[];
     config?: PiConfigSnapshot;
+    approvalTraces: Map<string, ApprovalScope>;
 } = {
     messages: [],
     isStreaming: false,
@@ -58,6 +60,7 @@ const state: {
     skills: [],
     commands: [],
     queuedMessages: [],
+    approvalTraces: new Map<string, ApprovalScope>(),
 };
 
 let sessionSearchQuery = '';
@@ -112,6 +115,16 @@ function handleMessage(msg: ServerMessage): void {
         case 'toolCallResolved':
             removeToolApprovalCard(msg.toolCallId);
             break;
+        case 'approvalTrace': {
+            const traces = state.approvalTraces;
+            if (traces.size >= 200) {
+                const oldest = traces.keys().next().value;
+                if (oldest !== undefined) traces.delete(oldest);
+            }
+            traces.set(msg.toolCallId, msg.scope);
+            applyMemoryBadge(document.getElementById(`tool-${msg.toolCallId}`) as HTMLElement | null, msg.toolCallId);
+            break;
+        }
         case 'skills':
             state.skills = msg.skills;
             state.commands = msg.commands ?? [];
@@ -1120,6 +1133,7 @@ function buildToolResultCard(msg: any, allMessages: any[], msgIndex: number): HT
         details.appendChild(body);
         wrapper.appendChild(details);
 
+        applyMemoryBadge(details, toolCallId);
         if (footer) wrapper.appendChild(footer);
         return wrapper;
     }
@@ -1138,6 +1152,7 @@ function buildToolResultCard(msg: any, allMessages: any[], msgIndex: number): HT
     `;
 
     wrapper.appendChild(card);
+    applyMemoryBadge(card, toolCallId);
     if (footer) wrapper.appendChild(footer);
     return wrapper;
 }
@@ -1171,6 +1186,7 @@ function renderToolStart(event: any): void {
             </div>
         `;
         container.appendChild(card);
+        applyMemoryBadge(card, event.toolCallId);
         scrollToBottom();
         return;
     }
@@ -1194,6 +1210,7 @@ function renderToolStart(event: any): void {
     `;
 
     container.appendChild(card);
+    applyMemoryBadge(card, event.toolCallId);
     bindToolClickable();
     scrollToBottom();
 }
@@ -1265,6 +1282,7 @@ function renderToolEnd(event: any): void {
         details.appendChild(body);
 
         card.replaceWith(details);
+        applyMemoryBadge(details, event.toolCallId);
         bindToolClickable();
     } else {
         const statusEl = card.querySelector('.tool-status');
@@ -1280,6 +1298,20 @@ function renderToolEnd(event: any): void {
 }
 
 // ── Tool approval cards ──
+
+function applyMemoryBadge(card: HTMLElement | null, toolCallId: string): void {
+    const scope = state.approvalTraces.get(toolCallId);
+    if (!card || !scope) return;
+    const header = card.querySelector('.tool-header, .diff-file-header');
+    if (!header || header.querySelector('.memory-badge')) return;
+    const status = header.querySelector('.tool-status');
+    const badge = buildApprovalBadge(scope);
+    if (status) {
+        header.insertBefore(badge, status);
+    } else {
+        header.appendChild(badge);
+    }
+}
 
 function renderToolApprovalCard(pending: ToolCallPendingInfo): void {
     const container = document.getElementById('streaming-message');
@@ -1305,13 +1337,45 @@ function renderToolApprovalCard(pending: ToolCallPendingInfo): void {
         <div class="approval-args">${escHtml(formatToolArgs(parsedArgs))}</div>
         <div class="approval-actions">
             <button class="approval-btn approve" data-toolcallid="${escHtml(pending.toolCallId)}">Approve</button>
+            ${isDangerousTool(pending.toolName) ? '' : `
+            <span class="remember-split">
+                <button class="approval-btn remember" data-toolcallid="${escHtml(pending.toolCallId)}">Remember &#9662;</button>
+                <div class="remember-menu" hidden>
+                    <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="session">This session only</div>
+                    <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="global">All tabs (global)</div>
+                </div>
+            </span>`}
             <button class="approval-btn reject" data-toolcallid="${escHtml(pending.toolCallId)}">Reject</button>
         </div>
     `;
 
     container.appendChild(card);
     bindApprovalButtons();
+    bindRememberButtons(card);
     scrollToBottom();
+}
+
+function bindRememberButtons(card: HTMLElement): void {
+    const rememberBtn = card.querySelector('.approval-btn.remember');
+    const menu = card.querySelector('.remember-menu') as HTMLElement | null;
+    if (!rememberBtn || !menu) return;
+
+    rememberBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        menu.hidden = !menu.hidden;
+    });
+
+    card.querySelectorAll('.remember-option').forEach((option) => {
+        option.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const el0 = option as HTMLElement;
+            const toolCallId = el0.dataset.toolcallid;
+            const scope = el0.dataset.scope as ApprovalScope;
+            if (!toolCallId || !scope) return;
+            vscode.postMessage({ type: 'rememberToolApproval', toolCallId, scope });
+            removeToolApprovalCard(toolCallId);
+        });
+    });
 }
 
 function removeToolApprovalCard(toolCallId: string): void {

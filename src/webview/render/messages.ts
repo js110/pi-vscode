@@ -133,6 +133,13 @@ export function buildDiffCard(change: FileChangeInfo, msg?: any): HTMLElement {
     return wrapper;
 }
 
+/** Badge marking a tool card as auto-approved by approval memory (PRD 9.3). */
+export function buildApprovalBadge(scope: string): HTMLElement {
+    const badge = el('span', 'memory-badge');
+    badge.textContent = `memory · ${scope === 'global' ? 'all tabs' : 'session'}`;
+    return badge;
+}
+
 export function buildToolCard(tc: any): HTMLElement {
     const card = el('div', 'tool-card');
     const name = tc.name ?? tc.toolName ?? tc.function?.name ?? 'unknown';

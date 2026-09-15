@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { SettingsClientMessage, SettingsServerMessage, SettingsData } from '../shared/protocol';
+import type { GlobalRuleStore } from '../pi/approval-memory';
 import { discoverSkills } from '../pi/skills';
 
 const API_KEY_PREFIX = 'pi-agent.apiKey.';
@@ -9,6 +10,7 @@ export class SettingsPanel {
     private _panel: vscode.WebviewPanel;
     private _extensionUri: vscode.Uri;
     private _secrets: vscode.SecretStorage;
+    private _globalRules: GlobalRuleStore;
     private _disposables: vscode.Disposable[] = [];
     private _onCredentialChange?: (provider: string, key?: string) => Promise<void>;
 
@@ -16,11 +18,13 @@ export class SettingsPanel {
         panel: vscode.WebviewPanel,
         extensionUri: vscode.Uri,
         secrets: vscode.SecretStorage,
+        globalRules: GlobalRuleStore,
         onCredentialChange?: (provider: string, key?: string) => Promise<void>,
     ) {
         this._panel = panel;
         this._extensionUri = extensionUri;
         this._secrets = secrets;
+        this._globalRules = globalRules;
         this._onCredentialChange = onCredentialChange;
 
         this._panel.webview.html = this._getHtml();
@@ -44,6 +48,7 @@ export class SettingsPanel {
     static show(
         extensionUri: vscode.Uri,
         secrets: vscode.SecretStorage,
+        globalRules: GlobalRuleStore,
         onCredentialChange?: (provider: string, key?: string) => Promise<void>,
     ): void {
         if (SettingsPanel._instance) {
@@ -62,7 +67,7 @@ export class SettingsPanel {
             },
         );
 
-        SettingsPanel._instance = new SettingsPanel(panel, extensionUri, secrets, onCredentialChange);
+        SettingsPanel._instance = new SettingsPanel(panel, extensionUri, secrets, globalRules, onCredentialChange);
     }
 
     private async _handleMessage(msg: SettingsClientMessage): Promise<void> {
@@ -86,6 +91,19 @@ export class SettingsPanel {
                     break;
                 case 'getSkills':
                     await this._sendSkills();
+                    break;
+                case 'getApprovalRules':
+                    this._post({ type: 'approvalRules', rules: this._globalRules.load() });
+                    break;
+                case 'revokeApprovalRule':
+                    this._globalRules.save(
+                        this._globalRules.load().filter((r) => r.tool !== msg.tool),
+                    );
+                    this._post({ type: 'approvalRules', rules: this._globalRules.load() });
+                    break;
+                case 'clearApprovalRules':
+                    this._globalRules.save([]);
+                    this._post({ type: 'approvalRules', rules: [] });
                     break;
             }
         } catch (err: any) {

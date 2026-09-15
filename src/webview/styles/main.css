@@ -1691,6 +1691,49 @@ body {
     border: 1px solid color-mix(in srgb, var(--error-fg) 40%, transparent);
 }
 .approval-btn.reject:hover { background: color-mix(in srgb, var(--error-fg) 10%, transparent); }
+.approval-btn.remember {
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--hairline);
+}
+.approval-btn.remember:hover { background: var(--surface-hover); }
+
+/* ── Approval memory: remember split button + trace badge ── */
+
+.remember-split { position: relative; }
+.remember-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    min-width: 150px;
+    background: var(--surface-strong);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 6px 20px color-mix(in srgb, #000 20%, transparent);
+    z-index: 60;
+    overflow: hidden;
+}
+.remember-menu[hidden] { display: none; }
+.remember-option {
+    padding: 6px 12px;
+    font-size: var(--fs-sm);
+    color: var(--fg);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.remember-option:hover { background: var(--surface-hover); }
+
+.memory-badge {
+    padding: 1px 8px;
+    margin-left: auto;
+    border-radius: 100px;
+    font-size: var(--fs-micro);
+    font-family: var(--font-mono);
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    white-space: nowrap;
+}
 
 /* ───────────────────────── Error ───────────────────────── */
 

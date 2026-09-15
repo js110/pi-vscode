@@ -191,4 +191,62 @@ describe('TabManager', () => {
             expect.objectContaining({ type: 'configState', config: CONFIG_SNAPSHOT } as any),
         );
     });
+
+    it('auto-approves remembered tools and posts a memory trace', async () => {
+        let handler: ((id: string, tool: string, args: any) => Promise<boolean>) | undefined;
+        const tab = makeTab({
+            setToolApprovalHandler: (h: any) => { handler = h; },
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+        expect(handler).toBeDefined();
+
+        // First call prompts: a pending card is posted.
+        const first = handler!('t1', 'write', {});
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'toolCallPending' } as any),
+        );
+
+        // Remember + approve resolves the promise.
+        await manager.dispatch({ type: 'rememberToolApproval', toolCallId: 't1', scope: 'session' });
+        expect(await first).toBe(true);
+
+        // Second call is auto-approved from memory with a trace, no card.
+        vi.mocked(hooks.post).mockClear();
+        const second = await handler!('t2', 'write', {});
+        expect(second).toBe(true);
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'approvalTrace', toolCallId: 't2', toolName: 'write', scope: 'session' } as any),
+        );
+        expect(hooks.post).not.toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'toolCallPending' } as any),
+        );
+    });
+
+    it('never auto-approves dangerous tools from memory', async () => {
+        let handler: ((id: string, tool: string, args: any) => Promise<boolean>) | undefined;
+        const tab = makeTab({
+            setToolApprovalHandler: (h: any) => { handler = h; },
+        });
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'rememberToolApproval', toolCallId: 'missing', scope: 'global' });
+
+        const pending = handler!('t1', 'bash', {});
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'toolCallPending' } as any),
+        );
+        await manager.dispatch({ type: 'rememberToolApproval', toolCallId: 't1', scope: 'global' });
+        expect(await pending).toBe(true);
+
+        // Even though remember was requested, bash must prompt again.
+        vi.mocked(hooks.post).mockClear();
+        handler!('t2', 'bash', {});
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'toolCallPending' } as any),
+        );
+    });
 });
