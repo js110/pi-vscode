@@ -64,6 +64,7 @@ const EN = {
 
     // Checkpoints
     'checkpoint.restore': 'Restore to this checkpoint',
+    'checkpoint.restored': 'Restored {n} file(s) to checkpoint.',
     'checkpoint.discardConfirm': 'Discard all changes after this checkpoint?',
 
     // Tools
@@ -198,6 +199,22 @@ const EN = {
     'plan.stepDown': 'Move down',
     'plan.stepRemove': 'Remove step',
 
+    // Inline chat (C13)
+    'inline.busy': 'Pi is still processing. Wait for the current turn to finish.',
+    'inline.active': 'An inline edit round is already in progress.',
+    'inline.planActive': 'Plan mode is active. Finish or cancel it first.',
+    'inline.promptTitle': 'Edit with Pi (inline)',
+    'inline.inputPlaceholder': 'Describe the change… (Esc to cancel)',
+    'inline.dirtySave': 'This file has unsaved changes. Save it before invoking the inline edit?',
+    'inline.conflictNotice': 'Manual edits detected while Pi is editing this file — the inline preview may conflict.',
+    'inline.discardConfirm': 'Discard all changes from this inline round?',
+    'inline.discardConflictConfirm': 'You edited this file manually. Discarding will also revert those edits. Continue?',
+    'inline.accepted': 'Inline changes kept.',
+    'inline.discarded': 'Inline changes reverted.',
+    'inline.statusAccept': 'Accept',
+    'inline.statusDiscard': 'Discard',
+    'inline.statusTitle': 'Review the inline edit: keep or revert every change of this round',
+
     // Diff card
     'diff.new': 'NEW',
 
@@ -308,6 +325,7 @@ const ZH: Record<TextKey, string> = {
     'files.redoConfirm': '重新应用已回滚的更改？',
 
     'checkpoint.restore': '恢复到此检查点',
+    'checkpoint.restored': '已将 {n} 个文件恢复到检查点。',
     'checkpoint.discardConfirm': '丢弃此检查点之后的全部更改？',
 
     'tool.result': '工具结果',
@@ -431,6 +449,21 @@ const ZH: Record<TextKey, string> = {
     'plan.stepUp': '上移',
     'plan.stepDown': '下移',
     'plan.stepRemove': '删除步骤',
+
+    'inline.busy': 'Pi 仍在处理中，请等当前轮次结束。',
+    'inline.active': '已有进行中的行内编辑。',
+    'inline.planActive': '计划模式进行中，请先完成或取消。',
+    'inline.promptTitle': '让 Pi 编辑（行内）',
+    'inline.inputPlaceholder': '描述修改内容…（Esc 取消）',
+    'inline.dirtySave': '该文件有未保存修改。先保存再呼出行内编辑？',
+    'inline.conflictNotice': '检测到 Pi 编辑期间的手动修改——行内预览可能冲突。',
+    'inline.discardConfirm': '放弃本轮行内编辑的全部修改？',
+    'inline.discardConflictConfirm': '你手动修改过该文件，放弃将一并回滚这些修改。继续？',
+    'inline.accepted': '已保留行内修改。',
+    'inline.discarded': '已回滚行内修改。',
+    'inline.statusAccept': '接受',
+    'inline.statusDiscard': '放弃',
+    'inline.statusTitle': '评审行内编辑：保留或回滚本轮全部修改',
 
     'diff.new': '新建',
 

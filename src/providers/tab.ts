@@ -176,6 +176,44 @@ export class TabManager {
         this._tabs.get(tabId)?.checkpointManager.recordFileState(filePath, content);
     }
 
+    /** Turn index the most recent dispatched prompt occupies on a tab. */
+    getTurnCounter(tabId: string): number | undefined {
+        return this._tabs.get(tabId)?.turnCounter;
+    }
+
+    /** Whether a specific tab currently has an in-flight agent turn. */
+    isTabStreaming(tabId: string): boolean {
+        return this._tabs.get(tabId)?.isStreaming ?? false;
+    }
+
+    /** Roll back every turn after `messageIndex` on a specific tab
+     *  (inline-chat discard targets its own tab, not the active one). */
+    async restoreCheckpointOnTab(tabId: string, messageIndex: number): Promise<void> {
+        const tab = this._tabs.get(tabId);
+        if (!tab) return;
+        await this._restoreCheckpointOnTab(tab, messageIndex);
+    }
+
+    private async _restoreCheckpointOnTab(
+        tab: Tab & { suspendedMessages: any[] },
+        messageIndex: number,
+    ): Promise<void> {
+        const restored = await tab.checkpointManager.restoreCheckpoint(messageIndex);
+        tab.diffManager.suspendChangesAfter(messageIndex);
+
+        const allMsgs = tab.session.getMessages();
+        const cutoff = this._findCutoffIndex(allMsgs, messageIndex);
+        if (cutoff >= 0 && cutoff < allMsgs.length) {
+            tab.suspendedMessages = allMsgs.slice(cutoff);
+            tab.session.setMessages(allMsgs.slice(0, cutoff));
+        }
+
+        if (restored.length > 0) {
+            this._hooks.showMessage(t('checkpoint.restored', { n: restored.length }));
+        }
+        this._emitStateChange();
+    }
+
     get isStreaming(): boolean {
         return this._tabs.get(this._activeTabId)?.isStreaming ?? false;
     }
@@ -583,7 +621,14 @@ export class TabManager {
                 const turnIdx = tab.turnCounter;
                 tab.checkpointManager.startTurn(turnIdx);
                 tab.diffManager.setCurrentTurn(turnIdx);
-                await tab.session.prompt(text, images);
+                try {
+                    await tab.session.prompt(text, images);
+                } catch (err) {
+                    // The turn never ran: release its index so the next prompt
+                    // reuses it (checkpoint/rollback math counts user turns).
+                    tab.turnCounter--;
+                    throw err;
+                }
                 break;
             }
             case 'steer':
@@ -907,25 +952,9 @@ export class TabManager {
                 await tab.diffManager.undoFileChange(msg.filePath, msg.toolCallId);
                 this._emitStateChange();
                 break;
-            case 'restoreCheckpoint': {
-                const restored = await tab.checkpointManager.restoreCheckpoint(msg.messageIndex);
-                tab.diffManager.suspendChangesAfter(msg.messageIndex);
-
-                const allMsgs = tab.session.getMessages();
-                const cutoff = this._findCutoffIndex(allMsgs, msg.messageIndex);
-                if (cutoff >= 0 && cutoff < allMsgs.length) {
-                    tab.suspendedMessages = allMsgs.slice(cutoff);
-                    tab.session.setMessages(allMsgs.slice(0, cutoff));
-                }
-
-                if (restored.length > 0) {
-                    this._hooks.showMessage(
-                        `Restored ${restored.length} file(s) to checkpoint.`,
-                    );
-                }
-                this._emitStateChange();
+            case 'restoreCheckpoint':
+                await this._restoreCheckpointOnTab(tab, msg.messageIndex);
                 break;
-            }
             case 'redoCheckpoint': {
                 const redone = await tab.checkpointManager.redoCheckpoint();
                 tab.diffManager.redoChanges();

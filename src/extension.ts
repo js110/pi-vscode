@@ -9,6 +9,7 @@ import { resolveDisplayLang } from './providers/lang';
 import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
 import { ApplyManager } from './providers/apply';
+import { InlineChatManager } from './providers/inline-chat';
 import { getModelRuntime } from './pi/auth';
 import { setLang, t } from './shared/i18n';
 import { fuzzyFilterFiles, MAX_MENTION_RESULTS } from './shared/mention';
@@ -250,6 +251,17 @@ export async function activate(context: vscode.ExtensionContext) {
         const diffContentProvider = new DiffContentProvider();
         const statusBar = new StatusBarManager(tabManager);
 
+        const inlineChat = new InlineChatManager({
+            getTabManager: () => tabManagerRef,
+            showMessage: (message) => void vscode.window.showInformationMessage(message),
+            confirmDialog: (message) =>
+                Promise.resolve(
+                    vscode.window.showWarningMessage(message, { modal: true }, 'Yes'),
+                ).then((answer): boolean => answer === 'Yes'),
+            setContext: (key, value) =>
+                void vscode.commands.executeCommand('setContext', key, value),
+        });
+
         const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager);
         providerRef = sidebarProvider;
 
@@ -257,6 +269,19 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.window.registerWebviewViewProvider('pi-agent.chat', sidebarProvider),
             vscode.workspace.registerTextDocumentContentProvider('pi-diff', diffContentProvider),
             statusBar,
+            inlineChat,
+
+            vscode.commands.registerCommand('pi-agent.inlineChat', () => {
+                void inlineChat.start();
+            }),
+
+            vscode.commands.registerCommand('pi-agent.inlineAccept', () => {
+                inlineChat.accept();
+            }),
+
+            vscode.commands.registerCommand('pi-agent.inlineDiscard', () => {
+                void inlineChat.discard();
+            }),
 
             vscode.commands.registerCommand('pi-agent.newChat', async () => {
                 await sidebarProvider.newSession();

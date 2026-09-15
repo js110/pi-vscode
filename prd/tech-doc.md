@@ -29,7 +29,22 @@
 | C10 | 终端集成 + commit 生成 | bridge 复用 + SCM contributes | AI 读取终端输出（reportTerminalSession 已有）+ webview"引用终端选区"；SCM 输入框旁按钮 → diff 生成 message 只填入不提交 |
 | C11 | 后台任务面板 | protocol + webview | SDK 子代理事件呈现（运行中/完成/失败/可取消），不本地建模；后台失败发通知 |
 | C12 | UI 改版 + i18n 集中层 | `webview/styles/main.css` 重写 + `src/shared/webview-text.ts` 升级 | 按 ui/ 原型移植：tokens（--proto-* 对齐 --vscode-*）、Header/Tab 条/消息流/输入区/Footer 骨架、审批卡/提示条/Changed Files/计划卡组件化；文案集中层唯一出口，中/英双语 + 语言设置（VS Code 侧，不回写 Pi） |
-| C13 | Inline Chat | 编辑器内浮层（Q1 spike 后定 API） | 选区呼出行内输入 → 行内 diff 预览（未落盘）→ 接受（纳入 Tab checkpoint）/放弃（中间工具写入按本轮 checkpoint 回滚）；轮次归属活跃 Tab；先 spike 后实做（PRD 风险预案：批内最后集成） |
+| C13 | Inline Chat | 编辑器内浮层（Q1 spike 已定：自绘方案，见 §2.1） | 选区呼出行内输入 → 行内 diff 预览（未落盘）→ 接受（纳入 Tab checkpoint）/放弃（中间工具写入按本轮 checkpoint 回滚）；轮次归属活跃 Tab；先 spike 后实做（PRD 风险预案：批内最后集成） |
+
+### 2.1 C13 Inline Chat spike 结论（Q1，2026-09-15）
+
+**结论：原生 inline chat 不可用（proposed API），采用 100% 稳定 API 自绘组合方案。**
+
+- 原生路径（`chat.createChatParticipant` + `ChatLocation.Editor` / `ChatResponseTextEditPart`）：已核对 `@types/vscode` 1.116.0 完整 d.ts，`ChatLocation`、`ChatRequest.location2`、`ChatResponseTextEditPart` 均不存在——编辑器位置参与仍属 proposed API（Marketplace 禁用），**排除**。
+- `ContentWidget` 自绘输入框：稳定 API 不允许扩展创建，**排除**。
+- `CommentController`/`CommentThread` 伪行内输入（stable 可用）：评论区 chrome（"Comments" 标题/线程生命周期/经 `comments/commentThread/context` 命令参数 `CommentReply` 提交），样式不可控、UX 错位，**不采纳**。
+- **采用方案（全部稳定 API）**：
+  1. 呼出：`pi-agent.inlineChat` 命令（editor/context 菜单 + keybinding），选区经 `buildSelectionPrompt`（复用 C7）作上下文，输入用 `window.createInputBox`（Esc 取消；单行限制记为已知差异）。
+  2. 轮次归属活跃 Tab：指令经 TabManager 正常 `prompt` 分发（流式中拒绝并提示），中间工具调用/审批/流式渲染复用面板现有链路。
+  3. 行内 diff：round 开始时快照目标文件内容；订阅该 Tab DiffManager `onFileChange`（`turnIndex ≥ 本轮首 turn`），`computeUnifiedDiff(base, current)` 解析 hunk 得变更行区间，用 `TextEditorDecorationType` 高亮；工具照常落盘，"未落盘"为 round 级 pending 视图语义（PRD 9.4 与 AC-FN-11 的口径统一：pending = 可一次回滚）。
+  4. 接受/放弃（round 级，状态栏两项 + 命令 + 键）：接受 = 清 pending（本轮 checkpoint 已在链上，仍可继续 undo）；放弃 = `restoreCheckpoint(firstTurnIdx - 1)` 一次回到最初（多轮含在内，AC-FN-11）。
+  5. 冲突（AC-FN-12）：呼出时缓冲 dirty 先要求保存；轮内/评审期手改 → 冲突提示 + pending 置灰，放弃时 modal 确认不静默覆盖。
+  6. 生成中断：abort 后 `agent_settled` → 有变更则进 pending 评审态（置灰可查看），接受/放弃仍可用。
 
 ## 3. 协议扩展（`src/shared/protocol.ts`，向后兼容新增）
 

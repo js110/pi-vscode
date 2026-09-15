@@ -88,7 +88,9 @@ function myersDiff(a: string[], b: string[]): EditOp[] {
     let y = m;
 
     for (let d = trace.length - 1; d > 0; d--) {
-        const prev = trace[d - 1];
+        // trace[d] is the v-state before iteration d ran, i.e. the endpoint
+        // of iteration d-1 — the move made in iteration d departs from it.
+        const prev = trace[d];
         const k = x - y;
         let prevK: number;
         if (k === -d || (k !== d && prev[offset + k - 1] < prev[offset + k + 1])) {

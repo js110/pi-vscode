@@ -82,6 +82,18 @@
       {
         "command": "pi-agent.sendToPi",
         "title": "Pi: Send Selection to Pi"
+      },
+      {
+        "command": "pi-agent.inlineChat",
+        "title": "Pi: Edit with Pi (Inline)"
+      },
+      {
+        "command": "pi-agent.inlineAccept",
+        "title": "Pi: Inline Edit: Accept Changes"
+      },
+      {
+        "command": "pi-agent.inlineDiscard",
+        "title": "Pi: Inline Edit: Discard Changes"
       }
     ],
     "keybindings": [
@@ -99,6 +111,23 @@
         "command": "pi-agent.abort",
         "key": "escape",
         "when": "pi-agent.isStreaming"
+      },
+      {
+        "command": "pi-agent.inlineChat",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "pi-agent.inlineAccept",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "pi-agent.inlinePending && editorTextFocus"
+      },
+      {
+        "command": "pi-agent.inlineDiscard",
+        "key": "escape",
+        "when": "pi-agent.inlinePending && editorTextFocus"
       }
     ],
     "menus": {
@@ -107,12 +136,34 @@
           "command": "pi-agent.sendToPi",
           "when": "editorHasSelection",
           "group": "9_pi-agent"
+        },
+        {
+          "command": "pi-agent.inlineChat",
+          "group": "9_pi-agent"
+        },
+        {
+          "command": "pi-agent.inlineAccept",
+          "when": "pi-agent.inlinePending",
+          "group": "9_pi-agent"
+        },
+        {
+          "command": "pi-agent.inlineDiscard",
+          "when": "pi-agent.inlinePending",
+          "group": "9_pi-agent"
         }
       ],
       "commandPalette": [
         {
           "command": "pi-agent.sendToPi",
           "when": "editorHasSelection"
+        },
+        {
+          "command": "pi-agent.inlineAccept",
+          "when": "pi-agent.inlinePending"
+        },
+        {
+          "command": "pi-agent.inlineDiscard",
+          "when": "pi-agent.inlinePending"
         }
       ]
     },
