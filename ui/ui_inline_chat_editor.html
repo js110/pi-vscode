@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-vscode · 编辑器内交互（Inline Chat / 右键菜单）</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  /* 页面级：本页主体即编辑器本体（颜色一律引用 tokens 变量） */
+  .editor-full {
+    flex: 1; min-width: 0;
+    overflow: auto;
+    padding: 24px 32px;
+    background: var(--vscode-editor-background);
+    font-family: var(--proto-mono);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  /* 顶部模拟编辑器标签页（文件名 + 脏标记圆点） */
+  .editor-tabstrip {
+    display: flex; align-items: stretch; gap: 1px;
+    margin: -24px -32px 22px;
+    padding: 0 12px;
+    background: var(--vscode-sideBar-background);
+    border-bottom: 1px solid var(--proto-border);
+  }
+  .editor-tab {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    color: var(--vscode-descriptionForeground);
+    background: var(--vscode-sideBar-background);
+    border-top: 1px solid transparent;
+    cursor: pointer;
+    user-select: none;
+  }
+  .editor-tab.active {
+    color: var(--vscode-foreground);
+    background: var(--vscode-editor-background);
+    border-top-color: var(--vscode-focusBorder);
+  }
+  .ft-icon {
+    font-size: 9px; font-weight: 700; line-height: 1.5;
+    color: var(--vscode-charts-blue);
+    border: 1px solid var(--vscode-charts-blue);
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+  .editor-tab .dirty-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--vscode-foreground);
+  }
+
+  /* 代码行（普通行与 diff 行同几何，diff 背景全宽出血） */
+  .editor-full .cl {
+    display: flex; margin: 0 -32px; padding: 0 32px;
+    white-space: pre;
+  }
+  .editor-full .ln {
+    flex-shrink: 0;
+    display: inline-block; width: 2.2em;
+    text-align: right; margin-right: 1.2em;
+    color: var(--vscode-descriptionForeground);
+    user-select: none;
+  }
+  .editor-full .sel { background: var(--proto-selection); }
+  .editor-full .sign { user-select: none; }
+
+  /* 编辑器内 UI 组件恢复界面字体（区别于代码等宽字体） */
+  .editor-full .editor-tabstrip,
+  .editor-full .inline-chat-widget,
+  .editor-full .notice-bar,
+  .editor-full .context-menu,
+  .editor-full .divider-label { font-family: var(--proto-font); }
+
+  /* 行内组件宽度收敛，贴近 VS Code Inline Chat 实际比例 */
+  .editor-full .inline-chat-widget { max-width: 760px; }
+  .editor-full .notice-bar { max-width: 760px; margin-left: 2.2em; }
+  .editor-full .divider-label { margin-top: 28px; }
+  .editor-full .overlay-anchor { margin-bottom: 2px; }
+
+  .btn-sm { padding: 2px 9px; font-size: 11px; }
+  .icw-actions.wrap { flex-wrap: wrap; row-gap: 4px; }
+  .icw-hint { font-size: 10px; color: var(--vscode-descriptionForeground); }
+  .icw-gen.gen-error { color: var(--vscode-errorForeground); }
+  .icw-gen .err-icon { font-weight: 700; margin-right: 4px; }
+  .context-menu .cm-item.dim { opacity: 0.55; }
+</style>
+</head>
+<body>
+
+<div class="proto-stage">
+
+  <!-- 本页主体：编辑器本体（全宽），顶部一条模拟编辑器标签页 -->
+  <div class="editor-full">
+
+    <div class="editor-tabstrip">
+      <div class="editor-tab active" title="auth.ts（未保存修改）">
+        <span class="ft-icon">TS</span><span>auth.ts</span><span class="dirty-dot" title="未保存"></span>
+      </div>
+      <div class="editor-tab" title="session.ts"><span class="ft-icon">TS</span><span>session.ts</span></div>
+      <span style="flex:1"></span>
+    </div>
+
+    <!-- ============ 场景 A：生成完成 → 行内 diff ============ -->
+    <div class="divider-label" data-i18n="scn.a">场景 A · 生成完成 → 行内 diff</div>
+
+    <div class="cl"><span class="ln">40</span><span><span class="tok-k">export async function</span> <span class="tok-f">ensureFreshSession</span>(<span class="tok-v">user</span>: <span class="tok-t">User</span>) {</span></div>
+    <div class="cl sel"><span class="ln">41</span><span>  <span class="tok-k">const</span> <span class="tok-v">session</span> = <span class="tok-v">user</span>.<span class="tok-v">session</span>;</span></div>
+    <div class="cl sel"><span class="ln">42</span><span>  <span class="tok-k">if</span> (!<span class="tok-f">isExpired</span>(<span class="tok-v">session</span>)) <span class="tok-k">return</span> <span class="tok-v">session</span>;</span></div>
+    <div class="cl diff-line del"><span class="ln">43</span><span class="sign">−</span><span>  <span class="tok-f">refreshViaCallback</span>(<span class="tok-v">user</span>, (<span class="tok-v">err</span>, <span class="tok-v">next</span>) =&gt;</span></div>
+    <div class="cl diff-line del"><span class="ln">44</span><span class="sign">−</span><span>    <span class="tok-f">saveSession</span>(<span class="tok-v">user</span>, <span class="tok-v">next</span> ?? <span class="tok-v">session</span>));</span></div>
+    <div class="cl diff-line add"><span class="ln">45</span><span class="sign">+</span><span>  <span class="tok-k">const</span> <span class="tok-v">next</span> = <span class="tok-k">await</span> <span class="tok-f">refreshSession</span>(<span class="tok-v">user</span>);</span></div>
+    <div class="cl diff-line add"><span class="ln">46</span><span class="sign">+</span><span>  <span class="tok-f">saveSession</span>(<span class="tok-v">user</span>, <span class="tok-v">next</span>);</span></div>
+    <div class="cl"><span class="ln">47</span><span>}</span></div>
+
+    <div class="inline-chat-widget">
+      <div class="icw-input">
+        <span title="Inline Chat" aria-label="Inline Chat">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5h12v8H8.5L5 14.5v-3H2z"/></svg>
+        </span>
+        <input type="text" value="把回调改成 async/await" data-i18n-val="icw.instruction" aria-label="Inline Chat 指令">
+        <button class="btn btn-sm primary" title="接受（Enter）" data-i18n="icw.accept">接受</button>
+        <kbd title="接受">⏎</kbd>
+        <button class="btn btn-sm danger" title="放弃（Esc）" data-i18n="icw.reject">放弃</button>
+        <kbd title="放弃">Esc</kbd>
+      </div>
+      <div class="icw-actions">
+        <span data-i18n="icw.note">接受后纳入本 Tab checkpoint，可回滚 · 改动归属当前 Tab（Turn 13）</span>
+      </div>
+    </div>
+
+    <div class="notice-bar warn">
+      <span class="nb-icon">⚠</span>
+      <div class="nb-body">
+        <span class="nb-title" data-i18n="conflict.title">冲突提示</span>
+        <span data-i18n="conflict.body">文件存在未保存手改，应用前请确认——不会静默混合。</span>
+        <div class="nb-actions">
+          <button class="btn" data-i18n="conflict.apply">仍要写入</button>
+          <button class="btn" data-i18n="conflict.cancel">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 场景 B：生成中断 ============ -->
+    <div class="divider-label" data-i18n="scn.b">场景 B · 生成中断</div>
+
+    <div class="cl"><span class="ln">52</span><span><span class="tok-k">export async function</span> <span class="tok-f">refreshSession</span>(<span class="tok-v">user</span>: <span class="tok-t">User</span>): <span class="tok-t">Promise</span>&lt;<span class="tok-t">Session</span>&gt; {</span></div>
+    <div class="cl sel"><span class="ln">53</span><span>  <span class="tok-k">const</span> <span class="tok-v">res</span> = <span class="tok-k">await</span> <span class="tok-f">fetch</span>(<span class="tok-s">"/api/refresh"</span>, {</span></div>
+    <div class="cl sel"><span class="ln">54</span><span>    <span class="tok-v">method</span>: <span class="tok-s">"POST"</span>,</span></div>
+    <div class="cl"><span class="ln">55</span><span>    <span class="tok-v">headers</span>: <span class="tok-f">authHeaders</span>(<span class="tok-v">user</span>),</span></div>
+    <div class="cl"><span class="ln">56</span><span>  });</span></div>
+    <div class="cl"><span class="ln">57</span><span>  <span class="tok-k">return</span> (<span class="tok-k">await</span> <span class="tok-v">res</span>.<span class="tok-f">json</span>()) <span class="tok-k">as</span> <span class="tok-t">Session</span>;</span></div>
+    <div class="cl"><span class="ln">58</span><span>}</span></div>
+
+    <div class="inline-chat-widget">
+      <div class="icw-gen gen-error"><span class="err-icon">⨯</span><span data-i18n="abort.error">生成中断（网络错误）——选区与文件保持原状，未落盘的生成结果不写入</span></div>
+      <div class="icw-actions wrap">
+        <button class="btn btn-sm primary" data-i18n="abort.retry">重试</button>
+        <button class="btn btn-sm" data-i18n="abort.view">查看已生成结果</button>
+        <span class="icw-hint" data-i18n="abort.viewHint">pending diff 置灰呈现</span>
+        <button class="btn btn-sm danger" data-i18n="abort.discard">丢弃</button>
+        <span class="icw-hint" data-i18n="abort.credHint">凭证失效（401/403）同走中断语义，修复凭证后可重发</span>
+      </div>
+    </div>
+
+    <!-- ============ 场景 C：选区右键菜单 ============ -->
+    <div class="divider-label" data-i18n="scn.c">场景 C · 选区右键菜单</div>
+
+    <div class="overlay-anchor">
+      <div class="cl"><span class="ln">61</span><span><span class="tok-c">// 选区右键 → 发送到 Pi（携带选区上下文）</span></span></div>
+      <div class="cl sel"><span class="ln">62</span><span><span class="tok-k">export function</span> <span class="tok-f">isExpired</span>(<span class="tok-v">s</span>: <span class="tok-t">Session</span>): <span class="tok-t">boolean</span> {</span></div>
+      <div class="cl sel"><span class="ln">63</span><span>  <span class="tok-k">return</span> <span class="tok-t">Date</span>.<span class="tok-f">now</span>() &gt; <span class="tok-v">s</span>.<span class="tok-v">expiresAt</span>;</span></div>
+      <div class="cl"><span class="ln">64</span><span>}</span></div>
+
+      <div class="context-menu" style="top: 14px; left: 240px;">
+        <div class="cm-item" title="发送到 Pi">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5 9.7 6.3 14.5 8 9.7 9.7 8 14.5 6.3 9.7 1.5 8 6.3 6.3z"/></svg>
+          <span data-i18n="ctx.send">发送到 Pi（携带选区上下文）</span>
+          <span class="cm-key">Alt+P</span>
+        </div>
+        <div class="cm-sep"></div>
+        <div class="cm-item dim"><span data-i18n="ctx.def">转到定义</span><span class="cm-key">F12</span></div>
+        <div class="cm-item dim"><span data-i18n="ctx.rename">重命名</span><span class="cm-key">F2</span></div>
+      </div>
+    </div>
+
+    <div class="notice-bar info">
+      <span class="nb-icon">ℹ</span>
+      <div class="nb-body" data-i18n="queue.info">目标 Tab 流式中时按普通发送入 FollowUp 队列；无活跃 Tab 时新建</div>
+    </div>
+
+  </div>
+</div>
+
+<div class="proto-note" data-i18n="note">覆盖 PRD 9.4 Inline Chat / 右键菜单 / 冲突 / 生成中断</div>
+
+<script src="assets/shared.js"></script>
+<script>
+  window.PI_PAGE = {
+    zh: {
+      "scn.a": "场景 A · 生成完成 → 行内 diff",
+      "scn.b": "场景 B · 生成中断",
+      "scn.c": "场景 C · 选区右键菜单",
+      "icw.instruction": "把回调改成 async/await",
+      "icw.accept": "接受",
+      "icw.reject": "放弃",
+      "icw.note": "接受后纳入本 Tab checkpoint，可回滚 · 改动归属当前 Tab（Turn 13）",
+      "conflict.title": "冲突提示",
+      "conflict.body": "文件存在未保存手改，应用前请确认——不会静默混合。",
+      "conflict.apply": "仍要写入",
+      "conflict.cancel": "取消",
+      "abort.error": "生成中断（网络错误）——选区与文件保持原状，未落盘的生成结果不写入",
+      "abort.retry": "重试",
+      "abort.view": "查看已生成结果",
+      "abort.viewHint": "pending diff 置灰呈现",
+      "abort.discard": "丢弃",
+      "abort.credHint": "凭证失效（401/403）同走中断语义，修复凭证后可重发",
+      "ctx.send": "发送到 Pi（携带选区上下文）",
+      "ctx.def": "转到定义",
+      "ctx.rename": "重命名",
+      "queue.info": "目标 Tab 流式中时按普通发送入 FollowUp 队列；无活跃 Tab 时新建",
+      "note": "覆盖 PRD 9.4 Inline Chat / 右键菜单 / 冲突 / 生成中断"
+    },
+    en: {
+      "scn.a": "Scenario A · Generation complete → inline diff",
+      "scn.b": "Scenario B · Generation aborted",
+      "scn.c": "Scenario C · Selection context menu",
+      "icw.instruction": "Convert the callback to async/await",
+      "icw.accept": "Accept",
+      "icw.reject": "Discard",
+      "icw.note": "On accept, joins this Tab's checkpoint (rollback supported) · Changes belong to the active Tab (Turn 13)",
+      "conflict.title": "Conflict",
+      "conflict.body": "This file has unsaved manual edits — confirm before applying; changes are never merged silently.",
+      "conflict.apply": "Write anyway",
+      "conflict.cancel": "Cancel",
+      "abort.error": "Generation aborted (network error) — selection and file untouched; unapplied results are never written",
+      "abort.retry": "Retry",
+      "abort.view": "View generated result",
+      "abort.viewHint": "pending diff shown greyed out",
+      "abort.discard": "Discard",
+      "abort.credHint": "Credential failures (401/403) follow the same abort semantics; retry after fixing credentials",
+      "ctx.send": "Send to Pi (with selection context)",
+      "ctx.def": "Go to Definition",
+      "ctx.rename": "Rename",
+      "queue.info": "If the target Tab is streaming, the send joins the FollowUp queue as usual; a new Tab is created when none is active",
+      "note": "Covers PRD 9.4 Inline Chat / context menu / conflicts / aborted generation"
+    }
+  };
+</script>
+
+</body>
+</html>

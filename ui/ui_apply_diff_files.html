@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-vscode · Apply diff 预览与改动审查</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  /* 页面级补充：Apply 弹窗遮罩 + Changed Files 分组头（颜色一律引用 tokens 变量） */
+  .modal-mask {
+    position: fixed; inset: 0;
+    background: var(--proto-mask);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal-mask .popover { position: relative; width: 500px; max-width: calc(100vw - 48px); }
+
+  .apply-modal .am-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--proto-border-strong);
+    font-weight: 700; font-size: 13px;
+  }
+  .apply-modal .am-head .am-title { flex: 1; }
+  .apply-modal .am-body { padding: 12px 16px; }
+
+  .am-file-row { display: flex; align-items: center; gap: 8px; }
+  .am-file-row label { flex-shrink: 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .am-file-row .select-input { min-width: 170px; }
+  .am-or { font-size: 11px; color: var(--vscode-disabledForeground); }
+
+  .apply-modal .diff-view { margin: 10px 0 0; }
+  .apply-modal .notice-bar { margin: 10px 0 0; }
+
+  .apply-modal .am-foot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--proto-border-strong);
+  }
+  .apply-modal .am-foot .hint { font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .apply-modal .am-foot .spacer { flex: 1; }
+
+  /* Changed Files 按轮次分组：组头沿用 .cf-item 形制 */
+  .cf-group-head {
+    font-family: var(--proto-font);
+    padding-left: 12px;
+    background: var(--vscode-sideBarSectionHeader-background);
+  }
+  .cf-group-head .cf-spacer { flex: 1; }
+  .cf-stat-gap { width: 6px; }
+  .btn-xs { padding: 1px 8px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div class="proto-stage">
+
+  <!-- 左：模拟编辑器底座（淡显占位，衬托面板与弹窗真实比例） -->
+  <div class="proto-editor-mock" aria-hidden="true">
+    <div><span class="ln">36</span><span class="tok-c">// src/auth/retry.ts — 请求重试</span></div>
+    <div><span class="ln">37</span><span class="tok-k">export async function</span> <span class="tok-f">requestWithRetry</span>(<span class="tok-v">req</span>: <span class="tok-t">Request</span>, <span class="tok-v">opts</span>?: <span class="tok-t">RetryOptions</span>) {</div>
+    <div><span class="ln">38</span>  <span class="tok-k">const</span> <span class="tok-v">signal</span> = <span class="tok-v">opts</span>?.<span class="tok-v">signal</span>;</div>
+    <div><span class="ln">39</span></div>
+    <div><span class="ln sel">40</span>  <span class="tok-k">for</span> (<span class="tok-k">let</span> <span class="tok-v">i</span> = <span class="tok-n">0</span>; <span class="tok-v">i</span> &lt; <span class="tok-n">3</span>; <span class="tok-v">i</span>++) { <span class="tok-c">// ← 此处为 Apply 目标代码块</span></div>
+    <div><span class="ln">41</span>    <span class="tok-k">try</span> {</div>
+    <div><span class="ln">42</span>      <span class="tok-k">return await</span> <span class="tok-f">callApi</span>(<span class="tok-v">req</span>);</div>
+    <div><span class="ln">43</span>    } <span class="tok-k">catch</span> (<span class="tok-v">err</span>) {</div>
+    <div><span class="ln">44</span>      <span class="tok-v">log</span>.<span class="tok-f">warn</span>(<span class="tok-s">"retry"</span>, <span class="tok-v">i</span>);</div>
+    <div><span class="ln">45</span>    }</div>
+    <div><span class="ln">46</span>  }</div>
+    <div><span class="ln">47</span>}</div>
+    <div><span class="ln">48</span></div>
+    <div><span class="ln">49</span><span class="tok-c">// checkpoint：写入后可按轮次回滚（与 Changed Files 同源）</span></div>
+  </div>
+
+  <!-- 中：Pi 侧边面板（改动审查：Changed Files 按轮次分组 + 回滚） -->
+  <div class="pi-panel">
+
+    <div class="pi-header">
+      <div class="title" data-i18n="panel.title">Pi</div>
+      <div class="pi-header-actions">
+        <button class="icon-btn" title="历史会话" aria-label="历史会话">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+        </button>
+        <button class="icon-btn" title="设置" aria-label="设置">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2M3.4 3.4l1.55 1.55M11.05 11.05l1.55 1.55M12.6 3.4l-1.55 1.55M4.95 11.05L3.4 12.6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="messages">
+
+      <!-- Changed Files：按轮次分组，支持按轮回滚 -->
+      <details class="changed-files" open>
+        <summary>
+          <span>▾</span>
+          <span data-i18n="cf.summary">6 个文件已更改 · 2 轮</span>
+        </summary>
+
+        <!-- Turn 11 组头 -->
+        <div class="cf-item cf-group-head">
+          <span class="turn-tag">Turn 11</span>
+          <span class="cf-spacer"></span>
+          <button class="btn btn-xs" data-i18n="cf.rollback">回滚此轮</button>
+        </div>
+        <div class="cf-item">
+          <span class="cf-name">src/auth/retry.ts</span>
+          <span class="stat-add">+14</span><span class="cf-stat-gap"></span><span class="stat-del">−6</span>
+        </div>
+        <div class="cf-item">
+          <span class="cf-name">src/auth/session.ts</span>
+          <span class="stat-add">+8</span><span class="cf-stat-gap"></span><span class="stat-del">−2</span>
+        </div>
+        <div class="cf-item">
+          <span class="cf-name">src/auth/types.ts</span>
+          <span class="stat-add">+5</span><span class="cf-stat-gap"></span><span class="stat-del">−0</span>
+        </div>
+
+        <!-- Turn 12 组头 -->
+        <div class="cf-item cf-group-head">
+          <span class="turn-tag">Turn 12</span>
+          <span class="cf-spacer"></span>
+          <button class="btn btn-xs" data-i18n="cf.rollback">回滚此轮</button>
+        </div>
+        <div class="cf-item">
+          <span class="cf-name">src/api/client.ts</span>
+          <span class="stat-add">+22</span><span class="cf-stat-gap"></span><span class="stat-del">−9</span>
+        </div>
+        <div class="cf-item">
+          <span class="cf-name">src/api/interceptors.ts</span>
+          <span class="stat-add">+11</span><span class="cf-stat-gap"></span><span class="stat-del">−4</span>
+        </div>
+        <div class="cf-item">
+          <span class="cf-name">test/auth.retry.test.ts</span>
+          <span class="stat-add">+30</span><span class="cf-stat-gap"></span><span class="stat-del">−0</span>
+        </div>
+      </details>
+
+      <!-- 审批记忆命中痕迹：与手动批准视觉可区分 -->
+      <div class="trace-entry">
+        <span class="badge auto" data-i18n="trace.badge">记忆放行</span>
+        <span data-i18n="trace.text">自动放行 · edit_file ×2</span>
+        <span class="trace-src" data-i18n="trace.src">来源：本会话记忆</span>
+      </div>
+
+      <!-- 回滚语义说明 -->
+      <div class="notice-bar info">
+        <span class="nb-icon">ⓘ</span>
+        <div class="nb-body" data-i18n="cf.info">回滚仅撤销该轮改动，不影响其他轮次；回滚结果有消息提示</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Apply diff 预览弹窗（fixed 居中遮罩） -->
+<div class="modal-mask">
+  <div class="popover apply-modal" role="dialog" aria-modal="true" aria-label="应用代码块">
+
+    <div class="am-head">
+      <span class="am-title" data-i18n="am.title">应用代码块 · 确认写入</span>
+      <button class="icon-btn" aria-label="关闭">✕</button>
+    </div>
+
+    <div class="am-body">
+      <div class="am-file-row">
+        <label for="apply-target" data-i18n="am.target">目标文件</label>
+        <select id="apply-target" class="select-input">
+          <option selected>src/auth.ts</option>
+          <option>src/api/client.ts</option>
+          <option data-i18n="am.newFile">+ 新文件路径…</option>
+        </select>
+        <span class="am-or" data-i18n="am.orNew">或输入新文件路径</span>
+      </div>
+
+      <!-- 将替换的 diff 预览：6 行删除 + 7 行新增 -->
+      <div class="diff-view">
+        <div class="diff-line del"><span class="ln-no">40</span><span class="sign">−</span><span><span class="tok-k">for</span> (<span class="tok-k">let</span> <span class="tok-v">i</span> = <span class="tok-n">0</span>; <span class="tok-v">i</span> &lt; <span class="tok-n">3</span>; <span class="tok-v">i</span>++) {</span></div>
+        <div class="diff-line del"><span class="ln-no">41</span><span class="sign">−</span><span>  <span class="tok-k">try</span> {</span></div>
+        <div class="diff-line del"><span class="ln-no">42</span><span class="sign">−</span><span>    <span class="tok-k">return await</span> <span class="tok-f">callApi</span>(<span class="tok-v">req</span>);</span></div>
+        <div class="diff-line del"><span class="ln-no">43</span><span class="sign">−</span><span>  } <span class="tok-k">catch</span> (<span class="tok-v">err</span>) {</span></div>
+        <div class="diff-line del"><span class="ln-no">44</span><span class="sign">−</span><span>    <span class="tok-v">log</span>.<span class="tok-f">warn</span>(<span class="tok-s">"retry"</span>, <span class="tok-v">i</span>);</span></div>
+        <div class="diff-line del"><span class="ln-no">45</span><span class="sign">−</span><span>  }</span></div>
+        <div class="diff-line add"><span class="ln-no">40</span><span class="sign">+</span><span><span class="tok-k">const</span> <span class="tok-v">maxRetries</span> = <span class="tok-v">opts</span>?.<span class="tok-v">retries</span> ?? <span class="tok-n">3</span>;</span></div>
+        <div class="diff-line add"><span class="ln-no">41</span><span class="sign">+</span><span><span class="tok-k">let</span> <span class="tok-v">lastError</span>: <span class="tok-v">unknown</span>;</span></div>
+        <div class="diff-line add"><span class="ln-no">42</span><span class="sign">+</span><span><span class="tok-k">for</span> (<span class="tok-k">let</span> <span class="tok-v">i</span> = <span class="tok-n">0</span>; <span class="tok-v">i</span> &lt; <span class="tok-v">maxRetries</span>; <span class="tok-v">i</span>++) {</span></div>
+        <div class="diff-line add"><span class="ln-no">43</span><span class="sign">+</span><span>  <span class="tok-k">try</span> {</span></div>
+        <div class="diff-line add"><span class="ln-no">44</span><span class="sign">+</span><span>    <span class="tok-k">return await</span> <span class="tok-f">callApi</span>(<span class="tok-v">req</span>, { <span class="tok-v">signal</span> });</span></div>
+        <div class="diff-line add"><span class="ln-no">45</span><span class="sign">+</span><span>  } <span class="tok-k">catch</span> (<span class="tok-v">err</span>) {</span></div>
+        <div class="diff-line add"><span class="ln-no">46</span><span class="sign">+</span><span>    <span class="tok-v">lastError</span> = <span class="tok-v">err</span>;</span></div>
+      </div>
+
+      <!-- 写冲突保护（PRD 11.2） -->
+      <div class="notice-bar warn">
+        <span class="nb-icon">⚠</span>
+        <div class="nb-body"><span class="nb-title" data-i18n="am.warnTitle">写入冲突保护</span><span data-i18n="am.warnBody">：预览与确认之间文件被外部修改时将阻止写入并要求重新预览</span></div>
+      </div>
+    </div>
+
+    <div class="am-foot">
+      <span class="hint" data-i18n="am.undoHint">写入后可一步撤销（纳入本 Tab checkpoint）</span>
+      <span class="spacer"></span>
+      <button class="btn" data-i18n="am.cancel">取消</button>
+      <button class="btn primary" data-i18n="am.confirm">确认写入</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="proto-note" data-i18n="note">覆盖 PRD 9.3 Apply / 改动审查 / 11.2 冲突</div>
+
+<script src="assets/shared.js"></script>
+<script>
+window.PI_PAGE = {
+  zh: {
+    "panel.title": "Pi",
+    "cf.summary": "6 个文件已更改 · 2 轮",
+    "cf.rollback": "回滚此轮",
+    "trace.badge": "记忆放行",
+    "trace.text": "自动放行 · edit_file ×2",
+    "trace.src": "来源：本会话记忆",
+    "cf.info": "回滚仅撤销该轮改动，不影响其他轮次；回滚结果有消息提示",
+    "am.title": "应用代码块 · 确认写入",
+    "am.target": "目标文件",
+    "am.newFile": "+ 新文件路径…",
+    "am.orNew": "或输入新文件路径",
+    "am.warnTitle": "写入冲突保护",
+    "am.warnBody": "：预览与确认之间文件被外部修改时将阻止写入并要求重新预览",
+    "am.undoHint": "写入后可一步撤销（纳入本 Tab checkpoint）",
+    "am.cancel": "取消",
+    "am.confirm": "确认写入",
+    "note": "覆盖 PRD 9.3 Apply / 改动审查 / 11.2 冲突"
+  },
+  en: {
+    "panel.title": "Pi",
+    "cf.summary": "6 files changed · 2 turns",
+    "cf.rollback": "Roll back turn",
+    "trace.badge": "Memory",
+    "trace.text": "Auto-approved · edit_file ×2",
+    "trace.src": "Source: session memory",
+    "cf.info": "Rolling back only reverts that turn's changes; other turns are untouched. A message confirms the result.",
+    "am.title": "Apply Code Block · Confirm Write",
+    "am.target": "Target file",
+    "am.newFile": "+ New file path…",
+    "am.orNew": "or type a new file path",
+    "am.warnTitle": "Write conflict guard",
+    "am.warnBody": ": if the file is modified externally between preview and confirm, the write is blocked and a fresh preview is required.",
+    "am.undoHint": "One-click undo after write (tracked in this tab's checkpoint)",
+    "am.cancel": "Cancel",
+    "am.confirm": "Confirm Write",
+    "note": "Covers PRD 9.3 Apply / change review / 11.2 conflict guard"
+  }
+};
+</script>
+</body>
+</html>

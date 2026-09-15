@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-vscode · 设置</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  /* 页面级补充：设置页专属小组件（颜色一律引用 tokens 变量） */
+  .btn.sm { padding: 2px 9px; font-size: 11px; }
+  .settings-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .settings-actions .hint { font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .rule-row .badge { flex-shrink: 0; }
+  .toggle-label { min-width: 64px; color: var(--vscode-foreground); }
+  .field-hint { font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.5; margin-top: 3px; }
+  .about-line { font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.8; }
+  .settings-section:last-child { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<div class="proto-stage">
+
+  <!-- 左：模拟编辑器底座，衬托侧边面板真实比例 -->
+  <div class="proto-editor-mock" aria-hidden="true">
+    <div><span class="ln">1</span><span class="tok-k">import</span> { <span class="tok-f">ApprovalMemory</span> } <span class="tok-k">from</span> <span class="tok-s">"./approvalMemory"</span>;</div>
+    <div><span class="ln">2</span></div>
+    <div><span class="ln">3</span><span class="tok-c">// 审批记忆：按工具名记录放行决定；危险工具永不进入记忆（PRD 11.5）</span></div>
+    <div><span class="ln">4</span><span class="tok-k">const</span> <span class="tok-v">memory</span> = <span class="tok-k">new</span> <span class="tok-f">ApprovalMemory</span>(<span class="tok-v">context</span>.<span class="tok-v">storage</span>);</div>
+    <div><span class="ln">5</span></div>
+    <div><span class="ln">6</span><span class="tok-k">await</span> <span class="tok-v">memory</span>.<span class="tok-f">remember</span>({</div>
+    <div><span class="ln">7</span>  <span class="tok-v">tool</span>: <span class="tok-s">"edit_file"</span>,</div>
+    <div><span class="ln">8</span>  <span class="tok-v">scope</span>: <span class="tok-s">"global"</span> <span class="tok-c">// 全局 / 本会话</span></div>
+    <div><span class="ln">9</span>});</div>
+    <div><span class="ln">10</span></div>
+    <div><span class="ln">11</span><span class="tok-c">// 撤销立即对所有 Tab 生效，下一次同类调用重新弹审批</span></div>
+    <div><span class="ln">12</span><span class="tok-v">memory</span>.<span class="tok-f">revoke</span>(<span class="tok-s">"edit_file"</span>, <span class="tok-s">"global"</span>);</div>
+    <div><span class="ln">13</span></div>
+    <div><span class="ln">14</span><span class="tok-c">// 私有数据存扩展自有存储，不写 ~/.pi/agent；key 仅存 SecretStorage</span></div>
+    <div><span class="ln">15</span><span class="tok-k">const</span> <span class="tok-v">exported</span> = <span class="tok-k">await</span> <span class="tok-v">storage</span>.<span class="tok-f">exportPrivateData</span>();</div>
+  </div>
+
+  <!-- 右：Pi 侧边面板（设置页） -->
+  <div class="pi-panel">
+
+    <div class="pi-header">
+      <button class="icon-btn" title="返回" aria-label="返回">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="19" y1="12" x2="5" y2="12"/>
+          <polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="title" data-i18n="hdr.title">设置</div>
+    </div>
+
+    <div class="settings-page">
+
+      <!-- 审批记忆规则 -->
+      <div class="settings-section">
+        <h3 data-i18n="mem.title">审批记忆规则</h3>
+        <div class="sec-desc" data-i18n="mem.desc">按工具名记忆放行决定。撤销立即对所有 Tab 生效（下一次同类调用重新弹审批）；本会话档随 Tab 关闭自动清除；危险工具永不进入记忆（PRD 11.5）。</div>
+
+        <div class="rule-row">
+          <span class="rule-tool">edit_file</span>
+          <span class="badge" data-i18n="mem.badge.global" title="对所有 Tab 生效">全局</span>
+          <span class="rule-meta" data-i18n="mem.created1">创建于 2026-09-14 10:23</span>
+          <span class="rule-actions"><button class="btn sm" data-i18n="mem.revoke">撤销</button></span>
+        </div>
+        <div class="rule-row">
+          <span class="rule-tool">grep</span>
+          <span class="badge warn" data-i18n="mem.badge.session" title="随 Tab 关闭自动清除">本会话</span>
+          <span class="rule-meta" data-i18n="mem.created2">创建于 2026-09-14 10:25</span>
+          <span class="rule-actions"><button class="btn sm" data-i18n="mem.revoke">撤销</button></span>
+        </div>
+        <div class="rule-row">
+          <span class="rule-tool">read_file</span>
+          <span class="badge" data-i18n="mem.badge.global" title="对所有 Tab 生效">全局</span>
+          <span class="rule-meta" data-i18n="mem.created3">创建于 2026-09-14 11:02</span>
+          <span class="rule-actions"><button class="btn sm" data-i18n="mem.revoke">撤销</button></span>
+        </div>
+        <div class="rule-row">
+          <span class="rule-tool">run_tests</span>
+          <span class="badge warn" data-i18n="mem.badge.session" title="随 Tab 关闭自动清除">本会话</span>
+          <span class="rule-meta" data-i18n="mem.created4">创建于 2026-09-14 11:08</span>
+          <span class="rule-actions"><button class="btn sm" data-i18n="mem.revoke">撤销</button></span>
+        </div>
+
+        <div class="settings-actions">
+          <button class="btn danger" data-i18n="mem.clear">一键清空全部规则</button>
+          <span class="hint" data-i18n="mem.count">共 4 条（全局 2 · 本会话 2）</span>
+        </div>
+      </div>
+
+      <!-- 界面语言 -->
+      <div class="settings-section">
+        <h3 data-i18n="lang.title">界面语言</h3>
+        <div class="toggle-row">
+          <span class="toggle-label" data-i18n="lang.label">语言</span>
+          <select class="select-input">
+            <option data-i18n="lang.opt.zh">中文（简体）</option>
+            <option>English</option>
+          </select>
+        </div>
+        <div class="field-hint" data-i18n="lang.hint">切换即时生效，全部文案经文案集中层统一出口（含动态拼接）</div>
+      </div>
+
+      <!-- 默认模型 -->
+      <div class="settings-section">
+        <h3 data-i18n="model.title">默认模型</h3>
+        <div class="toggle-row">
+          <span class="toggle-label" data-i18n="model.label">模型</span>
+          <select class="select-input">
+            <option>deepseek-chat</option>
+          </select>
+        </div>
+        <div class="field-hint" data-i18n="model.hint">VS Code 侧设置（显式标注归属）；与 Pi 侧偏好不一致时以 VS Code 侧为准，永不回写 Pi 配置</div>
+      </div>
+
+      <!-- 数据边界说明 -->
+      <div class="settings-section">
+        <h3 data-i18n="data.title">数据边界说明</h3>
+        <div class="sec-desc">
+          <div data-i18n="data.desc1">审批记忆 / checkpoint 等扩展私有数据存于 VS Code 扩展自有存储，不写入 ~/.pi/agent，终端 pi 不受影响；</div>
+          <div data-i18n="data.desc2">provider API key 仅存 SecretStorage，不落明文、不写日志、不上报。</div>
+        </div>
+        <div class="settings-actions">
+          <button class="btn" data-i18n="data.export">导出私有数据</button>
+          <button class="btn danger" data-i18n="data.clear">清空私有数据</button>
+        </div>
+      </div>
+
+      <!-- 关于 -->
+      <div class="settings-section">
+        <h3 data-i18n="about.title">关于</h3>
+        <div class="about-line" data-i18n="about.l1">pi-vscode v0.9.0 · Pi SDK @earendil-works/pi-coding-agent 0.84.x</div>
+        <div class="about-line" data-i18n="about.l2">会话数据为 pi 原生格式，与终端 pi 双向续聊</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="proto-note" data-i18n="note">覆盖 PRD 9.6 设置页</div>
+
+<script>
+window.PI_PAGE = {
+  zh: {
+    "hdr.title": "设置",
+    "mem.title": "审批记忆规则",
+    "mem.desc": "按工具名记忆放行决定。撤销立即对所有 Tab 生效（下一次同类调用重新弹审批）；本会话档随 Tab 关闭自动清除；危险工具永不进入记忆（PRD 11.5）。",
+    "mem.badge.global": "全局",
+    "mem.badge.session": "本会话",
+    "mem.created1": "创建于 2026-09-14 10:23",
+    "mem.created2": "创建于 2026-09-14 10:25",
+    "mem.created3": "创建于 2026-09-14 11:02",
+    "mem.created4": "创建于 2026-09-14 11:08",
+    "mem.revoke": "撤销",
+    "mem.clear": "一键清空全部规则",
+    "mem.count": "共 4 条（全局 2 · 本会话 2）",
+    "lang.title": "界面语言",
+    "lang.label": "语言",
+    "lang.opt.zh": "中文（简体）",
+    "lang.hint": "切换即时生效，全部文案经文案集中层统一出口（含动态拼接）",
+    "model.title": "默认模型",
+    "model.label": "模型",
+    "model.hint": "VS Code 侧设置（显式标注归属）；与 Pi 侧偏好不一致时以 VS Code 侧为准，永不回写 Pi 配置",
+    "data.title": "数据边界说明",
+    "data.desc1": "审批记忆 / checkpoint 等扩展私有数据存于 VS Code 扩展自有存储，不写入 ~/.pi/agent，终端 pi 不受影响；",
+    "data.desc2": "provider API key 仅存 SecretStorage，不落明文、不写日志、不上报。",
+    "data.export": "导出私有数据",
+    "data.clear": "清空私有数据",
+    "about.title": "关于",
+    "about.l1": "pi-vscode v0.9.0 · Pi SDK @earendil-works/pi-coding-agent 0.84.x",
+    "about.l2": "会话数据为 pi 原生格式，与终端 pi 双向续聊",
+    "note": "覆盖 PRD 9.6 设置页"
+  },
+  en: {
+    "hdr.title": "Settings",
+    "mem.title": "Approval memory rules",
+    "mem.desc": "Allow decisions are remembered by tool name. Revoking takes effect immediately across all tabs (the next call of the same kind triggers approval again); session-scoped rules are cleared automatically when the tab closes; dangerous tools never enter memory (PRD 11.5).",
+    "mem.badge.global": "Global",
+    "mem.badge.session": "This session",
+    "mem.created1": "Created 2026-09-14 10:23",
+    "mem.created2": "Created 2026-09-14 10:25",
+    "mem.created3": "Created 2026-09-14 11:02",
+    "mem.created4": "Created 2026-09-14 11:08",
+    "mem.revoke": "Revoke",
+    "mem.clear": "Clear all rules",
+    "mem.count": "4 rules in total (2 global · 2 session)",
+    "lang.title": "Interface language",
+    "lang.label": "Language",
+    "lang.opt.zh": "Chinese (Simplified)",
+    "lang.hint": "Takes effect immediately; all copy (including dynamic concatenation) goes through the centralized i18n layer",
+    "model.title": "Default model",
+    "model.label": "Model",
+    "model.hint": "A VS Code-side setting (ownership explicitly labeled); when it differs from the Pi-side preference, the VS Code side wins; never writes back to the Pi configuration",
+    "data.title": "Data boundary",
+    "data.desc1": "Extension-private data such as approval memory / checkpoints lives in the extension's own storage and is never written to ~/.pi/agent — the terminal pi is unaffected;",
+    "data.desc2": "provider API keys are stored only in SecretStorage: never in plaintext, never logged, never reported.",
+    "data.export": "Export private data",
+    "data.clear": "Clear private data",
+    "about.title": "About",
+    "about.l1": "pi-vscode v0.9.0 · Pi SDK @earendil-works/pi-coding-agent 0.84.x",
+    "about.l2": "Session data is in pi's native format; two-way session continuation with terminal pi",
+    "note": "Covers PRD 9.6 Settings"
+  }
+};
+</script>
+<script src="assets/shared.js"></script>
+</body>
+</html>

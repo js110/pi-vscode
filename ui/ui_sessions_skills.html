@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>pi-vscode UI 原型 05 — 会话历史 + 技能菜单</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  /* 页面级微调：双面板并排，窄窗口允许横向滚动 */
+  .proto-stage { overflow-x: auto; overflow-y: hidden; gap: 28px; }
+  .proto-stage .pi-panel:first-child { margin-left: auto; }
+  .proto-stage .pi-panel:last-child { margin-right: auto; }
+
+  .list-scroll { flex: 1; overflow-y: auto; padding-bottom: 10px; }
+  .panel-foot { border-top: 1px solid var(--proto-border); padding: 2px 8px 8px; }
+  .panel-foot .notice-bar { margin: 6px 0 0; }
+
+  /* 技能菜单以浮层卡片呈现 */
+  .menu-host { flex: 1; overflow-y: auto; padding: 14px; }
+  .menu-host .popover { position: relative; padding-bottom: 2px; }
+  .menu-host .empty-hint { padding: 10px 12px 8px; }
+
+  .row-title.mono { font-family: var(--proto-mono); }
+  .anno {
+    padding: 0 14px 6px 24px;
+    font-size: 10px; font-style: italic;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .search-box .sb-icon { font-size: 12px; opacity: 0.75; }
+  .btn.sm { padding: 2px 9px; font-size: 11px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="proto-stage">
+
+  <!-- ============ 左：会话历史面板（PRD 9.1 会话历史入口 + 9.8 单写者） ============ -->
+  <section class="pi-panel">
+    <div class="pi-header">
+      <span class="title" data-i18n="lh.title">会话历史</span>
+      <div class="pi-header-actions">
+        <button class="icon-btn" title="关闭">✕</button>
+      </div>
+    </div>
+
+    <div class="search-box">
+      <span class="sb-icon"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.4"/><path d="m10.4 10.4 3 3"/></svg></span>
+      <input data-i18n-ph="lh.search" placeholder="搜索会话（按项目/时间，500 条 ≤1s）">
+    </div>
+
+    <div class="list-scroll">
+      <div class="group-label" data-i18n="lh.group.today">今日 · pi-vscode</div>
+
+      <div class="list-row">
+        <div class="row-main">
+          <div class="row-title" data-i18n="lh.row1.title">修复 webview 增量渲染卡顿</div>
+          <div class="row-desc" data-i18n="lh.row1.desc">pi-vscode · 14:32 · Turn 12 · 54K tokens</div>
+        </div>
+        <span class="badge" data-i18n="badge.ide">IDE</span>
+      </div>
+
+      <div class="list-row">
+        <div class="row-main">
+          <div class="row-title" data-i18n="lh.row2.title">PRD §9.4 Inline Chat 评审</div>
+          <div class="row-desc" data-i18n="lh.row2.desc">pi-vscode · 11:05 · Turn 6 · 31K tokens</div>
+        </div>
+        <span class="badge" data-i18n="badge.ide">IDE</span>
+      </div>
+
+      <div class="group-label" data-i18n="lh.group.yesterday">昨天 · 终端 CLI</div>
+
+      <div class="list-row">
+        <div class="row-main">
+          <div class="row-title" data-i18n="lh.row3.title">登录超时排查</div>
+          <div class="row-desc" data-i18n="lh.row3.desc">pi CLI · 18:40 · Turn 8 · 87K tokens</div>
+        </div>
+        <span class="badge" data-i18n="badge.cli">CLI</span>
+      </div>
+      <div class="anno" data-i18n="lh.anno">双端续聊 · token 口径与终端一致（终端显示 87K 则同为 87K）</div>
+
+      <div class="list-row disabled">
+        <div class="row-main">
+          <div class="row-title" data-i18n="lh.row4.title">数据迁移脚本讨论</div>
+          <div class="row-desc" data-i18n="lh.row4.desc">该会话正在其他地方使用，已只读打开</div>
+        </div>
+        <span class="badge warn" data-i18n="badge.busy">占用中</span>
+        <button class="btn sm" data-i18n="lh.takeover" title="接管：本端转为可写，原占用端自动转只读 / Take over: this side becomes writable, the other side turns read-only">接管</button>
+      </div>
+      <div class="anno" data-i18n="lh.anno2">接管：本端变可写、原占用端转只读 · 占用解除后可一键「恢复可写」</div>
+    </div>
+
+    <div class="panel-foot">
+      <div class="notice-bar info">
+        <span class="nb-icon">ⓘ</span>
+        <div class="nb-body" data-i18n="lh.notice">加载 CLI 会话后上下文、token 用量与终端完全一致；追加到历史会话前会明确警告</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 右：技能菜单浮层（PRD 9.1 技能菜单 / 命令） ============ -->
+  <section class="pi-panel">
+    <div class="pi-header">
+      <span class="title" data-i18n="rs.title">技能菜单（ / 命令）</span>
+    </div>
+
+    <div class="menu-host">
+      <div class="overlay-anchor">
+        <div class="popover">
+          <div class="search-box">
+            <span class="sb-icon"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.4"/><path d="m10.4 10.4 3 3"/></svg></span>
+            <input value="/" data-i18n-ph="rs.search" placeholder="输入 / 唤起，模糊过滤">
+          </div>
+
+          <div class="group-label" data-i18n="rs.group">Pi 技能 · 与终端一致（5）</div>
+
+          <div class="list-row">
+            <div class="row-main">
+              <div class="row-title mono" data-i18n="rs.s1">commit-message</div>
+              <div class="row-desc" data-i18n="rs.s1.desc">生成 commit message</div>
+            </div>
+            <span class="row-meta" data-i18n="rs.meta">↹ 调用</span>
+          </div>
+
+          <div class="list-row">
+            <div class="row-main">
+              <div class="row-title mono" data-i18n="rs.s2">review</div>
+              <div class="row-desc" data-i18n="rs.s2.desc">代码审查</div>
+            </div>
+            <span class="row-meta" data-i18n="rs.meta">↹ 调用</span>
+          </div>
+
+          <div class="list-row">
+            <div class="row-main">
+              <div class="row-title mono" data-i18n="rs.s3">refactor</div>
+              <div class="row-desc" data-i18n="rs.s3.desc">重构建议</div>
+            </div>
+            <span class="row-meta" data-i18n="rs.meta">↹ 调用</span>
+          </div>
+
+          <div class="list-row">
+            <div class="row-main">
+              <div class="row-title mono" data-i18n="rs.s4">test-gen</div>
+              <div class="row-desc" data-i18n="rs.s4.desc">补测试</div>
+            </div>
+            <span class="row-meta" data-i18n="rs.meta">↹ 调用</span>
+          </div>
+
+          <div class="list-row">
+            <div class="row-main">
+              <div class="row-title mono" data-i18n="rs.s5">translate</div>
+              <div class="row-desc" data-i18n="rs.s5.desc">文案翻译</div>
+            </div>
+            <span class="row-meta" data-i18n="rs.meta">↹ 调用</span>
+          </div>
+
+          <div class="notice-bar warn">
+            <span class="nb-icon">⚠</span>
+            <div class="nb-body" data-i18n="rs.notice">1 个技能文件损坏已跳过：~/skills/broken/SKILL.md（不影响其余技能加载）</div>
+          </div>
+
+          <div class="empty-hint" data-i18n="rs.hint">技能目录变更随配置热刷新自动更新，无需重启</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="proto-note" data-i18n="note">覆盖 PRD 9.1 会话历史/技能菜单 · 9.8 只读占用</div>
+
+<script src="assets/shared.js"></script>
+<script>
+  window.PI_PAGE = {
+    zh: {
+      "note": "覆盖 PRD 9.1 会话历史/技能菜单 · 9.8 只读占用",
+      "lh.title": "会话历史",
+      "lh.search": "搜索会话（按项目/时间，500 条 ≤1s）",
+      "lh.group.today": "今日 · pi-vscode",
+      "lh.row1.title": "修复 webview 增量渲染卡顿",
+      "lh.row1.desc": "pi-vscode · 14:32 · Turn 12 · 54K tokens",
+      "lh.row2.title": "PRD §9.4 Inline Chat 评审",
+      "lh.row2.desc": "pi-vscode · 11:05 · Turn 6 · 31K tokens",
+      "lh.group.yesterday": "昨天 · 终端 CLI",
+      "lh.row3.title": "登录超时排查",
+      "lh.row3.desc": "pi CLI · 18:40 · Turn 8 · 87K tokens",
+      "lh.anno": "双端续聊 · token 口径与终端一致（终端显示 87K 则同为 87K）",
+      "lh.row4.title": "数据迁移脚本讨论",
+      "lh.row4.desc": "该会话正在其他地方使用，已只读打开",
+      "lh.takeover": "接管",
+      "lh.anno2": "接管：本端变可写、原占用端转只读 · 占用解除后可一键「恢复可写」",
+      "badge.ide": "IDE",
+      "badge.cli": "CLI",
+      "badge.busy": "占用中",
+      "lh.notice": "加载 CLI 会话后上下文、token 用量与终端完全一致；追加到历史会话前会明确警告",
+      "rs.title": "技能菜单（ / 命令）",
+      "rs.search": "输入 / 唤起，模糊过滤",
+      "rs.group": "Pi 技能 · 与终端一致（5）",
+      "rs.s1": "commit-message",
+      "rs.s1.desc": "生成 commit message",
+      "rs.s2": "review",
+      "rs.s2.desc": "代码审查",
+      "rs.s3": "refactor",
+      "rs.s3.desc": "重构建议",
+      "rs.s4": "test-gen",
+      "rs.s4.desc": "补测试",
+      "rs.s5": "translate",
+      "rs.s5.desc": "文案翻译",
+      "rs.meta": "↹ 调用",
+      "rs.notice": "1 个技能文件损坏已跳过：~/skills/broken/SKILL.md（不影响其余技能加载）",
+      "rs.hint": "技能目录变更随配置热刷新自动更新，无需重启"
+    },
+    en: {
+      "note": "Covers PRD 9.1 session history / skill menu · 9.8 read-only occupancy",
+      "lh.title": "Session History",
+      "lh.search": "Search sessions (by project / time, 500 items ≤1s)",
+      "lh.group.today": "Today · pi-vscode",
+      "lh.row1.title": "Fix webview incremental rendering jank",
+      "lh.row1.desc": "pi-vscode · 14:32 · Turn 12 · 54K tokens",
+      "lh.row2.title": "PRD §9.4 Inline Chat review",
+      "lh.row2.desc": "pi-vscode · 11:05 · Turn 6 · 31K tokens",
+      "lh.group.yesterday": "Yesterday · Terminal CLI",
+      "lh.row3.title": "Login timeout troubleshooting",
+      "lh.row3.desc": "pi CLI · 18:40 · Turn 8 · 87K tokens",
+      "lh.anno": "Cross-surface resume · token figures match the terminal (terminal shows 87K, plugin shows 87K)",
+      "lh.row4.title": "Data migration script discussion",
+      "lh.row4.desc": "In use elsewhere — opened read-only",
+      "lh.takeover": "Take over",
+      "lh.anno2": "Take over: this side turns writable, the other side read-only · one-click \"resume writable\" once the occupancy is released",
+      "badge.ide": "IDE",
+      "badge.cli": "CLI",
+      "badge.busy": "BUSY",
+      "lh.notice": "CLI sessions load with context and token usage identical to the terminal; a clear warning appears before appending to a historical session",
+      "rs.title": "Skill Menu (/ command)",
+      "rs.search": "Type / to invoke, fuzzy filter",
+      "rs.group": "Pi skills · same as terminal (5)",
+      "rs.s1": "commit-message",
+      "rs.s1.desc": "Generate commit messages",
+      "rs.s2": "review",
+      "rs.s2.desc": "Code review",
+      "rs.s3": "refactor",
+      "rs.s3.desc": "Refactoring suggestions",
+      "rs.s4": "test-gen",
+      "rs.s4.desc": "Generate missing tests",
+      "rs.s5": "translate",
+      "rs.s5.desc": "Translate copy text",
+      "rs.meta": "↹ Invoke",
+      "rs.notice": "1 broken skill file skipped: ~/skills/broken/SKILL.md (remaining skills load normally)",
+      "rs.hint": "Skill directory changes hot-reload with config refresh — no restart needed"
+    }
+  };
+</script>
+
+</body>
+</html>

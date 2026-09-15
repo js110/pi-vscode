@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="piBadgeB" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#312E81"/>
+      <stop offset="1" stop-color="#6D28D9"/>
+    </linearGradient>
+    <linearGradient id="piGlyphB" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#piBadgeB)"/>
+  <path d="M40 28 H88 Q104 28 104 44 V72 Q104 88 88 88 H54 L38 103 V88 Q24 88 24 72 V44 Q24 28 40 28 Z" fill="#FFFFFF"/>
+  <g fill="none" stroke="url(#piGlyphB)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M38 50 H90"/>
+    <path d="M52 50 V78"/>
+    <path d="M74 50 V64 Q74 78 88 78"/>
+  </g>
+</svg>

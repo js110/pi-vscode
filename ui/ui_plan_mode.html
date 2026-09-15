@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plan 模式 · pi-vscode 原型</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/shared.css">
+</head>
+<body style="display:flex; flex-direction:column;">
+
+  <!-- 顶部说明行 -->
+  <div class="divider-label" style="margin:14px 16px 0; padding-right:150px; flex-shrink:0;">
+    <span data-i18n="page.title">Plan 模式 · 状态机五状态（规划中 → 待批准 → 执行中 → 失败暂停 / 已中断）</span>
+  </div>
+
+  <!-- 横向五状态泳道 -->
+  <div class="plan-lanes" style="display:flex; gap:16px; padding:16px; overflow-x:auto; flex:1;">
+
+    <!-- ① 规划中 -->
+    <section class="pi-panel" style="width:420px; min-width:420px; flex-shrink:0;">
+      <div class="divider-label" style="margin:12px 14px 8px; flex-shrink:0;">
+        <span data-i18n="lane1.title">① 规划中</span>
+      </div>
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="tab-status" title="产出计划中"><span class="tab-spinner" aria-hidden="true"></span></span>
+          <span class="tab-title" data-i18n="tab.title">重构登录模块</span>
+          <span class="tab-close">✕</span>
+        </div>
+      </div>
+      <div class="messages">
+        <div class="msg assistant">
+          <div class="msg-head"><span class="msg-avatar assistant">P</span><span>Pi</span></div>
+          <div class="msg-body" data-i18n="p1.msg">正在只读分析代码库…</div>
+        </div>
+        <div class="inline-chat-widget">
+          <div class="icw-gen">
+            <span class="gen-dot"></span><span data-i18n="p1.gen">产出分步计划中…（只读工具：read_file / grep）</span>
+          </div>
+        </div>
+        <div class="notice-bar info">
+          <span class="nb-icon">ℹ</span>
+          <div class="nb-body" data-i18n="p1.notice">Plan 模式：仅允许只读工具，任何写类工具调用将被拒绝</div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="mode-switch">
+          <div class="ms-opt" data-i18n="ms.chat">对话</div>
+          <div class="ms-opt plan-active" data-i18n="ms.plan">Plan</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ② 待批准 -->
+    <section class="pi-panel" style="width:420px; min-width:420px; flex-shrink:0;">
+      <div class="divider-label" style="margin:12px 14px 8px; flex-shrink:0;">
+        <span data-i18n="lane2.title">② 待批准</span>
+      </div>
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="tab-status plan" title="Plan 待批准">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 1 3 9h4l-1.5 6L12 7H8l1.5-6z"/></svg>
+          </span>
+          <span class="tab-title" data-i18n="tab.title">重构登录模块</span>
+          <span class="tab-close">✕</span>
+        </div>
+      </div>
+      <div class="messages">
+        <div class="plan-card">
+          <div class="pc-head">
+            <span data-i18n="p2.head">实施计划 · 4 步</span>
+            <span class="badge plan" data-i18n="p2.badge">待批准</span>
+          </div>
+          <div class="pc-steps">
+            <div class="plan-step"><span class="step-no">1</span><input value="定位 session 校验逻辑" data-i18n-val="p2.step1"></div>
+            <div class="plan-step"><span class="step-no">2</span><input value="抽离 token 刷新中间件" data-i18n-val="p2.step2"></div>
+            <div class="plan-step"><span class="step-no">3</span><input value="补充回归测试" data-i18n-val="p2.step3"></div>
+            <div class="plan-step"><span class="step-no">4</span><input value="更新文档" data-i18n-val="p2.step4"></div>
+          </div>
+          <div class="pc-foot">
+            <button class="btn" data-i18n="p2.btn.replan">请求 AI 重规划</button>
+            <button class="btn primary" data-i18n="p2.btn.approve">批准执行</button>
+            <span class="hint" data-i18n="p2.hint">本地微调步骤后可直接批准</span>
+          </div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="mode-switch">
+          <div class="ms-opt" data-i18n="ms.chat">对话</div>
+          <div class="ms-opt plan-active" data-i18n="ms.plan">Plan</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ③ 执行中 -->
+    <section class="pi-panel" style="width:420px; min-width:420px; flex-shrink:0;">
+      <div class="divider-label" style="margin:12px 14px 8px; flex-shrink:0;">
+        <span data-i18n="lane3.title">③ 执行中</span>
+      </div>
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="tab-status plan" title="Plan 执行中">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 1 3 9h4l-1.5 6L12 7H8l1.5-6z"/></svg>
+          </span>
+          <span class="tab-title" data-i18n="tab.title">重构登录模块</span>
+          <span class="tab-close">✕</span>
+        </div>
+      </div>
+      <div class="messages">
+        <div class="todo-card">
+          <div class="tc-head">
+            <span data-i18n="p3.head">任务进度</span>
+            <span class="progress" data-i18n="p3.progress">2/4</span>
+          </div>
+          <div class="todo-item done"><span class="todo-check"></span><span class="todo-text" data-i18n="p2.step1">定位 session 校验逻辑</span></div>
+          <div class="todo-item done"><span class="todo-check"></span><span class="todo-text" data-i18n="p2.step2">抽离 token 刷新中间件</span></div>
+          <div class="todo-item running"><span class="todo-check"></span><span class="todo-text" data-i18n="p2.step3">补充回归测试</span></div>
+          <div class="todo-item"><span class="todo-check"></span><span class="todo-text" data-i18n="p2.step4">更新文档</span></div>
+        </div>
+        <div class="trace-entry">
+          <span data-i18n="p3.trace.tool">edit_file · 步骤 2</span>
+          <span class="badge plan" data-i18n="p3.badge">Plan 批准</span>
+          <span class="trace-src" data-i18n="p3.trace.src">放行来源：计划批准 · 非危险工具免审批</span>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="mode-switch">
+          <div class="ms-opt" data-i18n="ms.chat">对话</div>
+          <div class="ms-opt plan-active" data-i18n="ms.plan">Plan</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ④ 失败暂停 -->
+    <section class="pi-panel" style="width:420px; min-width:420px; flex-shrink:0;">
+      <div class="divider-label" style="margin:12px 14px 8px; flex-shrink:0;">
+        <span data-i18n="lane4.title">④ 失败暂停</span>
+      </div>
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="tab-status paused" title="失败暂停">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="3" height="10" rx="0.8"/><rect x="9" y="3" width="3" height="10" rx="0.8"/></svg>
+          </span>
+          <span class="tab-title" data-i18n="tab.title">重构登录模块</span>
+          <span class="tab-close">✕</span>
+        </div>
+      </div>
+      <div class="messages">
+        <div class="todo-card">
+          <div class="tc-head">
+            <span data-i18n="p3.head">任务进度</span>
+            <span class="progress" data-i18n="p3.progress">2/4</span>
+          </div>
+          <div class="todo-item done"><span class="todo-check"></span><span class="todo-text" data-i18n="p2.step1">定位 session 校验逻辑</span></div>
+          <div class="todo-item done"><span class="todo-check"></span><span class="todo-text" data-i18n="p2.step2">抽离 token 刷新中间件</span></div>
+          <div class="todo-item failed"><span class="todo-check"></span><span class="todo-text" data-i18n="p4.failed">步骤 3 暂停</span></div>
+        </div>
+        <div class="approval-card danger">
+          <div class="ac-head">
+            <span class="ac-title" data-i18n="p4.ac.title">危险工具 · run_command</span>
+            <span class="badge danger" data-i18n="p4.badge.danger">危险</span>
+          </div>
+          <div class="ac-params" data-i18n="p4.ac.params">npm test（shell 执行）</div>
+          <div class="ac-actions">
+            <button class="btn primary" data-i18n="p4.btn.allow">允许一次</button>
+            <button class="btn danger" data-i18n="p4.btn.deny">拒绝</button>
+          </div>
+        </div>
+        <div class="notice-bar warn">
+          <span class="nb-icon">⚠</span>
+          <div class="nb-body">
+            <div class="nb-title" data-i18n="p4.nb.title">执行已暂停（失败暂停态）</div>
+            <div data-i18n="p4.nb.body">危险工具永不自动放行：即使计划已批准仍弹卡。批准后从当前步继续；拒绝则该步标记失败，可调整计划重新批准或放弃。</div>
+            <div class="nb-actions">
+              <button class="btn" data-i18n="p4.btn.resume">从当前步续跑</button>
+              <button class="btn" data-i18n="p4.btn.adjust">调整计划</button>
+              <button class="btn danger" data-i18n="p4.btn.abort">放弃</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="mode-switch">
+          <div class="ms-opt" data-i18n="ms.chat">对话</div>
+          <div class="ms-opt plan-active" data-i18n="ms.plan">Plan</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ⑤ 已中断 -->
+    <section class="pi-panel" style="width:420px; min-width:420px; flex-shrink:0;">
+      <div class="divider-label" style="margin:12px 14px 8px; flex-shrink:0;">
+        <span data-i18n="lane5.title">⑤ 已中断</span>
+      </div>
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="tab-status aborted" title="已中断">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"/></svg>
+          </span>
+          <span class="tab-title" data-i18n="tab.title">重构登录模块</span>
+          <span class="tab-close">✕</span>
+        </div>
+      </div>
+      <div class="messages">
+        <div class="todo-card">
+          <div class="tc-head">
+            <span data-i18n="p3.head">任务进度</span>
+            <span class="progress" data-i18n="p3.progress">2/4</span>
+          </div>
+          <div class="todo-item done"><span class="todo-check"></span><span class="todo-text" data-i18n="p2.step1">定位 session 校验逻辑</span></div>
+          <div class="todo-item done"><span class="todo-check"></span><span class="todo-text" data-i18n="p2.step2">抽离 token 刷新中间件</span></div>
+          <div class="todo-item cancelled"><span class="todo-check"></span><span class="todo-text" data-i18n="p5.cancelled">未执行已取消</span></div>
+        </div>
+        <div class="notice-bar info">
+          <span class="nb-icon">ℹ</span>
+          <div class="nb-body">
+            <div class="nb-title" data-i18n="p5.nb.title">Esc 中断</div>
+            <div data-i18n="p5.nb.body">已完成步骤的改动保留（按步骤/轮次可查变更清单），未执行步骤已取消。</div>
+            <div class="nb-actions">
+              <button class="btn" data-i18n="p5.btn.rollback">按步骤回滚</button>
+              <button class="btn primary" data-i18n="p5.btn.reapprove">调整计划重新批准</button>
+              <button class="btn" data-i18n="p5.btn.chat">继续对话</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="mode-switch">
+          <div class="ms-opt" data-i18n="ms.chat">对话</div>
+          <div class="ms-opt plan-active" data-i18n="ms.plan">Plan</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="proto-note" data-i18n="note">覆盖 PRD 9.5 / 8.5 Plan 状态机五状态 + 危险工具例外</div>
+
+  <script>
+    window.PI_PAGE = {
+      zh: {
+        "page.title": "Plan 模式 · 状态机五状态（规划中 → 待批准 → 执行中 → 失败暂停 / 已中断）",
+        "lane1.title": "① 规划中",
+        "lane2.title": "② 待批准",
+        "lane3.title": "③ 执行中",
+        "lane4.title": "④ 失败暂停",
+        "lane5.title": "⑤ 已中断",
+        "tab.title": "重构登录模块",
+        "ms.chat": "对话",
+        "ms.plan": "Plan",
+        "p1.msg": "正在只读分析代码库…",
+        "p1.gen": "产出分步计划中…（只读工具：read_file / grep）",
+        "p1.notice": "Plan 模式：仅允许只读工具，任何写类工具调用将被拒绝",
+        "p2.head": "实施计划 · 4 步",
+        "p2.badge": "待批准",
+        "p2.step1": "定位 session 校验逻辑",
+        "p2.step2": "抽离 token 刷新中间件",
+        "p2.step3": "补充回归测试",
+        "p2.step4": "更新文档",
+        "p2.btn.replan": "请求 AI 重规划",
+        "p2.btn.approve": "批准执行",
+        "p2.hint": "本地微调步骤后可直接批准",
+        "p3.head": "任务进度",
+        "p3.progress": "2/4",
+        "p3.badge": "Plan 批准",
+        "p3.trace.tool": "edit_file · 步骤 2",
+        "p3.trace.src": "放行来源：计划批准 · 非危险工具免审批",
+        "p4.failed": "步骤 3 暂停",
+        "p4.ac.title": "危险工具 · run_command",
+        "p4.badge.danger": "危险",
+        "p4.ac.params": "npm test（shell 执行）",
+        "p4.btn.allow": "允许一次",
+        "p4.btn.deny": "拒绝",
+        "p4.nb.title": "执行已暂停（失败暂停态）",
+        "p4.nb.body": "危险工具永不自动放行：即使计划已批准仍弹卡。批准后从当前步继续；拒绝则该步标记失败，可调整计划重新批准或放弃。",
+        "p4.btn.resume": "从当前步续跑",
+        "p4.btn.adjust": "调整计划",
+        "p4.btn.abort": "放弃",
+        "p5.cancelled": "未执行已取消",
+        "p5.nb.title": "Esc 中断",
+        "p5.nb.body": "已完成步骤的改动保留（按步骤/轮次可查变更清单），未执行步骤已取消。",
+        "p5.btn.rollback": "按步骤回滚",
+        "p5.btn.reapprove": "调整计划重新批准",
+        "p5.btn.chat": "继续对话",
+        "note": "覆盖 PRD 9.5 / 8.5 Plan 状态机五状态 + 危险工具例外"
+      },
+      en: {
+        "page.title": "Plan Mode · Five State-Machine States (Planning → Pending approval → Executing → Failed-paused / Aborted)",
+        "lane1.title": "① Planning",
+        "lane2.title": "② Pending approval",
+        "lane3.title": "③ Executing",
+        "lane4.title": "④ Failed / paused",
+        "lane5.title": "⑤ Aborted",
+        "tab.title": "Refactor login module",
+        "ms.chat": "Chat",
+        "ms.plan": "Plan",
+        "p1.msg": "Analyzing the codebase in read-only mode…",
+        "p1.gen": "Producing a step plan… (read-only tools: read_file / grep)",
+        "p1.notice": "Plan mode: only read-only tools are allowed; any write tool call will be rejected",
+        "p2.head": "Implementation plan · 4 steps",
+        "p2.badge": "Pending",
+        "p2.step1": "Locate session validation logic",
+        "p2.step2": "Extract token refresh middleware",
+        "p2.step3": "Add regression tests",
+        "p2.step4": "Update docs",
+        "p2.btn.replan": "Ask AI to replan",
+        "p2.btn.approve": "Approve & run",
+        "p2.hint": "Tweak steps locally, then approve directly",
+        "p3.head": "Task progress",
+        "p3.progress": "2/4",
+        "p3.badge": "Plan-approved",
+        "p3.trace.tool": "edit_file · step 2",
+        "p3.trace.src": "Source: plan approval · non-dangerous tool skips approval",
+        "p4.failed": "Step 3 paused",
+        "p4.ac.title": "Dangerous tool · run_command",
+        "p4.badge.danger": "Danger",
+        "p4.ac.params": "npm test (shell execution)",
+        "p4.btn.allow": "Allow once",
+        "p4.btn.deny": "Deny",
+        "p4.nb.title": "Execution paused (failed-paused state)",
+        "p4.nb.body": "Dangerous tools are never auto-granted: the approval card still appears even with an approved plan. Approving resumes from the current step; denying marks that step failed — then adjust the plan and re-approve, or abort.",
+        "p4.btn.resume": "Resume from current step",
+        "p4.btn.adjust": "Adjust plan",
+        "p4.btn.abort": "Abort",
+        "p5.cancelled": "Not executed — cancelled",
+        "p5.nb.title": "Aborted via Esc",
+        "p5.nb.body": "Changes from completed steps are kept (view the change list per step/turn); unexecuted steps are cancelled.",
+        "p5.btn.rollback": "Roll back by step",
+        "p5.btn.reapprove": "Adjust plan & re-approve",
+        "p5.btn.chat": "Continue chat",
+        "note": "Covers PRD 9.5 / 8.5 Plan state-machine five states + dangerous-tool exception"
+      }
+    };
+  </script>
+  <script src="assets/shared.js"></script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>pi-vscode 图标重设计 — 提案展示</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  .icon-wrap { max-width: 1080px; margin: 0 auto; padding: 40px 32px 90px; }
+  .icon-wrap h1 { font-size: 20px; margin-bottom: 6px; }
+  .icon-wrap .sub { color: var(--vscode-descriptionForeground); font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
+
+  .proposal {
+    display: grid; grid-template-columns: 168px 1fr; gap: 24px;
+    padding: 20px; margin-bottom: 16px;
+    background: var(--vscode-editorWidget-background);
+    border: 1px solid var(--vscode-editorWidget-border);
+    border-radius: var(--proto-radius-lg);
+  }
+  .proposal.recommended { border-color: var(--vscode-charts-blue); box-shadow: 0 0 0 1px var(--vscode-charts-blue) inset; }
+  .proposal .p-main img.big { width: 128px; height: 128px; display: block; }
+  .proposal .p-name { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .proposal .p-desc { font-size: 12.5px; color: var(--vscode-descriptionForeground); line-height: 1.65; margin-bottom: 12px; }
+  .size-row { display: flex; align-items: flex-end; gap: 18px; }
+  .size-cell { text-align: center; }
+  .size-cell img, .size-cell svg { display: block; margin: 0 auto 4px; }
+  .size-cell .sz-label { font-size: 10px; color: var(--vscode-descriptionForeground); }
+
+  .bg-checker { background-image: conic-gradient(var(--proto-hover) 0 25%, transparent 0 50%, var(--proto-hover) 0 75%, transparent 0); background-size: 12px 12px; border-radius: var(--proto-radius); padding: 6px; }
+  .bg-light { background: #ffffff; border-radius: var(--proto-radius); padding: 6px; }
+  .bg-dark { background: #181818; border: 1px solid var(--proto-border); border-radius: var(--proto-radius); padding: 6px; }
+  .bg-group { display: flex; flex-direction: column; gap: 6px; }
+
+  .spec-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .spec-table th, .spec-table td { border: 1px solid var(--proto-border); padding: 6px 10px; text-align: left; }
+  .spec-table th { background: var(--vscode-sideBarSectionHeader-background); font-weight: 600; }
+  .spec-table code { font-family: var(--proto-mono); color: var(--vscode-charts-blue); font-size: 11.5px; }
+  .principle { display: flex; gap: 12px; padding: 10px 14px; border: 1px solid var(--proto-border); border-radius: var(--proto-radius-lg); font-size: 12.5px; line-height: 1.6; }
+  .principle b { color: var(--vscode-charts-blue); }
+</style>
+</head>
+<body>
+<script src="assets/shared.js"></script>
+<div class="icon-wrap">
+  <h1 data-i18n="h1">插件图标重设计 — 3 提案 + 规范资产</h1>
+  <p class="sub"><span data-i18n="s1">现状：线条 π 无底色（小尺寸辨识弱、深色任务栏不可见）。目标（AC-FN-29）：marketplace 彩色图标（128×128 主资产）+ 36×36 灰阶规范图标 + 活动栏单色变体。</span><br>
+  <span data-i18n="s2">背景切换见右上角工具条——每张图标在</span><b data-i18n="s3">方格透明底 / 纯白底 / 深色底</b><span data-i18n="s4">三种环境下的表现均需过关。</span></p>
+
+  <!-- 提案 A -->
+  <div class="proposal recommended">
+    <div class="p-main">
+      <div class="bg-group">
+        <span class="bg-checker"><img class="big" src="icon/proposal-a.svg" alt="提案A 128"></span>
+        <span class="bg-dark"><img class="big" src="icon/proposal-a.svg" alt=""></span>
+        <span class="bg-light"><img class="big" src="icon/proposal-a.svg" alt=""></span>
+      </div>
+    </div>
+    <div class="p-body">
+      <div class="p-name"><span data-i18n="a1">提案 A · π 徽标（推荐）</span> <span class="badge" data-i18n="rec">推荐</span></div>
+      <div class="p-desc" data-i18n="a2">靛蓝→紫渐变圆角徽标 + 白色粗壮 π。渐变对角走向让 16px 下仍有体积感；白 π 与 VS Code Marketplace 常见彩色徽标视觉语言一致，在深浅两种 Marketplace 底色上都清晰。无多余元素，任何尺寸不糊。</div>
+      <div class="size-row">
+        <div class="size-cell"><img src="icon/proposal-a.svg" width="48" height="48"><div class="sz-label">48</div></div>
+        <div class="size-cell"><img src="icon/proposal-a.svg" width="32" height="32"><div class="sz-label">32</div></div>
+        <div class="size-cell"><img src="icon/proposal-a.svg" width="16" height="16"><div class="sz-label">16</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提案 B -->
+  <div class="proposal">
+    <div class="p-main">
+      <div class="bg-group">
+        <span class="bg-checker"><img class="big" src="icon/proposal-b.svg" alt="提案B 128"></span>
+        <span class="bg-dark"><img class="big" src="icon/proposal-b.svg" alt=""></span>
+        <span class="bg-light"><img class="big" src="icon/proposal-b.svg" alt=""></span>
+      </div>
+    </div>
+    <div class="p-body">
+      <div class="p-name" data-i18n="b1">提案 B · 对话中的 π</div>
+      <div class="p-desc" data-i18n="b2">深紫徽标内嵌白色对话气泡，气泡里是蓝→靛渐变 π。一眼传达"AI 对话"品类；缺点是元素多，16px 下气泡内 π 细节开始粘连，需为 16px 另出简化版。</div>
+      <div class="size-row">
+        <div class="size-cell"><img src="icon/proposal-b.svg" width="48" height="48"><div class="sz-label">48</div></div>
+        <div class="size-cell"><img src="icon/proposal-b.svg" width="32" height="32"><div class="sz-label">32</div></div>
+        <div class="size-cell"><img src="icon/proposal-b.svg" width="16" height="16"><div class="sz-label">16</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提案 C -->
+  <div class="proposal">
+    <div class="p-main">
+      <div class="bg-group">
+        <span class="bg-checker"><img class="big" src="icon/proposal-c.svg" alt="提案C 128"></span>
+        <span class="bg-dark"><img class="big" src="icon/proposal-c.svg" alt=""></span>
+        <span class="bg-light"><img class="big" src="icon/proposal-c.svg" alt=""></span>
+      </div>
+    </div>
+    <div class="p-body">
+      <div class="p-name" data-i18n="c1">提案 C · 终端 π</div>
+      <div class="p-desc" data-i18n="c2">深色终端窗 + 三色窗控点 + 薄荷绿 π，强调"与终端 Pi 同源"的产品定位；红黄绿点在 16px 退化成噪点，且深底徽标在 Marketplace 浅色卡上对比偏弱。</div>
+      <div class="size-row">
+        <div class="size-cell"><img src="icon/proposal-c.svg" width="48" height="48"><div class="sz-label">48</div></div>
+        <div class="size-cell"><img src="icon/proposal-c.svg" width="32" height="32"><div class="sz-label">32</div></div>
+        <div class="size-cell"><img src="icon/proposal-c.svg" width="16" height="16"><div class="sz-label">16</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider-label" data-i18n="d1">规范配套资产</div>
+  <div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;">
+    <div class="size-cell">
+      <div class="bg-group"><span class="bg-light"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b3b3b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.5 H19.5"/><path d="M9 6.5 V20"/><path d="M15 6.5 V16 Q15 19.5 18.5 19.5"/></svg></span><span class="bg-dark"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#cccccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.5 H19.5"/><path d="M9 6.5 V20"/><path d="M15 6.5 V16 Q15 19.5 18.5 19.5"/></svg></span></div>
+      <div class="sz-label" style="margin-top:4px;"><span data-i18n="m1">活动栏单色（currentColor）</span><br>24×24 · <span data-i18n="m2">深浅主题自动反色</span></div>
+    </div>
+    <div class="size-cell">
+      <img src="icon/pi-grayscale-36.svg" width="72" height="72" style="image-rendering:auto;">
+      <div class="sz-label">36×36 <span data-i18n="g1">灰阶规范图标</span><br>（grayscale）</div>
+    </div>
+  </div>
+
+  <div class="divider-label" data-i18n="d2">资产规格（落地清单）</div>
+  <table class="spec-table">
+    <tr><th data-i18n="t1">用途</th><th data-i18n="t2">尺寸/规格</th><th data-i18n="t3">来源文件</th></tr>
+    <tr><td data-i18n="t4">Marketplace 主图标（package.json "icon"）</td><td>128×128 PNG（SVG 导出）</td><td><code>ui/icon/proposal-a.svg</code> → <code>media/pi-icon-full.png</code></td></tr>
+    <tr><td data-i18n="t5">扩展视图 / 命令面板派生</td><td>48 / 32 / 16 <span data-i18n="t6">由主图标缩放</span></td><td><span data-i18n="t7">同一 SVG 源</span></td></tr>
+    <tr><td data-i18n="t8">活动栏 / 文件图标（contributes.icons）</td><td>24×24 <span data-i18n="t9">单色 SVG，stroke 用 currentColor</span></td><td><code>ui/icon/pi-mono.svg</code></td></tr>
+    <tr><td data-i18n="t10">灰阶规范图标</td><td>36×36， <span data-i18n="t11">仅灰阶 #6E6E6E/#FFF</span></td><td><code>ui/icon/pi-grayscale-36.svg</code></td></tr>
+    <tr><td data-i18n="t12">README 头图横幅</td><td><span data-i18n="t13">按 Marketplace 规范另出（本轮范围外）</span></td><td>—</td></tr>
+  </table>
+
+  <div class="divider-label" data-i18n="d3">选型建议</div>
+  <div class="principle"><span><b data-i18n="r1">推荐提案 A</b><span data-i18n="r2">：唯一一个 16px 仍清晰、三底色全过关的单元素方案；渐变色相（靛→紫）与 AI 编码工具品类预期一致，又不与 Copilot（蓝绿）、Claude（橙）撞色。B/C 可作为 README 宣传素材保留。</span></span></div>
+</div>
+<div class="proto-note" data-i18n="note">pi-vscode Icon Redesign · AC-FN-29 · 3 提案 + 单色/灰阶规范资产</div>
+<script>
+window.PI_PAGE = {
+  zh: {
+    h1: "插件图标重设计 — 3 提案 + 规范资产",
+    s1: "现状：线条 π 无底色（小尺寸辨识弱、深色任务栏不可见）。目标（AC-FN-29）：marketplace 彩色图标（128×128 主资产）+ 36×36 灰阶规范图标 + 活动栏单色变体。",
+    s2: "背景切换见右上角工具条——每张图标在", s3: "方格透明底 / 纯白底 / 深色底", s4: "三种环境下的表现均需过关。",
+    a1: "提案 A · π 徽标（推荐）", rec: "推荐",
+    a2: "靛蓝→紫渐变圆角徽标 + 白色粗壮 π。渐变对角走向让 16px 下仍有体积感；白 π 与 VS Code Marketplace 常见彩色徽标视觉语言一致，在深浅两种 Marketplace 底色上都清晰。无多余元素，任何尺寸不糊。",
+    b1: "提案 B · 对话中的 π",
+    b2: "深紫徽标内嵌白色对话气泡，气泡里是蓝→靛渐变 π。一眼传达\"AI 对话\"品类；缺点是元素多，16px 下气泡内 π 细节开始粘连，需为 16px 另出简化版。",
+    c1: "提案 C · 终端 π",
+    c2: "深色终端窗 + 三色窗控点 + 薄荷绿 π，强调\"与终端 Pi 同源\"的产品定位；红黄绿点在 16px 退化成噪点，且深底徽标在 Marketplace 浅色卡上对比偏弱。",
+    d1: "规范配套资产", d2: "资产规格（落地清单）", d3: "选型建议",
+    m1: "活动栏单色（currentColor）", m2: "深浅主题自动反色", g1: "灰阶规范图标",
+    t1: "用途", t2: "尺寸/规格", t3: "来源文件",
+    t4: "Marketplace 主图标（package.json \"icon\"）", t5: "扩展视图 / 命令面板派生", t6: "由主图标缩放", t7: "同一 SVG 源",
+    t8: "活动栏 / 文件图标（contributes.icons）", t9: "单色 SVG，stroke 用 currentColor",
+    t10: "灰阶规范图标", t11: "仅灰阶 #6E6E6E/#FFF",
+    t12: "README 头图横幅", t13: "按 Marketplace 规范另出（本轮范围外）",
+    r1: "推荐提案 A",
+    r2: "：唯一一个 16px 仍清晰、三底色全过关的单元素方案；渐变色相（靛→紫）与 AI 编码工具品类预期一致，又不与 Copilot（蓝绿）、Claude（橙）撞色。B/C 可作为 README 宣传素材保留。",
+    note: "pi-vscode Icon Redesign · AC-FN-29 · 3 提案 + 单色/灰阶规范资产"
+  },
+  en: {
+    h1: "Extension Icon Redesign — 3 Proposals + Spec Assets",
+    s1: "Current: line-art π with no backing (weak at small sizes, invisible on dark taskbars). Target (AC-FN-29): marketplace color icon (128×128 master) + 36×36 grayscale spec icon + activity-bar monochrome variant.",
+    s2: "Switch backdrop via the toolbar — every icon must hold up on", s3: "transparent checker / white / dark", s4: "backdrops.",
+    a1: "Proposal A · π Badge (recommended)", rec: "Recommended",
+    a2: "Indigo→violet diagonal gradient badge with a bold white π. The diagonal gradient keeps volume at 16px; the white π matches the common Marketplace badge language and stays clear on both light and dark listings. A single element that never blurs.",
+    b1: "Proposal B · π in a chat bubble",
+    b2: "Deep-violet badge with a white chat bubble holding a blue→indigo gradient π. Instantly reads as \"AI chat\"; downside is element density — bubble π details start to merge at 16px, needing a simplified small variant.",
+    c1: "Proposal C · Terminal π",
+    c2: "Dark terminal window + three-color window dots + mint π, emphasizing \"same origin as the terminal Pi\"; the traffic dots degrade to noise at 16px and the dark badge contrasts poorly on light Marketplace cards.",
+    d1: "Spec Assets", d2: "Asset Spec (landing checklist)", d3: "Recommendation",
+    m1: "Activity-bar monochrome (currentColor)", m2: "auto-inverts across themes", g1: "grayscale spec icon",
+    t1: "Usage", t2: "Size/Spec", t3: "Source file",
+    t4: "Marketplace master icon (package.json \"icon\")", t5: "Extension view / command palette derivatives", t6: "scaled from master", t7: "same SVG source",
+    t8: "Activity bar / file icons (contributes.icons)", t9: "monochrome SVG, stroke via currentColor",
+    t10: "Grayscale spec icon", t11: "grays only #6E6E6E/#FFF",
+    t12: "README banner", t13: "per Marketplace spec (out of scope this round)",
+    r1: "Proposal A recommended",
+    r2: ": the only single-element option that stays crisp at 16px and passes all three backdrops; the indigo→violet hue matches AI coding-tool expectations without clashing with Copilot (teal-blue) or Claude (orange). B/C can be kept as README artwork.",
+    note: "pi-vscode Icon Redesign · AC-FN-29 · 3 proposals + mono/grayscale assets"
+  }
+};
+</script>
+</body>
+</html>

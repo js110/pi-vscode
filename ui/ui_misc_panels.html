@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-vscode · 杂项面板（SCM / 后台任务 / 队列恢复 / 图片置灰）</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  /* 本页不使用 .pi-panel 框架：居中列容器直接铺排四个演示区块 */
+  .misc-wrap {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+  .misc-wrap .divider-label:first-child { margin-top: 0; }
+
+  /* A：SCM 工具行与小字 */
+  .scm-tools {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .scm-tools .hint { font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.5; }
+
+  /* 通用小号按钮 / 小字注 */
+  .btn.sm { padding: 2px 9px; font-size: 11px; }
+  .small-note {
+    font-size: 11px; color: var(--vscode-descriptionForeground);
+    margin-top: 6px; line-height: 1.6;
+  }
+
+  /* A：git 变更列表（无 summary，去首行分隔线与缩进） */
+  .cf-list .cf-item { padding-left: 12px; }
+  .cf-list .cf-item:first-child { border-top: none; }
+  .cf-status { font-weight: 700; font-size: 11px; width: 12px; text-align: center; flex-shrink: 0; }
+  .cf-status.m { color: var(--vscode-gitDecoration-modifiedResourceForeground); }
+  .cf-status.a { color: var(--vscode-gitDecoration-addedResourceForeground); }
+  .cf-status.d { color: var(--vscode-gitDecoration-deletedResourceForeground); }
+
+  /* B：后台任务行 */
+  .changed-files .task-row:last-child { border-bottom: none; }
+  .task-row .task-status { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .task-row .task-title {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .task-row .row-meta {
+    margin-left: auto; flex-shrink: 0;
+    font-size: 10.5px; color: var(--vscode-descriptionForeground);
+    font-family: var(--proto-mono);
+  }
+  .task-row .btn { margin-left: auto; flex-shrink: 0; }
+
+  /* C：队列消息行（中文文案，改用正文字体） */
+  .cf-item.q { font-family: var(--proto-font); cursor: default; }
+  .cf-item.q:hover { background: transparent; }
+  .cf-item.q .q-text {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cf-item.q .btn { flex-shrink: 0; }
+  .cf-x { width: 20px; height: 20px; font-size: 11px; flex-shrink: 0; }
+
+  /* D：输入区复用（脱离面板底部的默认定位样式） */
+  .misc-wrap .input-area { border-top: none; padding: 0; }
+  .icon-btn:disabled, .icon-btn.disabled { opacity: 0.4; cursor: not-allowed; }
+  .icon-btn:disabled:hover, .icon-btn.disabled:hover { background: transparent; }
+
+  /* E：终端集成模拟（PRD 9.8 / AC-FN-23） */
+  .scm-tools .btn { display: inline-flex; align-items: center; gap: 5px; }
+  .term-mock {
+    border: 1px solid var(--proto-border);
+    border-radius: var(--proto-radius-lg);
+    overflow: hidden;
+    background: var(--vscode-editor-background);
+  }
+  .term-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px;
+    background: var(--vscode-sideBarSectionHeader-background);
+    border-bottom: 1px solid var(--proto-border);
+    font-size: 11px; color: var(--vscode-descriptionForeground);
+  }
+  .term-badge {
+    margin-left: auto; font-size: 10px; padding: 1px 7px;
+    border-radius: 9px;
+    background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+  }
+  .term-body { padding: 10px 12px; font-family: var(--proto-mono); font-size: 12px; line-height: 1.7; }
+  .term-prompt { color: var(--vscode-testing-iconPassed); margin-right: 6px; font-weight: 700; }
+  .term-dim { color: var(--vscode-descriptionForeground); }
+  .term-caret {
+    display: inline-block; width: 7px; height: 13px;
+    background: var(--vscode-foreground); vertical-align: -2px;
+    animation: term-blink 1.1s steps(1) infinite;
+  }
+  @keyframes term-blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<div class="misc-wrap">
+
+  <!-- ============ A · SCM commit 生成（PRD 9.7） ============ -->
+  <div class="divider-label" data-i18n="a.label">A · SCM Commit 生成（PRD 9.7）</div>
+
+  <div class="scm-tools">
+    <button class="btn">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5 9.7 6.3 14.5 8 9.7 9.7 8 14.5 6.3 9.7 1.5 8 6.3 6.3z"/></svg>
+      <span data-i18n="a.gen">生成 commit message</span>
+    </button>
+    <span class="hint" data-i18n="a.hint">基于当前 diff 生成，只填入不自动提交，可编辑与重新生成（PRD 9.7）</span>
+  </div>
+
+  <div class="input-box">
+    <textarea rows="1" spellcheck="false" aria-label="SCM commit message 输入框">fix(auth): refresh token on 401 race condition</textarea>
+  </div>
+
+  <div class="changed-files cf-list" aria-label="当前 git 变更列表">
+    <div class="cf-item">
+      <span class="cf-status m">M</span>
+      <span class="cf-name">src/auth.ts</span>
+      <span class="stat-add">+18</span>
+      <span class="stat-del">-6</span>
+    </div>
+    <div class="cf-item">
+      <span class="cf-status m">M</span>
+      <span class="cf-name">src/auth.test.ts</span>
+      <span class="stat-add">+42</span>
+    </div>
+    <div class="cf-item">
+      <span class="cf-status a">A</span>
+      <span class="cf-name">src/auth/retry.ts</span>
+      <span class="stat-add">+9</span>
+    </div>
+  </div>
+
+  <!-- ============ B · 后台任务面板（PRD 9.8） ============ -->
+  <div class="divider-label" data-i18n="b.label">B · 后台任务面板（PRD 9.8）</div>
+
+  <details class="changed-files" open>
+    <summary><span data-i18n="b.summary">后台任务 · 3</span></summary>
+
+    <div class="task-row">
+      <span class="task-status running"><span class="tab-spinner" aria-hidden="true"></span></span>
+      <span class="task-title" data-i18n="b.t1">子代理：全仓搜索 auth 引用</span>
+      <button class="btn sm" data-i18n="b.cancel">取消</button>
+    </div>
+
+    <div class="task-row">
+      <span class="task-status done">✓</span>
+      <span class="task-title" data-i18n="b.t2">索引重建</span>
+      <span class="row-meta">12s</span>
+    </div>
+
+    <div class="task-row">
+      <span class="task-status failed">✗</span>
+      <span class="task-title" data-i18n="b.t3">文档爬取（限流）</span>
+      <button class="btn sm" data-i18n="b.retry">重试</button>
+    </div>
+  </details>
+
+  <div class="notice-bar error">
+    <span class="nb-icon" aria-hidden="true">⚠</span>
+    <div class="nb-body" data-i18n="b.note">后台任务失败会发 VS Code 通知；Tab 标题常驻状态图标（9.5）</div>
+  </div>
+
+  <!-- ============ C · 队列中断恢复（PRD 9.3 / 11.4） ============ -->
+  <div class="divider-label" data-i18n="c.label">C · 队列中断恢复（PRD 9.3 / 11.4）</div>
+
+  <div class="notice-bar error">
+    <span class="nb-icon" aria-hidden="true">⚠</span>
+    <div class="nb-body">
+      <div class="nb-title" data-i18n="c.nb.title">生成已中断（网络错误，已自动重试 3 次）</div>
+      <div data-i18n="c.nb.body">已生成内容保留并落盘为不完整轮次。重试＝续跑补全本轮（不重复入历史）；401/403 修复凭证后点重试即恢复，无需重启。</div>
+      <div class="nb-actions">
+        <button class="btn primary" data-i18n="c.act.retry">重试 · 续跑补全本轮</button>
+        <button class="btn" data-i18n="c.act.send">逐条发送</button>
+        <button class="btn danger" data-i18n="c.act.clear">一键清空</button>
+      </div>
+    </div>
+  </div>
+
+  <details class="changed-files" open>
+    <summary><span data-i18n="c.q.summary">队列 · 2 条未发送</span></summary>
+
+    <div class="cf-item q">
+      <span class="q-text" data-i18n="c.q.m1">帮我总结 ui/assets 的设计约定，输出成 checklist</span>
+      <button class="btn sm" data-i18n="c.q.send">发送</button>
+      <button class="icon-btn cf-x" title="移除该条消息" aria-label="移除该条消息">✕</button>
+    </div>
+
+    <div class="cf-item q">
+      <span class="q-text" data-i18n="c.q.m2">把 PRD 11.4 的恢复方式列整理成表格</span>
+      <button class="btn sm" data-i18n="c.q.send">发送</button>
+      <button class="icon-btn cf-x" title="移除该条消息" aria-label="移除该条消息">✕</button>
+    </div>
+  </details>
+
+  <div class="small-note" data-i18n="c.hint">关闭处于中断态的 Tab 且队列仍有消息时弹确认，不静默丢弃</div>
+
+  <!-- ============ D · 图片入口置灰（PRD 9.2） ============ -->
+  <div class="divider-label" data-i18n="d.label">D · 图片入口置灰（PRD 9.2）</div>
+
+  <div class="input-area">
+    <div class="input-box">
+      <textarea rows="1" data-i18n-ph="d.ph" placeholder="当前模型不支持图片输入" aria-label="聊天输入框"></textarea>
+      <div class="input-tools">
+        <button class="icon-btn" title="@ 引用文件或符号" aria-label="@ 引用文件或符号">
+          <span style="font-size:13px; font-weight:600;">@</span>
+        </button>
+        <button class="icon-btn" disabled title="当前模型不支持图片输入 / Image input not supported by current model" aria-label="插入图片（当前不可用）">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <path d="m21 15-5-5L5 21"/>
+          </svg>
+        </button>
+        <button class="send-btn" title="发送" aria-label="发送">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 19V5"/>
+            <path d="m5 12 7-7 7 7"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="notice-bar warn">
+      <span class="nb-icon" aria-hidden="true">⚠</span>
+      <div class="nb-body" data-i18n="d.note">当前模型 gpt-5.2-mini 不支持图片输入——入口置灰，点击与粘贴均有此提示，不无声失败（支持图片的模型下入口自动启用）</div>
+    </div>
+  </div>
+
+  <!-- ============ E · 终端集成（PRD 9.8 / AC-FN-23） ============ -->
+  <div class="divider-label" data-i18n="e.label">E · 终端集成（PRD 9.8 / AC-FN-23）</div>
+
+  <div class="term-mock" aria-label="VS Code 集成终端模拟">
+    <div class="term-head">
+      <span data-i18n="e.tab">终端 · pi</span>
+      <span class="term-badge" data-i18n="e.badge">VS Code 集成终端</span>
+    </div>
+    <div class="term-body">
+      <div><span class="term-prompt">$</span>pi</div>
+      <div class="term-dim" data-i18n="e.termLine">● 会话已就绪 · 与侧边面板共享同一会话（Turn 12 · 54K tokens）</div>
+      <div><span class="term-prompt">$</span><span class="term-caret" aria-hidden="true"></span></div>
+    </div>
+  </div>
+
+  <div class="scm-tools" style="margin-top:8px;">
+    <button class="btn" data-i18n="e.quote">引用终端选区 → Pi</button>
+    <button class="btn" data-i18n="e.open">在集成终端中打开 pi</button>
+    <span class="hint" data-i18n="e.hint">选中终端输出即可作为引用发送；插件与终端同源：同一会话、同一 token 口径</span>
+  </div>
+  <div class="small-note" data-i18n="e.note">终端运行的 pi 与侧边面板互通：会话历史互相可见，占用互斥由单写者机制保证（占用端只读，可接管）</div>
+
+</div>
+
+<div class="proto-note" data-i18n="note">覆盖 PRD 9.7 SCM / 9.8 后台任务·终端集成·单写者 / 队列恢复 / 图片置灰</div>
+
+<script>
+window.PI_PAGE = {
+  zh: {
+    "a.label": "A · SCM Commit 生成（PRD 9.7）",
+    "a.gen": "生成 commit message",
+    "a.hint": "基于当前 diff 生成，只填入不自动提交，可编辑与重新生成（PRD 9.7）",
+
+    "b.label": "B · 后台任务面板（PRD 9.8）",
+    "b.summary": "后台任务 · 3",
+    "b.t1": "子代理：全仓搜索 auth 引用",
+    "b.cancel": "取消",
+    "b.t2": "索引重建",
+    "b.t3": "文档爬取（限流）",
+    "b.retry": "重试",
+    "b.note": "后台任务失败会发 VS Code 通知；Tab 标题常驻状态图标（9.5）",
+
+    "e.label": "E · 终端集成（PRD 9.8 / AC-FN-23）",
+    "e.tab": "终端 · pi",
+    "e.badge": "VS Code 集成终端",
+    "e.termLine": "● 会话已就绪 · 与侧边面板共享同一会话（Turn 12 · 54K tokens）",
+    "e.quote": "引用终端选区 → Pi",
+    "e.open": "在集成终端中打开 pi",
+    "e.hint": "选中终端输出即可作为引用发送；插件与终端同源：同一会话、同一 token 口径",
+    "e.note": "终端运行的 pi 与侧边面板互通：会话历史互相可见，占用互斥由单写者机制保证（占用端只读，可接管）",
+
+    "c.label": "C · 队列中断恢复（PRD 9.3 / 11.4）",
+    "c.nb.title": "生成已中断（网络错误，已自动重试 3 次）",
+    "c.nb.body": "已生成内容保留并落盘为不完整轮次。重试＝续跑补全本轮（不重复入历史）；401/403 修复凭证后点重试即恢复，无需重启。",
+    "c.act.retry": "重试 · 续跑补全本轮",
+    "c.act.send": "逐条发送",
+    "c.act.clear": "一键清空",
+    "c.q.summary": "队列 · 2 条未发送",
+    "c.q.m1": "帮我总结 ui/assets 的设计约定，输出成 checklist",
+    "c.q.m2": "把 PRD 11.4 的恢复方式列整理成表格",
+    "c.q.send": "发送",
+    "c.hint": "关闭处于中断态的 Tab 且队列仍有消息时弹确认，不静默丢弃",
+
+    "d.label": "D · 图片入口置灰（PRD 9.2）",
+    "d.ph": "当前模型不支持图片输入",
+    "d.note": "当前模型 gpt-5.2-mini 不支持图片输入——入口置灰，点击与粘贴均有此提示，不无声失败（支持图片的模型下入口自动启用）",
+
+    "note": "覆盖 PRD 9.7 SCM / 9.8 后台任务·终端集成·单写者 / 队列恢复 / 图片置灰"
+  },
+  en: {
+    "a.label": "A · SCM Commit Generation (PRD 9.7)",
+    "a.gen": "Generate commit message",
+    "a.hint": "Generated from the current diff — fills the box only, never auto-commits. Editable and re-generatable (PRD 9.7)",
+
+    "b.label": "B · Background Task Panel (PRD 9.8)",
+    "b.summary": "Background tasks · 3",
+    "b.t1": "Subagent: repo-wide search for auth references",
+    "b.cancel": "Cancel",
+    "b.t2": "Index rebuild",
+    "b.t3": "Doc crawl (rate-limited)",
+    "b.retry": "Retry",
+    "b.note": "Failed background tasks raise a VS Code notification; tab titles keep a persistent status icon (9.5)",
+
+    "e.label": "E · Terminal Integration (PRD 9.8 / AC-FN-23)",
+    "e.tab": "Terminal · pi",
+    "e.badge": "VS Code integrated terminal",
+    "e.termLine": "● Session ready · shares the same session as the side panel (Turn 12 · 54K tokens)",
+    "e.quote": "Quote terminal selection → Pi",
+    "e.open": "Open pi in the integrated terminal",
+    "e.hint": "Select terminal output to send it as a reference; plugin and terminal share one session and one token accounting",
+    "e.note": "The terminal pi and the side panel interoperate: session history is visible on both sides, and occupancy is exclusive via the single-writer mechanism (occupied side read-only, can take over)",
+
+    "c.label": "C · Interrupted Queue Recovery (PRD 9.3 / 11.4)",
+    "c.nb.title": "Generation interrupted (network error, auto-retried 3 times)",
+    "c.nb.body": "Generated content is kept and persisted as an incomplete turn. Retry = resume to complete this turn (not re-added to history). For 401/403, click Retry after fixing credentials — no restart needed.",
+    "c.act.retry": "Retry · Resume & complete this turn",
+    "c.act.send": "Send one by one",
+    "c.act.clear": "Clear all",
+    "c.q.summary": "Queue · 2 unsent",
+    "c.q.m1": "Summarize the design conventions in ui/assets as a checklist",
+    "c.q.m2": "Turn the PRD 11.4 recovery table into a summary",
+    "c.q.send": "Send",
+    "c.hint": "Closing an interrupted tab with queued messages asks for confirmation — messages are never silently dropped",
+
+    "d.label": "D · Image Input Disabled (PRD 9.2)",
+    "d.ph": "Current model does not support image input",
+    "d.note": "The current model gpt-5.2-mini does not support image input — the entry is greyed out; clicking and pasting both show this notice instead of failing silently (it auto-enables on image-capable models)",
+
+    "note": "Covers PRD 9.7 SCM / 9.8 background tasks·terminal·single-writer / queue recovery / image disabled"
+  }
+};
+</script>
+<script src="assets/shared.js"></script>
+
+</body>
+</html>

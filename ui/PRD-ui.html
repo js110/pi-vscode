@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>pi-vscode UI 原型 — 设计索引</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  .idx-wrap { max-width: 960px; margin: 0 auto; padding: 40px 32px 80px; }
+  .idx-head h1 { font-size: 22px; margin-bottom: 6px; }
+  .idx-head .sub { color: var(--vscode-descriptionForeground); font-size: 13px; line-height: 1.6; }
+  .idx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 24px; }
+  .idx-card {
+    display: block; padding: 16px;
+    background: var(--vscode-editorWidget-background);
+    border: 1px solid var(--vscode-editorWidget-border);
+    border-radius: var(--proto-radius-lg);
+    text-decoration: none; color: inherit;
+    transition: border-color 0.12s, transform 0.12s;
+  }
+  .idx-card:hover { border-color: var(--vscode-focusBorder); transform: translateY(-2px); }
+  .idx-card .ic-no { font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .idx-card .ic-title { font-size: 14px; font-weight: 700; margin: 4px 0 6px; }
+  .idx-card .ic-desc { font-size: 12px; color: var(--vscode-descriptionForeground); line-height: 1.55; }
+  .idx-card .ic-tags { margin-top: 10px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .principle { display: flex; gap: 12px; padding: 10px 14px; border: 1px solid var(--proto-border); border-radius: var(--proto-radius-lg); margin-top: 8px; font-size: 12.5px; line-height: 1.6; }
+  .principle b { color: var(--vscode-charts-blue); }
+</style>
+</head>
+<body>
+<script src="assets/shared.js"></script>
+<div class="idx-wrap">
+  <div class="idx-head">
+    <h1 data-i18n="h1">pi-vscode 界面与图标重设计 — HTML 原型</h1>
+    <p class="sub"><span data-i18n="sub1">基于 PRD v1.4（场景 B+C，17 项核心路径）· 设计基准：VS Code 原生风格（Dark/Light Modern 变量）</span><br>
+    <span data-i18n="sub2">右上角工具条可切换</span> <b data-i18n="sub3">深浅主题</b> <span data-i18n="sub4">与</span> <b data-i18n="sub5">中/英语言</b><span data-i18n="sub6">，四组合即 PRD 13.3 兼容性验收的可视化对应。</span></p>
+  </div>
+
+  <div class="divider-label" data-i18n="d1">设计原则</div>
+  <div class="principle"><span><b data-i18n="p1k">原生融入</b><span data-i18n="p1t">：全部颜色引用 --vscode-* 变量，组件零写死色值——装进真实 webview 即自动跟随用户主题。</span></span></div>
+  <div class="principle"><span><b data-i18n="p2k">面板骨架</b><span data-i18n="p2t">：Header（新建 Tab / 会话 / 设置）→ Tab 条（状态图标常驻）→ 消息流 → 输入区（引用 chips + 模式切换器）→ Footer（模型 / 上下文用量 / 发送），与 PRD 9.1-9.3 一一对应。</span></span></div>
+  <div class="principle"><span><b data-i18n="p3k">状态可见</b><span data-i18n="p3t">：流式中（蓝 spinner）/ Plan 执行中（紫）/ 失败暂停（橙）/ 中断（红）四态图标贯穿 Tab 条、消息流与后台任务面板（9.5 Tab 状态外显）。</span></span></div>
+  <div class="principle"><span><b data-i18n="p4k">审批三层</b><span data-i18n="p4t">：自动放行留痕（虚线痕迹条）→ 审批卡（允许一次/允许并记住/拒绝 + 危险标识）→ 设置页规则管理，同一视觉语言（9.3/9.6）。</span></span></div>
+
+  <div class="divider-label" data-i18n="d2">页面导航（11 页）</div>
+  <div class="idx-grid">
+    <a class="idx-card" href="ui_chat_main_normal.html">
+      <div class="ic-no" data-i18n="c02n">02 · 主页面</div>
+      <div class="ic-title" data-i18n="c02t">对话主界面 — 正常态</div>
+      <div class="ic-desc" data-i18n="c02d">消息流（代码块高亮+Apply、审批卡、自动放行痕迹、TODO 卡）、压缩提示条、输入区（@-mention、图片、模式切换器、Steer）</div>
+      <div class="ic-tags"><span class="badge">9.1</span><span class="badge">9.2</span><span class="badge">9.3</span></div>
+    </a>
+    <a class="idx-card" href="ui_chat_main_error.html">
+      <div class="ic-no" data-i18n="c03n">03 · 状态页</div>
+      <div class="ic-title" data-i18n="c03t">配置错误态</div>
+      <div class="ic-desc" data-i18n="c03d">未检测到 Pi 配置：缺失说明（区分三类成因）+ 文档链接 + 重新检测，绝不空白（AC-FN-02/03）</div>
+      <div class="ic-tags"><span class="badge">9.1</span><span class="badge">11.1</span></div>
+    </a>
+    <a class="idx-card" href="ui_model_selector.html">
+      <div class="ic-no" data-i18n="c04n">04 · 弹层</div>
+      <div class="ic-title" data-i18n="c04t">模型选择器</div>
+      <div class="ic-desc" data-i18n="c04d">已读取统计、provider 分组、自定义条目、凭证无效置灰+失效标识、思考级别、100+ 条目过滤</div>
+      <div class="ic-tags"><span class="badge">9.1</span><span class="badge">11.3</span></div>
+    </a>
+    <a class="idx-card" href="ui_sessions_skills.html">
+      <div class="ic-no" data-i18n="c05n">05 · 弹层×2</div>
+      <div class="ic-title" data-i18n="c05t">会话历史 + 技能菜单</div>
+      <div class="ic-desc" data-i18n="c05d">会话列表（搜索、CLI/IDE 来源标记、占用提示）；/ 技能菜单与终端一致</div>
+      <div class="ic-tags"><span class="badge">9.1</span><span class="badge">9.8</span></div>
+    </a>
+    <a class="idx-card" href="ui_plan_mode.html">
+      <div class="ic-no" data-i18n="c06n">06 · 流程页</div>
+      <div class="ic-title" data-i18n="c06t">Plan 模式全流程</div>
+      <div class="ic-desc" data-i18n="c06d">规划中 → 计划卡片（可编辑/重规划）→ 批准自动执行（TODO 实时勾选）→ 失败暂停（危险工具弹卡）→ 已中断</div>
+      <div class="ic-tags"><span class="badge">9.5</span><span class="badge">8.5</span></div>
+    </a>
+    <a class="idx-card" href="ui_inline_chat_editor.html">
+      <div class="ic-no" data-i18n="c07n">07 · 编辑器模拟</div>
+      <div class="ic-title" data-i18n="c07t">Inline Chat + 右键菜单</div>
+      <div class="ic-desc" data-i18n="c07d">编辑器内行内输入、行内 diff、接受/放弃、冲突提示、生成中断错误条、"发送到 Pi" 右键菜单</div>
+      <div class="ic-tags"><span class="badge">9.4</span></div>
+    </a>
+    <a class="idx-card" href="ui_apply_diff_files.html">
+      <div class="ic-no" data-i18n="c08n">08 · 弹窗+组件</div>
+      <div class="ic-title" data-i18n="c08t">Apply Diff 预览 + Changed Files</div>
+      <div class="ic-desc" data-i18n="c08d">目标文件选择 + diff 预览 + 确认写入/冲突阻止；按轮次改动清单与回滚</div>
+      <div class="ic-tags"><span class="badge">9.3</span><span class="badge">11.2</span></div>
+    </a>
+    <a class="idx-card" href="ui_settings.html">
+      <div class="ic-no" data-i18n="c09n">09 · 页面</div>
+      <div class="ic-title" data-i18n="c09t">设置页</div>
+      <div class="ic-desc" data-i18n="c09d">审批记忆规则管理（逐条撤销/一键清空、全局/会话归属）、语言切换、默认模型、数据边界说明</div>
+      <div class="ic-tags"><span class="badge">9.6</span></div>
+    </a>
+    <a class="idx-card" href="ui_misc_panels.html">
+      <div class="ic-no" data-i18n="c10n">10 · 面板合集</div>
+      <div class="ic-title" data-i18n="c10t">SCM / 后台任务 / 恢复区 / 终端集成 / 图片置灰</div>
+      <div class="ic-desc" data-i18n="c10d">commit 生成按钮、子代理任务面板、只读占用态、队列中断恢复区（重试/逐条发送/清空）、图片入口置灰</div>
+      <div class="ic-tags"><span class="badge">9.7</span><span class="badge">9.8</span></div>
+    </a>
+    <a class="idx-card" href="ui_icon_showcase.html">
+      <div class="ic-no" data-i18n="c11n">11 · 图标提案</div>
+      <div class="ic-title" data-i18n="c11t">插件图标重设计</div>
+      <div class="ic-desc" data-i18n="c11d">3 个 marketplace 彩色图标提案 + 活动栏单色变体 + 36×36 灰阶规范图标 + 尺寸阶梯（AC-FN-29）</div>
+      <div class="ic-tags"><span class="badge">5.1#16</span><span class="badge">AC-FN-29</span></div>
+    </a>
+  </div>
+
+  <div class="divider-label" data-i18n="d3">交付说明</div>
+  <div class="principle"><span data-i18n="note1">本目录为原型交付物（设计基线），不参与扩展构建；实现落地时组件样式经 src/webview/styles/ 移植并沿用同一 token 体系。QA 报告：PRD-ui-test-report.md（Phase 3 评审后生成）。</span></div>
+</div>
+<div class="proto-note" data-i18n="note2">pi-vscode UI Prototype · PRD v1.4 · VS Code 原生风格</div>
+<script>
+window.PI_PAGE = {
+  zh: {
+    h1: "pi-vscode 界面与图标重设计 — HTML 原型",
+    sub1: "基于 PRD v1.4（场景 B+C，17 项核心路径）· 设计基准：VS Code 原生风格（Dark/Light Modern 变量）",
+    sub2: "右上角工具条可切换", sub3: "深浅主题", sub4: "与", sub5: "中/英语言",
+    sub6: "，四组合即 PRD 13.3 兼容性验收的可视化对应。",
+    d1: "设计原则", d2: "页面导航（11 页）", d3: "交付说明",
+    p1k: "原生融入", p1t: "：全部颜色引用 --vscode-* 变量，组件零写死色值——装进真实 webview 即自动跟随用户主题。",
+    p2k: "面板骨架", p2t: "：Header（新建 Tab / 会话 / 设置）→ Tab 条（状态图标常驻）→ 消息流 → 输入区（引用 chips + 模式切换器）→ Footer（模型 / 上下文用量 / 发送），与 PRD 9.1-9.3 一一对应。",
+    p3k: "状态可见", p3t: "：流式中（蓝 spinner）/ Plan 执行中（紫）/ 失败暂停（橙）/ 中断（红）四态图标贯穿 Tab 条、消息流与后台任务面板（9.5 Tab 状态外显）。",
+    p4k: "审批三层", p4t: "：自动放行留痕（虚线痕迹条）→ 审批卡（允许一次/允许并记住/拒绝 + 危险标识）→ 设置页规则管理，同一视觉语言（9.3/9.6）。",
+    c02n: "02 · 主页面", c02t: "对话主界面 — 正常态",
+    c02d: "消息流（代码块高亮+Apply、审批卡、自动放行痕迹、TODO 卡）、压缩提示条、输入区（@-mention、图片、模式切换器、Steer）",
+    c03n: "03 · 状态页", c03t: "配置错误态",
+    c03d: "未检测到 Pi 配置：缺失说明（区分三类成因）+ 文档链接 + 重新检测，绝不空白（AC-FN-02/03）",
+    c04n: "04 · 弹层", c04t: "模型选择器",
+    c04d: "已读取统计、provider 分组、自定义条目、凭证无效置灰+失效标识、思考级别、100+ 条目过滤",
+    c05n: "05 · 弹层×2", c05t: "会话历史 + 技能菜单",
+    c05d: "会话列表（搜索、CLI/IDE 来源标记、占用提示）；/ 技能菜单与终端一致",
+    c06n: "06 · 流程页", c06t: "Plan 模式全流程",
+    c06d: "规划中 → 计划卡片（可编辑/重规划）→ 批准自动执行（TODO 实时勾选）→ 失败暂停（危险工具弹卡）→ 已中断",
+    c07n: "07 · 编辑器模拟", c07t: "Inline Chat + 右键菜单",
+    c07d: "编辑器内行内输入、行内 diff、接受/放弃、冲突提示、生成中断错误条、\"发送到 Pi\" 右键菜单",
+    c08n: "08 · 弹窗+组件", c08t: "Apply Diff 预览 + Changed Files",
+    c08d: "目标文件选择 + diff 预览 + 确认写入/冲突阻止；按轮次改动清单与回滚",
+    c09n: "09 · 页面", c09t: "设置页",
+    c09d: "审批记忆规则管理（逐条撤销/一键清空、全局/会话归属）、语言切换、默认模型、数据边界说明",
+    c10n: "10 · 面板合集", c10t: "SCM / 后台任务 / 恢复区 / 终端集成 / 图片置灰",
+    c10d: "commit 生成按钮、子代理任务面板、只读占用态、队列中断恢复区（重试/逐条发送/清空）、图片入口置灰",
+    c11n: "11 · 图标提案", c11t: "插件图标重设计",
+    c11d: "3 个 marketplace 彩色图标提案 + 活动栏单色变体 + 36×36 灰阶规范图标 + 尺寸阶梯（AC-FN-29）",
+    note1: "本目录为原型交付物（设计基线），不参与扩展构建；实现落地时组件样式经 src/webview/styles/ 移植并沿用同一 token 体系。QA 报告：PRD-ui-test-report.md（Phase 3 评审后生成）。",
+    note2: "pi-vscode UI Prototype · PRD v1.4 · VS Code 原生风格"
+  },
+  en: {
+    h1: "pi-vscode UI & Icon Redesign — HTML Prototype",
+    sub1: "Based on PRD v1.4 (scenario B+C, 17 core paths) · Design baseline: VS Code native style (Dark/Light Modern variables)",
+    sub2: "Use the toolbar to switch", sub3: "theme", sub4: "and", sub5: "language",
+    sub6: " — the four combinations map to PRD 13.3 compatibility acceptance.",
+    d1: "Design Principles", d2: "Pages (11)", d3: "Delivery Notes",
+    p1k: "Native", p1t: ": every color references --vscode-* variables with zero hard-coded values — drops into the real webview and follows the user's theme automatically.",
+    p2k: "Panel skeleton", p2t: ": Header (new tab / sessions / settings) → tab strip (persistent status icons) → message stream → input area (context chips + mode switch) → footer (model / context usage / send), matching PRD 9.1-9.3 one-to-one.",
+    p3k: "Visible states", p3t: ": streaming (blue spinner) / Plan running (purple) / failed-paused (orange) / aborted (red) run through the tab strip, message stream and background task panel (9.5).",
+    p4k: "Three approval layers", p4t: ": auto-approval trace (dashed entry) → approval card (allow once / allow & remember / deny + danger tag) → settings rule management, one visual language (9.3/9.6).",
+    c02n: "02 · Main page", c02t: "Chat main view — normal",
+    c02d: "Message stream (highlighted code + Apply, approval card, auto-approval trace, TODO card), compaction bar, input area (@-mention, image, mode switch, Steer)",
+    c03n: "03 · State page", c03t: "Config error state",
+    c03d: "Pi config not detected: cause breakdown (three cases) + doc link + re-detect, never blank (AC-FN-02/03)",
+    c04n: "04 · Popover", c04t: "Model picker",
+    c04d: "Discovery stats, provider groups, custom entries, invalid-credential grey-out, thinking level, 100+ entry filtering",
+    c05n: "05 · Popovers ×2", c05t: "Sessions + skill menu",
+    c05d: "Session list (search, CLI/IDE badges, occupancy hint); / skill menu consistent with terminal",
+    c06n: "06 · Flow page", c06t: "Plan mode end-to-end",
+    c06d: "Planning → plan card (editable/re-plan) → approve & auto-execute (live TODO) → failed-paused (danger tool card) → interrupted",
+    c07n: "07 · Editor mock", c07t: "Inline Chat + context menu",
+    c07d: "In-editor input, inline diff, accept/discard, conflict hint, generation-aborted error bar, \"Send to Pi\" context menu",
+    c08n: "08 · Dialog + component", c08t: "Apply diff preview + Changed Files",
+    c08d: "Target file picker + diff preview + confirm write / conflict block; per-turn change list with rollback",
+    c09n: "09 · Page", c09t: "Settings",
+    c09d: "Approval memory rules (per-item revoke / clear all, global/session scope), language switch, default model, data boundary notes",
+    c10n: "10 · Panel set", c10t: "SCM / background tasks / recovery / terminal integration / image disabled",
+    c10d: "Commit message button, subagent task panel, read-only occupancy, queue recovery bar (retry / send one-by-one / clear), disabled image entry",
+    c11n: "11 · Icon proposals", c11t: "Extension icon redesign",
+    c11d: "3 marketplace color icon proposals + activity-bar monochrome + 36×36 grayscale spec icon + size ladder (AC-FN-29)",
+    note1: "This folder is a prototype deliverable (design baseline), not part of the extension build; port component styles via src/webview/styles/ keeping the same token system. QA report: PRD-ui-test-report.md (after Phase 3 review).",
+    note2: "pi-vscode UI Prototype · PRD v1.4 · VS Code native style"
+  }
+};
+</script>
+</body>
+</html>

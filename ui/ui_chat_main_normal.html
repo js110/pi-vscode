@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-vscode 原型 · 对话主界面（常态）</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  /* 本页少量补充：仅布局与状态补全，颜色一律引用 var(--vscode-*) / var(--proto-*) */
+  .footer-model {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border: none; border-radius: var(--proto-radius);
+    background: transparent; color: var(--vscode-descriptionForeground);
+    font-family: var(--proto-mono); font-size: 11px; cursor: pointer;
+  }
+  .footer-model:hover { background: var(--proto-hover); }
+  .footer-model .caret { font-size: 9px; font-family: var(--proto-font); }
+  .todo-item.failed .todo-check::after {
+    content: "!"; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--vscode-testing-iconFailed); font-size: 10px; font-weight: 700;
+  }
+  .trace-tool { font-family: var(--proto-mono); }
+  .drop-hint {
+    display: inline-flex; align-items: center;
+    padding: 1px 8px; margin: 2px 0;
+    border: 1px dashed var(--proto-border-strong); border-radius: 10px;
+    font-size: 11px; color: var(--vscode-descriptionForeground);
+  }
+  .queue-note { margin: 4px 0 6px; padding: 6px 10px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<div class="proto-stage">
+
+  <!-- ==================== 左侧：模拟编辑器 ==================== -->
+  <div class="proto-editor-mock" aria-hidden="true">
+    <div><span class="ln">1</span><span class="tok-k">import</span> { authClient } <span class="tok-k">from</span> <span class="tok-s">"./client"</span>;</div>
+    <div><span class="ln">2</span><span class="tok-k">import</span> <span class="tok-k">type</span> { <span class="tok-t">Session</span> } <span class="tok-k">from</span> <span class="tok-s">"./types"</span>;</div>
+    <div><span class="ln">3</span></div>
+    <div><span class="ln">4</span><span class="tok-c">// TODO(#412): 登录接口偶发 401 超时</span></div>
+    <div><span class="ln">5</span><span class="tok-k">export</span> <span class="tok-k">async</span> <span class="tok-k">function</span> <span class="tok-f">login</span>(<span class="tok-v">user</span>: <span class="tok-t">string</span>, <span class="tok-v">pass</span>: <span class="tok-t">string</span>) {</div>
+    <div><span class="ln">6</span>&nbsp;&nbsp;<span class="tok-k">const</span> <span class="tok-v">res</span> = <span class="tok-k">await</span> authClient.<span class="tok-f">post</span>(<span class="tok-s">"/auth/login"</span>, {</div>
+    <div><span class="ln">7</span>&nbsp;&nbsp;&nbsp;&nbsp;user,</div>
+    <div><span class="ln">8</span>&nbsp;&nbsp;&nbsp;&nbsp;pass,</div>
+    <div><span class="ln">9</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="sel">timeout: <span class="tok-n">1500</span>,</span></div>
+    <div><span class="ln">10</span>&nbsp;&nbsp;});</div>
+    <div><span class="ln">11</span>&nbsp;&nbsp;<span class="tok-k">if</span> (!res.data.token) <span class="tok-k">throw</span> <span class="tok-k">new</span> <span class="tok-f">Error</span>(<span class="tok-s">"no token"</span>);</div>
+    <div><span class="ln">12</span>&nbsp;&nbsp;<span class="tok-k">return</span> <span class="tok-f">createSession</span>(res.data);</div>
+    <div><span class="ln">13</span>}</div>
+    <div><span class="ln">14</span></div>
+    <div><span class="ln">15</span><span class="tok-c">// 中间件侧同样存在过期边界未刷新问题</span></div>
+    <div><span class="ln">16</span><span class="tok-k">export</span> <span class="tok-k">function</span> <span class="tok-f">withSession</span>(<span class="tok-v">req</span>: <span class="tok-t">Request</span>) {</div>
+    <div><span class="ln">17</span>&nbsp;&nbsp;<span class="tok-k">if</span> (req.session.expiresAt &lt; <span class="tok-t">Date</span>.<span class="tok-f">now</span>()) {</div>
+    <div><span class="ln">18</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tok-k">return</span> <span class="tok-f">refresh</span>(req.session);</div>
+    <div><span class="ln">19</span>&nbsp;&nbsp;}</div>
+    <div><span class="ln">20</span>}</div>
+  </div>
+
+  <!-- ==================== 右侧：Pi 侧边面板 ==================== -->
+  <div class="pi-panel">
+
+    <!-- 1. 头部：标题 + 新建 Tab / 会话历史 / 设置（PRD 9.1） -->
+    <div class="pi-header">
+      <div class="title">Pi</div>
+      <div class="pi-header-actions">
+        <button class="icon-btn" title="新建 Tab" aria-label="新建 Tab">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+        </button>
+        <button class="icon-btn" title="会话历史" aria-label="会话历史">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+        </button>
+        <button class="icon-btn" title="设置" aria-label="设置">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2M3.4 3.4l1.55 1.55M11.05 11.05l1.55 1.55M12.6 3.4l-1.55 1.55M4.95 11.05L3.4 12.6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 2. Tab 条：状态图标与 6.3 状态枚举对应（PRD 9.1 / 9.5） -->
+    <div class="tab-strip">
+      <div class="tab active">
+        <span class="tab-title" data-i18n="tab.fixLogin">修复登录超时</span>
+        <span class="tab-close">✕</span>
+      </div>
+      <div class="tab">
+        <span class="tab-status plan" title="Plan 执行中">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 1 3 9h4l-1.5 6L12 7H8l1.5-6z"/></svg>
+        </span>
+        <span class="tab-title" data-i18n="tab.refactor">重构 parser</span>
+        <span class="tab-close">✕</span>
+      </div>
+      <div class="tab">
+        <span class="tab-status aborted" title="已中断">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"/></svg>
+        </span>
+        <span class="tab-title" data-i18n="tab.termErr">终端报错排查</span>
+        <span class="tab-close">✕</span>
+      </div>
+    </div>
+
+    <!-- 3. 消息流（PRD 9.3） -->
+    <div class="messages">
+
+      <!-- a. 用户消息：Bug 描述 + @-mention + 图片缩略图 -->
+      <div class="msg user">
+        <div class="msg-head">
+          <span class="msg-avatar user" data-i18n="user.name">我</span>
+          <span data-i18n="user.name">我</span>
+          <span class="msg-turn">Turn 12</span>
+        </div>
+        <div class="msg-body">
+          <span data-i18n="user.text1">登录接口偶发 401 超时，帮我排查一下：</span>
+          <span class="mention-chip"><span class="chip-icon"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>@src/auth.ts</span>
+          <span data-i18n="user.text2">附上控制台报错截图，超时点和调用栈都在里面。</span>
+          <div><span class="img-thumb" title="控制台报错截图"></span></div>
+        </div>
+      </div>
+
+      <!-- b. 助手消息：已读文件 + 诊断结论 -->
+      <div class="msg assistant">
+        <div class="msg-head">
+          <span class="msg-avatar assistant">P</span>
+          <span>Pi</span>
+        </div>
+        <div class="msg-body" data-i18n="ai.diag">已读取 src/auth.ts 与 src/middleware/session.ts，诊断结论：token 过期后未自动刷新，落在过期边界的请求被网关以 401 拒绝，叠加了 1500ms 的过短超时。下面是修复方案。</div>
+      </div>
+
+      <!-- c. 自动放行痕迹：记忆命中且非危险工具（PRD 9.3 审批记忆命中） -->
+      <div class="trace-entry" title="点击展开放行详情">
+        <span>▸</span>
+        <span class="trace-tool">read_file ×2</span>
+        <span class="badge auto" data-i18n="trace.badge">记忆放行</span>
+        <span class="trace-src" data-i18n="trace.src">来源：记忆 · 本会话</span>
+      </div>
+
+      <!-- d. 助手消息：修复代码块（语法高亮 / 复制 / Apply） -->
+      <div class="msg assistant">
+        <div class="msg-head">
+          <span class="msg-avatar assistant">P</span>
+          <span>Pi</span>
+        </div>
+        <div class="msg-body">
+          <div class="codeblock collapsible" id="fix-codeblock">
+            <div class="codeblock-head">
+              <span class="lang">typescript</span>
+              <span class="spacer"></span>
+              <button class="cb-btn" id="cb-toggle" data-i18n="cb.expand">展开全部（+5 行）</button>
+              <button class="cb-btn" data-i18n="cb.copy">复制</button>
+              <button class="cb-btn primary" data-i18n="cb.apply">Apply</button>
+            </div>
+            <pre><span class="tok-k">export</span> <span class="tok-k">async</span> <span class="tok-k">function</span> <span class="tok-f">login</span>(<span class="tok-v">user</span>: <span class="tok-t">string</span>, <span class="tok-v">pass</span>: <span class="tok-t">string</span>) {
+  <span class="tok-c">// 401 抖动：8s 超时 + 指数退避重试（最多 2 次）</span>
+  <span class="tok-k">for</span> (<span class="tok-k">let</span> <span class="tok-v">attempt</span> = <span class="tok-n">0</span>; <span class="tok-v">attempt</span> &lt; <span class="tok-n">2</span>; <span class="tok-v">attempt</span>++) {
+    <span class="tok-k">try</span> {
+      <span class="tok-k">return</span> <span class="tok-k">await</span> authClient.<span class="tok-f">post</span>(<span class="tok-s">"/auth/login"</span>, { user, pass }, { timeout: <span class="tok-n">8000</span> });
+    } <span class="tok-k">catch</span> (<span class="tok-v">err</span>) {
+      <span class="tok-k">if</span> (!<span class="tok-f">isTransient</span>(err)) <span class="tok-k">throw</span> err;
+      <span class="tok-k">await</span> <span class="tok-f">sleep</span>(<span class="tok-n">200</span> * <span class="tok-n">2</span> ** attempt);
+    }
+  }
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- e. 审批卡片：非危险工具 edit_file（PRD 9.3 审批卡片 / 审批记忆） -->
+      <div class="approval-card">
+        <div class="ac-head">
+          <span class="ac-title" data-i18n="ac.title">工具审批 · edit_file</span>
+          <span class="badge" data-i18n="ac.badge">写文件</span>
+        </div>
+        <div class="ac-params" data-i18n="ac.params">path: src/auth.ts
+change: 为 login() 增加 8s 超时与指数退避重试（+18 / -6）</div>
+        <div class="ac-actions">
+          <button class="btn primary" data-i18n="ac.once">允许一次</button>
+          <span class="remember-split">
+            <button class="btn" id="remember-toggle" data-i18n="ac.remember">允许并记住 ▾</button>
+            <div class="remember-menu" id="remember-menu" hidden>
+              <div data-i18n="ac.scope.session">仅本会话</div>
+              <div data-i18n="ac.scope.global">全局（所有 Tab）</div>
+            </div>
+          </span>
+          <button class="btn danger" data-i18n="ac.deny">拒绝</button>
+        </div>
+      </div>
+
+      <!-- f. TODO 任务卡片（PRD 9.3 / 9.5） -->
+      <div class="todo-card">
+        <div class="tc-head">
+          <span data-i18n="tc.title">任务进度</span>
+          <span class="progress">3/5</span>
+        </div>
+        <div class="todo-item done">
+          <span class="todo-check"></span>
+          <span class="todo-text" data-i18n="todo.t1">定位 401 触发条件</span>
+        </div>
+        <div class="todo-item done">
+          <span class="todo-check"></span>
+          <span class="todo-text" data-i18n="todo.t2">login() 增加超时与重试</span>
+        </div>
+        <div class="todo-item running">
+          <span class="todo-check"></span>
+          <span class="todo-text" data-i18n="todo.t3">更新 session 中间件刷新逻辑</span>
+        </div>
+        <div class="todo-item">
+          <span class="todo-check"></span>
+          <span class="todo-text" data-i18n="todo.t4">补齐单元测试</span>
+        </div>
+        <div class="todo-item failed">
+          <span class="todo-check"></span>
+          <span class="todo-text" data-i18n="todo.t5">测试命令超时</span>
+        </div>
+      </div>
+
+      <!-- g. 压缩提示条：上下文超阈值（PRD 9.2 / 11.4） -->
+      <div class="notice-bar warn">
+        <span class="nb-icon">⚠</span>
+        <div class="nb-body">
+          <span class="nb-title" data-i18n="nb.title">上下文接近上限（82%）</span>
+          <div data-i18n="nb.body">确认后将执行 Pi 原生压缩，摘要覆盖历史对话；以下内容不会丢失：</div>
+          <ul class="keep-list">
+            <li data-i18n="nb.keep1">进行中的计划与 TODO</li>
+            <li data-i18n="nb.keep2">未发送的队列消息（压缩后依序发送）</li>
+            <li data-i18n="nb.keep3">最近 2 轮完整上下文</li>
+          </ul>
+          <div class="nb-actions">
+            <button class="btn primary" data-i18n="nb.compact">压缩</button>
+            <button class="btn" data-i18n="nb.later">暂不</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- h. 改动审查入口：按轮次列出变更（PRD 9.3） -->
+      <details class="changed-files" open>
+        <summary>
+          <span>▸</span>
+          <span data-i18n="cf.summary">3 个文件已更改 · Turn 12</span>
+        </summary>
+        <div class="cf-item" title="打开 diff">
+          <span class="cf-name">src/auth.ts</span>
+          <span class="stat-add">+18</span>
+          <span class="stat-del">-6</span>
+        </div>
+        <div class="cf-item" title="打开 diff">
+          <span class="cf-name">src/middleware/session.ts</span>
+          <span class="stat-add">+7</span>
+          <span class="stat-del">-3</span>
+        </div>
+        <div class="cf-item" title="打开 diff">
+          <span class="cf-name">tests/auth.spec.ts</span>
+          <span class="stat-add">+21</span>
+          <span class="stat-del">-2</span>
+        </div>
+      </details>
+
+    </div>
+
+    <!-- 4. 输入区（PRD 9.2） -->
+    <div class="input-area">
+
+      <!-- 模式切换器：对话 / Plan -->
+      <div class="mode-switch">
+        <span class="ms-opt active" data-i18n="ms.chat">对话</span>
+        <span class="ms-opt" data-i18n="ms.plan">Plan</span>
+      </div>
+
+      <!-- 上下文 chips（含拖拽文件转引用提示，PRD 9.2） -->
+      <div class="context-chips">
+        <span class="mention-chip"><span class="chip-icon"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>@src/auth.ts</span>
+        <span class="mention-chip"><span class="chip-icon"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg></span>@src/middleware/session.ts</span>
+        <span class="drop-hint" data-i18n="drop.hint">⤓ 拖拽文件到输入区，自动转为 @ 引用</span>
+      </div>
+
+      <!-- 流式中提示：发送入队 + Steer（PRD 9.2） -->
+      <div class="notice-bar info queue-note">
+        <span class="nb-icon">ⓘ</span>
+        <div class="nb-body" data-i18n="queue.demo">Pi 正在流式生成：新消息将入队，本轮结束后依序发送；Steer 可打断并转向</div>
+      </div>
+
+      <div class="input-box">
+        <textarea rows="1" data-i18n-ph="ph.input" placeholder="描述任务，@ 引用文件/符号，/ 调用技能…"></textarea>
+        <div class="input-tools">
+          <button class="icon-btn" title="添加图片（当前模型支持）" aria-label="添加图片">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.8" cy="6.4" r="1.1"/><path d="M2.5 11.5 6 8.5l2.4 2 2.3-2.4 2.8 2.9"/></svg>
+          </button>
+          <button class="icon-btn" title="@ 引用文件/符号" aria-label="@ 引用" style="font-weight:600">@</button>
+          <button class="icon-btn" title="技能菜单" aria-label="技能菜单" style="font-weight:600">/</button>
+        </div>
+      </div>
+
+      <div class="input-footer">
+        <button class="footer-model" title="模型选择器">deepseek-chat <span class="caret">▾</span></button>
+        <span class="spacer"></span>
+        <span class="ctx-pct warn" title="上下文用量">54K / 128K · 82%</span>
+        <button class="btn" data-i18n="btn.steer" title="Steer：打断当前生成，以输入内容作为新指令转向 / Steer: interrupt the current turn and redirect with the input">Steer</button>
+        <button class="send-btn queue" title="发送（流式中：加入队列，本轮结束后依序发送） / Send (streaming: queued until this turn ends)" aria-label="发送（入队）">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- 原型标注 -->
+<div class="proto-note" data-i18n="note.label">对话主界面（常态）— 覆盖 PRD 9.1 / 9.2 / 9.3</div>
+
+<script>
+window.PI_PAGE = {
+  zh: {
+    "tab.fixLogin": "修复登录超时",
+    "tab.refactor": "重构 parser",
+    "tab.termErr": "终端报错排查",
+    "user.name": "我",
+    "user.text1": "登录接口偶发 401 超时，帮我排查一下：",
+    "user.text2": "附上控制台报错截图，超时点和调用栈都在里面。",
+    "ai.diag": "已读取 src/auth.ts 与 src/middleware/session.ts，诊断结论：token 过期后未自动刷新，落在过期边界的请求被网关以 401 拒绝，叠加了 1500ms 的过短超时。下面是修复方案。",
+    "trace.badge": "记忆放行",
+    "trace.src": "来源：记忆 · 本会话",
+    "cb.copy": "复制",
+    "cb.apply": "Apply",
+    "cb.expand": "展开全部（+5 行）",
+    "cb.collapse": "收起",
+    "drop.hint": "⤓ 拖拽文件到输入区，自动转为 @ 引用",
+    "queue.demo": "Pi 正在流式生成：新消息将入队，本轮结束后依序发送；Steer 可打断并转向",
+    "btn.steer": "Steer",
+    "ac.title": "工具审批 · edit_file",
+    "ac.badge": "写文件",
+    "ac.params": "path: src/auth.ts\nchange: 为 login() 增加 8s 超时与指数退避重试（+18 / -6）",
+    "ac.once": "允许一次",
+    "ac.remember": "允许并记住 ▾",
+    "ac.scope.session": "仅本会话",
+    "ac.scope.global": "全局（所有 Tab）",
+    "ac.deny": "拒绝",
+    "tc.title": "任务进度",
+    "todo.t1": "定位 401 触发条件",
+    "todo.t2": "login() 增加超时与重试",
+    "todo.t3": "更新 session 中间件刷新逻辑",
+    "todo.t4": "补齐单元测试",
+    "todo.t5": "测试命令超时",
+    "nb.title": "上下文接近上限（82%）",
+    "nb.body": "确认后将执行 Pi 原生压缩，摘要覆盖历史对话；以下内容不会丢失：",
+    "nb.keep1": "进行中的计划与 TODO",
+    "nb.keep2": "未发送的队列消息（压缩后依序发送）",
+    "nb.keep3": "最近 2 轮完整上下文",
+    "nb.compact": "压缩",
+    "nb.later": "暂不",
+    "cf.summary": "3 个文件已更改 · Turn 12",
+    "ms.chat": "对话",
+    "ms.plan": "Plan",
+    "ph.input": "描述任务，@ 引用文件/符号，/ 调用技能…",
+    "note.label": "对话主界面（常态）— 覆盖 PRD 9.1 / 9.2 / 9.3"
+  },
+  en: {
+    "tab.fixLogin": "Fix login timeout",
+    "tab.refactor": "Refactor parser",
+    "tab.termErr": "Terminal error triage",
+    "user.name": "Me",
+    "user.text1": "The login endpoint intermittently fails with 401 timeouts, please investigate:",
+    "user.text2": "Attached is the console error screenshot with the timeout point and call stack.",
+    "ai.diag": "Read src/auth.ts and src/middleware/session.ts. Diagnosis: tokens are not refreshed after expiry, so requests at the expiry boundary are rejected with 401 by the gateway, compounded by the overly short 1500ms timeout. Fix below.",
+    "trace.badge": "Memory auto-allow",
+    "trace.src": "Source: memory · this session",
+    "cb.copy": "Copy",
+    "cb.apply": "Apply",
+    "cb.expand": "Show all (+5 lines)",
+    "cb.collapse": "Collapse",
+    "drop.hint": "⤓ Drag files into the input box — auto-converted to @ references",
+    "queue.demo": "Pi is streaming: new messages are queued and sent in order after this turn; Steer interrupts and redirects",
+    "btn.steer": "Steer",
+    "ac.title": "Tool approval · edit_file",
+    "ac.badge": "Write file",
+    "ac.params": "path: src/auth.ts\nchange: add 8s timeout and exponential-backoff retry to login() (+18 / -6)",
+    "ac.once": "Allow once",
+    "ac.remember": "Allow & remember ▾",
+    "ac.scope.session": "This session only",
+    "ac.scope.global": "Global (all tabs)",
+    "ac.deny": "Deny",
+    "tc.title": "Task progress",
+    "todo.t1": "Locate 401 trigger condition",
+    "todo.t2": "Add timeout & retry to login()",
+    "todo.t3": "Update refresh logic in session middleware",
+    "todo.t4": "Add unit tests",
+    "todo.t5": "Test command timed out",
+    "nb.title": "Context nearing limit (82%)",
+    "nb.body": "Confirming runs Pi native compaction; the summary will cover conversation history. The following are preserved:",
+    "nb.keep1": "Active plan and TODOs",
+    "nb.keep2": "Queued unsent messages (sent in order after compaction)",
+    "nb.keep3": "Full context of the last 2 turns",
+    "nb.compact": "Compact",
+    "nb.later": "Not now",
+    "cf.summary": "3 files changed · Turn 12",
+    "ms.chat": "Chat",
+    "ms.plan": "Plan",
+    "ph.input": "Describe a task; @ to reference files/symbols, / for skills…",
+    "note.label": "Chat main view (normal) — covers PRD 9.1 / 9.2 / 9.3"
+  }
+};
+</script>
+<script src="assets/shared.js"></script>
+<script>
+(function () {
+  "use strict";
+  var toggle = document.getElementById("remember-toggle");
+  var menu = document.getElementById("remember-menu");
+  if (toggle && menu) {
+    toggle.addEventListener("click", function (e) {
+      e.stopPropagation();
+      menu.hidden = !menu.hidden;
+    });
+    document.addEventListener("click", function () { menu.hidden = true; });
+    menu.addEventListener("click", function (e) { e.stopPropagation(); });
+  }
+  var cbBlock = document.getElementById("fix-codeblock");
+  var cbToggle = document.getElementById("cb-toggle");
+  if (cbBlock && cbToggle) {
+    cbToggle.addEventListener("click", function () {
+      var collapsed = cbBlock.classList.toggle("collapsible");
+      var lang = window.__protoLang || "zh";
+      var dict = (window.PI_PAGE && window.PI_PAGE[lang]) || {};
+      cbToggle.textContent = collapsed ? dict["cb.expand"] : dict["cb.collapse"];
+    });
+  }
+})();
+</script>
+</body>
+</html>

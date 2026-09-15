@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-vscode · 主面板错误态（未检测到 Pi 配置）</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  /* 页面级补充：错误态成因列表与按钮附注（颜色一律引用 tokens 变量） */
+  .es-causes {
+    display: inline-block; text-align: left;
+    margin: 2px auto 0; line-height: 1.7;
+  }
+  .es-note { margin-top: 10px; }
+  .es-redetect-hint {
+    font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 6px;
+  }
+  .error-state .btn { margin-top: 10px; min-width: 120px; }
+  .icon-btn:disabled { opacity: 0.5; cursor: default; }
+  .icon-btn:disabled:hover { background: transparent; }
+  /* 底部对照区固定在面板尾部，紧凑呈现 */
+  .misc-states { border-top: 1px solid var(--proto-border); }
+  .misc-states .notice-bar { margin: 6px 0; }
+  .misc-states .nb-title { margin-right: 4px; }
+</style>
+</head>
+<body>
+
+<div class="proto-stage">
+
+  <!-- 左：模拟编辑器底座，衬托侧边面板真实比例 -->
+  <div class="proto-editor-mock" aria-hidden="true">
+    <div><span class="ln">1</span><span class="tok-k">import</span> { <span class="tok-f">loadPiSdk</span> } <span class="tok-k">from</span> <span class="tok-s">"@earendil-works/pi-coding-agent"</span>;</div>
+    <div><span class="ln">2</span></div>
+    <div><span class="ln">3</span><span class="tok-c">// 配置发现：只读 ~/.pi/agent（auth.json / models.json / skills / sessions）</span></div>
+    <div><span class="ln">4</span><span class="tok-k">const</span> <span class="tok-v">discovery</span> = <span class="tok-k">await</span> <span class="tok-f">loadPiSdk</span>().<span class="tok-f">discoverConfig</span>();</div>
+    <div><span class="ln">5</span><span class="tok-k">if</span> (!<span class="tok-v">discovery</span>.<span class="tok-v">ok</span>) {</div>
+    <div><span class="ln">6</span>  <span class="tok-f">renderErrorState</span>(<span class="tok-v">discovery</span>.<span class="tok-v">reason</span>); <span class="tok-c">// 未检测到 Pi 配置</span></div>
+    <div><span class="ln">7</span>}</div>
+    <div><span class="ln">8</span></div>
+    <div><span class="ln">9</span><span class="tok-c">// models.json 第 12 行解析失败 → 保留上一次模型列表（部分可用）</span></div>
+    <div><span class="ln">10</span><span class="tok-k">const</span> <span class="tok-v">models</span> = <span class="tok-v">discovery</span>.<span class="tok-v">models</span> ?? <span class="tok-v">lastKnownModels</span>;</div>
+    <div><span class="ln">11</span></div>
+    <div><span class="ln sel">12</span><span class="tok-s">"cost"</span>: <span class="tok-s">"0.5"</span>, <span class="tok-c">// ← 字段应为数字，解析失败行</span></div>
+    <div><span class="ln">13</span></div>
+    <div><span class="ln">14</span><span class="tok-c">// 环境变量凭证：GUI 启动不继承 shell 变量 → 引导写入 auth.json</span></div>
+    <div><span class="ln">15</span><span class="tok-k">const</span> <span class="tok-v">providers</span> = <span class="tok-v">discovery</span>.<span class="tok-v">providers</span>.<span class="tok-f">filter</span>(<span class="tok-v">p</span> =&gt; <span class="tok-v">p</span>.<span class="tok-v">credentialOk</span>);</div>
+  </div>
+
+  <!-- 右：Pi 侧边面板（错误态） -->
+  <div class="pi-panel">
+
+    <div class="pi-header">
+      <div class="title" data-i18n="panel.title">Pi</div>
+      <div class="pi-header-actions">
+        <button class="icon-btn" disabled style="opacity:0.5" title="设置（配置错误态下禁用）" aria-label="设置">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 错误态主体：居中呈现，不出现空白面板、不出现配置表单 -->
+    <div class="error-state">
+      <div class="es-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <div class="es-title" data-i18n="es.title">未检测到 Pi 配置</div>
+      <div class="es-desc">
+        <div class="es-causes">
+          <div data-i18n="es.cause1">· 未找到 ~/.pi/agent（Pi 配置目录）</div>
+          <div data-i18n="es.cause2">· 目录不可读（权限不足或被占用）</div>
+          <div data-i18n="es.cause3">· 配置存在但无有效凭证或模型条目</div>
+        </div>
+        <p class="es-note" data-i18n="es.zeroconfig">插件零配置接入：默认你已在终端完成 Pi 安装与配置，本插件只读取既有配置，不提供配置向导。</p>
+      </div>
+      <span class="es-link" data-i18n="es.doc" title="打开 Pi 配置文档">查看 Pi 配置文档 ↗</span>
+      <button class="btn primary" data-i18n="es.redetect">重新检测</button>
+      <div class="es-redetect-hint" data-i18n="es.hint">修复后无需重启 VS Code，输入草稿保留</div>
+    </div>
+
+    <!-- 次级状态演示区：配置降级 / 部分可用场景对照 -->
+    <div class="settings-section misc-states">
+      <h3 data-i18n="misc.title">其他状态对照</h3>
+      <div class="sec-desc" data-i18n="misc.desc">配置发现失败不等于全不可用：以下为保留旧数据继续工作的降级状态。</div>
+
+      <div class="notice-bar warn">
+        <span class="nb-icon">⚠</span>
+        <div class="nb-body"><span class="nb-title" data-i18n="nb1.title">部分可用</span><span data-i18n="nb1.body">：models.json 第 12 行解析失败，已保留上一次模型列表</span></div>
+      </div>
+
+      <div class="notice-bar warn">
+        <span class="nb-icon">⚠</span>
+        <div class="nb-body"><span class="nb-title" data-i18n="nb2.title">provider 凭证无效</span><span data-i18n="nb2.body">：deepseek 条目已标注不可用（模型列表置灰，不消失）</span></div>
+      </div>
+
+      <div class="notice-bar info">
+        <span class="nb-icon">ⓘ</span>
+        <div class="nb-body"><span class="nb-title" data-i18n="nb3.title">环境变量凭证提示</span><span data-i18n="nb3.body">：凭证依赖的环境变量在当前 VS Code 进程不可见（桌面启动不继承 shell 变量）——请将 key 落到 auth.json</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="proto-note" data-i18n="note">覆盖 PRD 9.1 错误态 / AC-FN-02、03</div>
+
+<script>
+window.PI_PAGE = {
+  zh: {
+    "panel.title": "Pi",
+    "es.title": "未检测到 Pi 配置",
+    "es.cause1": "· 未找到 ~/.pi/agent（Pi 配置目录）",
+    "es.cause2": "· 目录不可读（权限不足或被占用）",
+    "es.cause3": "· 配置存在但无有效凭证或模型条目",
+    "es.zeroconfig": "插件零配置接入：默认你已在终端完成 Pi 安装与配置，本插件只读取既有配置，不提供配置向导。",
+    "es.doc": "查看 Pi 配置文档 ↗",
+    "es.redetect": "重新检测",
+    "es.hint": "修复后无需重启 VS Code，输入草稿保留",
+    "misc.title": "其他状态对照",
+    "misc.desc": "配置发现失败不等于全不可用：以下为保留旧数据继续工作的降级状态。",
+    "nb1.title": "部分可用",
+    "nb1.body": "：models.json 第 12 行解析失败，已保留上一次模型列表",
+    "nb2.title": "provider 凭证无效",
+    "nb2.body": "：deepseek 条目已标注不可用（模型列表置灰，不消失）",
+    "nb3.title": "环境变量凭证提示",
+    "nb3.body": "：凭证依赖的环境变量在当前 VS Code 进程不可见（桌面启动不继承 shell 变量）——请将 key 落到 auth.json",
+    "note": "覆盖 PRD 9.1 错误态 / AC-FN-02、03"
+  },
+  en: {
+    "panel.title": "Pi",
+    "es.title": "Pi configuration not detected",
+    "es.cause1": "· ~/.pi/agent (Pi config directory) not found",
+    "es.cause2": "· Directory unreadable (insufficient permissions or locked)",
+    "es.cause3": "· Config exists but has no valid credentials or model entries",
+    "es.zeroconfig": "Zero-config integration: the extension assumes Pi is already installed and configured in your terminal. It only reads the existing configuration and provides no setup wizard.",
+    "es.doc": "View Pi configuration docs ↗",
+    "es.redetect": "Re-detect",
+    "es.hint": "No VS Code restart needed after fixing; your input draft is preserved",
+    "misc.title": "Other state reference",
+    "misc.desc": "Discovery failure does not mean unusable: degraded states below keep working with previously known data.",
+    "nb1.title": "Partially usable",
+    "nb1.body": ": models.json line 12 failed to parse; the previous model list is kept",
+    "nb2.title": "Provider credentials invalid",
+    "nb2.body": ": deepseek entry marked unavailable (greyed out in the model list, not removed)",
+    "nb3.title": "Environment-variable credentials",
+    "nb3.body": ": the variables your credentials depend on are not visible in this VS Code process (desktop launch does not inherit shell variables) — put the key into auth.json",
+    "note": "Covers PRD 9.1 error state / AC-FN-02, 03"
+  }
+};
+</script>
+<script src="assets/shared.js"></script>
+</body>
+</html>

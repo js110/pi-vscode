@@ -1,0 +1,628 @@
+/* ============================================================
+   pi-vscode UI Prototype — 共享组件样式
+   规则：所有颜色/字体一律引用 tokens.css 的 VS Code 变量，
+   组件不写死颜色值（深浅主题自动适配）。
+   ============================================================ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: var(--proto-font);
+  font-size: 13px;
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-sideBar-background);
+}
+
+/* ---------- 原型画布（页面级装饰，非组件） ---------- */
+.proto-stage {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+}
+.proto-stage.centered { align-items: center; justify-content: center; }
+
+.proto-toolbar {
+  position: fixed; top: 0; right: 0; z-index: 999;
+  display: flex; gap: 6px; align-items: center;
+  padding: 6px 10px;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 0 0 0 6px;
+  font-size: 12px;
+}
+.proto-toolbar button {
+  padding: 3px 10px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: none; border-radius: var(--proto-radius);
+  cursor: pointer; font-size: 12px; font-family: inherit;
+}
+.proto-toolbar button:hover { background: var(--vscode-button-secondaryHoverBackground); }
+
+/* 模拟编辑器底座（衬托侧边面板真实比例） */
+.proto-editor-mock {
+  flex: 1;
+  padding: 20px 24px;
+  font-family: var(--proto-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--vscode-editor-foreground);
+  opacity: 0.55;
+  overflow: hidden;
+  user-select: none;
+}
+.proto-editor-mock .ln { color: var(--vscode-descriptionForeground); display: inline-block; width: 2.2em; text-align: right; margin-right: 1.2em; }
+.proto-editor-mock .sel { background: var(--proto-selection); border-radius: 2px; }
+
+/* ---------- 侧边面板骨架 ---------- */
+.pi-panel {
+  width: 480px; min-width: 480px;
+  display: flex; flex-direction: column;
+  height: 100%;
+  background: var(--vscode-sideBar-background);
+  border-left: 1px solid var(--proto-border);
+}
+
+.pi-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--proto-border);
+}
+.pi-header .title { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; flex: 1; }
+.pi-header-actions { display: flex; gap: 2px; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  background: transparent; color: var(--vscode-foreground);
+  border: none; border-radius: var(--proto-radius);
+  cursor: pointer; font-size: 14px;
+}
+.icon-btn:hover { background: var(--proto-hover); }
+.icon-btn.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+
+/* ---------- Tab 条 ---------- */
+.tab-strip {
+  display: flex; gap: 2px; align-items: center;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--proto-border);
+  overflow-x: auto;
+}
+.tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 8px 5px 10px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid transparent; border-bottom: none;
+  border-radius: var(--proto-radius) var(--proto-radius) 0 0;
+  cursor: pointer; white-space: nowrap;
+}
+.tab:hover { background: var(--proto-hover); }
+.tab.active {
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  border-color: var(--proto-border);
+}
+.tab .tab-title { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.tab .tab-close { opacity: 0.6; font-size: 12px; padding: 0 2px; }
+.tab .tab-close:hover { opacity: 1; }
+
+.tab-status { display: inline-flex; width: 12px; height: 12px; }
+/* 流式中：旋转 spinner */
+.tab-spinner {
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--vscode-charts-blue);
+  border-top-color: transparent;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Plan 执行中：紫色闪电 */
+.tab-status.plan { color: var(--vscode-charts-purple); }
+/* 失败暂停：橙色暂停条 */
+.tab-status.paused { color: var(--vscode-charts-orange); }
+/* 中断：红色 */
+.tab-status.aborted { color: var(--vscode-errorForeground); }
+
+/* ---------- 消息流 ---------- */
+.messages { flex: 1; overflow-y: auto; padding: 14px 14px 8px; }
+
+.msg { margin-bottom: 14px; }
+.msg-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+}
+.msg-avatar {
+  width: 16px; height: 16px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+  background: var(--proto-avatar-bg);
+}
+.msg-avatar.user { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+.msg-avatar.assistant { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+
+.msg.user .msg-body {
+  background: var(--vscode-input-background);
+  border: 1px solid var(--proto-border);
+  border-radius: var(--proto-radius-lg);
+  padding: 8px 12px;
+}
+.msg.assistant .msg-body { padding: 0 2px; line-height: 1.65; }
+
+.msg-turn { font-size: 10px; opacity: 0.7; margin-left: auto; }
+
+/* 引用 chip（@-mention / 拖拽文件） */
+.mention-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; margin: 2px 4px 2px 0;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 10px;
+  font-size: 11px; font-family: var(--proto-mono);
+  color: var(--vscode-charts-blue);
+}
+.mention-chip .chip-icon { font-size: 10px; }
+
+/* 图片缩略图 */
+.img-thumb {
+  display: inline-block;
+  width: 84px; height: 56px; border-radius: var(--proto-radius);
+  border: 1px solid var(--vscode-editorWidget-border);
+  background:
+    linear-gradient(135deg, var(--vscode-charts-blue) 0%, var(--vscode-charts-purple) 100%);
+  opacity: 0.85;
+  position: relative; overflow: hidden;
+}
+.img-thumb::after {
+  content: "PNG"; position: absolute; right: 3px; bottom: 2px;
+  font-size: 9px; color: var(--proto-on-accent); opacity: 0.9;
+}
+
+/* ---------- 代码块 ---------- */
+.codeblock {
+  margin: 8px 0;
+  border: 1px solid var(--proto-border);
+  border-radius: var(--proto-radius-lg);
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+}
+.codeblock-head {
+  display: flex; align-items: center;
+  padding: 4px 10px;
+  background: var(--vscode-sideBarSectionHeader-background);
+  border-bottom: 1px solid var(--proto-border);
+  font-size: 11px; color: var(--vscode-descriptionForeground);
+}
+.codeblock-head .lang { font-family: var(--proto-mono); }
+.codeblock-head .spacer { flex: 1; }
+.codeblock-head .cb-btn {
+  background: none; border: none; color: var(--vscode-foreground);
+  font-size: 11px; cursor: pointer; padding: 2px 8px;
+  border-radius: var(--proto-radius); font-family: inherit;
+}
+.codeblock-head .cb-btn:hover { background: var(--proto-hover); }
+.codeblock-head .cb-btn.primary {
+  background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+}
+.codeblock-head .cb-btn.primary:hover { background: var(--vscode-button-hoverBackground); }
+.codeblock pre {
+  padding: 10px 12px;
+  font-family: var(--proto-mono);
+  font-size: 12px; line-height: 1.55;
+  overflow-x: auto;
+  color: var(--vscode-editor-foreground);
+}
+.codeblock.collapsible pre { max-height: 120px; overflow: hidden; }
+.tok-k { color: var(--tok-keyword); }
+.tok-s { color: var(--tok-string); }
+.tok-c { color: var(--tok-comment); font-style: italic; }
+.tok-f { color: var(--tok-function); }
+.tok-n { color: var(--tok-number); }
+.tok-t { color: var(--tok-type); }
+.tok-v { color: var(--tok-variable); }
+
+/* ---------- 审批卡片 ---------- */
+.approval-card {
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-left: 3px solid var(--vscode-charts-blue);
+  border-radius: var(--proto-radius-lg);
+  background: var(--vscode-editorWidget-background);
+  padding: 10px 12px;
+  margin: 8px 0;
+}
+.approval-card.danger { border-left-color: var(--vscode-testing-iconFailed); }
+.approval-card .ac-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.approval-card .ac-title { font-weight: 600; font-size: 12px; }
+.badge {
+  display: inline-block; padding: 1px 7px;
+  border-radius: 9px; font-size: 10px; font-weight: 600;
+  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+}
+.badge.danger { background: var(--vscode-testing-iconFailed); color: var(--proto-on-accent); }
+.badge.auto { background: var(--vscode-testing-iconPassed); color: var(--proto-on-passed); }
+.badge.plan { background: var(--vscode-charts-purple); color: var(--proto-on-accent); }
+.badge.warn { background: var(--vscode-charts-orange); color: var(--proto-on-warn); }
+
+.approval-card .ac-params {
+  font-family: var(--proto-mono); font-size: 11.5px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--proto-border);
+  border-radius: var(--proto-radius);
+  padding: 6px 9px; margin-bottom: 8px;
+  white-space: pre-wrap; word-break: break-all;
+}
+.ac-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+.btn {
+  padding: 4px 12px;
+  border: none; border-radius: var(--proto-radius);
+  font-size: 12px; font-family: inherit; cursor: pointer;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+.btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
+.btn.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+.btn.primary:hover { background: var(--vscode-button-hoverBackground); }
+.btn.danger { background: transparent; color: var(--vscode-errorForeground); border: 1px solid var(--vscode-testing-iconFailed); }
+.btn.danger:hover { background: var(--proto-danger-hover); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 记忆范围下拉（允许并记住 ▾） */
+.remember-split { position: relative; display: inline-flex; }
+.remember-menu {
+  position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 50;
+  min-width: 150px;
+  background: var(--vscode-menu-background);
+  border: 1px solid var(--vscode-menu-border);
+  border-radius: var(--proto-radius);
+  box-shadow: var(--proto-shadow);
+  padding: 4px; font-size: 12px;
+}
+.remember-menu[hidden] { display: none; }
+.remember-menu div { padding: 4px 10px; border-radius: 3px; cursor: pointer; }
+.remember-menu div:hover { background: var(--proto-hover); }
+
+/* ---------- 自动放行痕迹 ---------- */
+.trace-entry {
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 10px; margin: 4px 0;
+  border: 1px dashed var(--proto-border-strong);
+  border-radius: var(--proto-radius);
+  font-size: 11.5px; color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+.trace-entry:hover { background: var(--proto-hover); }
+.trace-entry .trace-src { margin-left: auto; }
+
+/* ---------- TODO / 计划卡片 ---------- */
+.todo-card, .plan-card {
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: var(--proto-radius-lg);
+  background: var(--vscode-editorWidget-background);
+  margin: 8px 0; overflow: hidden;
+}
+.todo-card .tc-head, .plan-card .pc-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--proto-border);
+  font-weight: 600; font-size: 12px;
+}
+.todo-card .tc-head .progress { margin-left: auto; font-weight: 400; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.todo-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 12px; font-size: 12px; line-height: 1.5;
+}
+.todo-item .todo-check {
+  width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px;
+  border: 1.5px solid var(--vscode-descriptionForeground);
+  border-radius: 3px; position: relative;
+}
+.todo-item.done .todo-check { background: var(--vscode-testing-iconPassed); border-color: var(--vscode-testing-iconPassed); }
+.todo-item.done .todo-check::after {
+  content: "✓"; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--proto-on-passed); font-size: 10px; font-weight: 700;
+}
+.todo-item.done .todo-text { color: var(--vscode-descriptionForeground); text-decoration: line-through; }
+.todo-item.running .todo-check { border-color: var(--vscode-charts-blue); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 3px var(--proto-focus-glow); } }
+.todo-item.running .todo-text { color: var(--vscode-foreground); font-weight: 600; }
+.todo-item.failed .todo-check { border-color: var(--vscode-testing-iconFailed); }
+.todo-item.failed .todo-text { color: var(--vscode-testing-iconFailed); }
+.todo-item.cancelled .todo-text { color: var(--vscode-disabledForeground); }
+
+.plan-card .pc-steps { padding: 4px 0; }
+.plan-card .plan-step { display: flex; gap: 8px; padding: 5px 12px; font-size: 12px; align-items: flex-start; }
+.plan-card .plan-step .step-no {
+  flex-shrink: 0; width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-size: 10px; font-weight: 700;
+  background: var(--proto-avatar-bg); color: var(--vscode-descriptionForeground);
+}
+.plan-card .plan-step input {
+  flex: 1; background: transparent; border: 1px dashed transparent;
+  color: var(--vscode-foreground); font-family: inherit; font-size: 12px;
+  padding: 1px 4px; border-radius: 3px;
+}
+.plan-card .plan-step input:hover, .plan-card .plan-step input:focus { border-color: var(--vscode-focusBorder); background: var(--vscode-input-background); }
+.plan-card .pc-foot { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--proto-border); align-items: center; }
+.plan-card .pc-foot .hint { font-size: 11px; color: var(--vscode-descriptionForeground); margin-left: auto; }
+
+/* ---------- 提示条（压缩 / 错误 / 信息） ---------- */
+.notice-bar {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 9px 12px; margin: 8px 0;
+  border-radius: var(--proto-radius-lg);
+  font-size: 12px; line-height: 1.5;
+}
+.notice-bar.info { background: var(--proto-info-bg); border: 1px solid var(--proto-info-border); }
+.notice-bar.warn { background: var(--proto-warn-bg); border: 1px solid var(--proto-warn-border); }
+.notice-bar.error { background: var(--proto-error-bg); border: 1px solid var(--proto-error-border); }
+.notice-bar .nb-icon { flex-shrink: 0; font-size: 13px; margin-top: 1px; }
+.notice-bar.info .nb-icon { color: var(--vscode-charts-blue); }
+.notice-bar.warn .nb-icon { color: var(--vscode-charts-orange); }
+.notice-bar.error .nb-icon { color: var(--vscode-errorForeground); }
+.notice-bar .nb-body { flex: 1; }
+.notice-bar .nb-actions { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.notice-bar .nb-title { font-weight: 600; }
+
+/* 保留清单（压缩提示条内） */
+.keep-list { margin: 6px 0 0; padding: 0; list-style: none; font-size: 11px; color: var(--vscode-descriptionForeground); }
+.keep-list li { padding: 1px 0; }
+.keep-list li::before { content: "✓ "; color: var(--vscode-testing-iconPassed); }
+
+/* ---------- 输入区 ---------- */
+.input-area { border-top: 1px solid var(--proto-border); padding: 8px 10px 6px; }
+
+.context-chips { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
+
+.input-box {
+  display: flex; align-items: flex-end; gap: 4px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: var(--proto-radius-lg);
+  padding: 6px 6px 6px 10px;
+  transition: border-color 0.12s;
+}
+.input-box:focus-within { border-color: var(--vscode-focusBorder); }
+.input-box textarea {
+  flex: 1; background: transparent; border: none; outline: none; resize: none;
+  color: var(--vscode-input-foreground);
+  font-family: var(--proto-font); font-size: 13px; line-height: 1.5;
+  min-height: 22px; max-height: 130px;
+}
+.input-box textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
+.input-tools { display: flex; gap: 2px; align-items: center; }
+
+.mode-switch {
+  display: inline-flex; align-items: center; gap: 0;
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: var(--proto-radius);
+  overflow: hidden; font-size: 11px;
+  margin-bottom: 6px;
+}
+.mode-switch .ms-opt { padding: 3px 12px; cursor: pointer; color: var(--vscode-descriptionForeground); }
+.mode-switch .ms-opt:hover { background: var(--proto-hover); }
+.mode-switch .ms-opt.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+.mode-switch .ms-opt.plan-active { background: var(--vscode-charts-purple); color: var(--proto-on-accent); }
+
+.input-footer {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 2px 0; font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+.input-footer .spacer { flex: 1; }
+.send-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+  border: none; border-radius: var(--proto-radius); cursor: pointer;
+}
+.send-btn:hover { background: var(--vscode-button-hoverBackground); }
+.send-btn.queue { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+.abort-btn {
+  padding: 3px 10px; font-size: 11px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-errorForeground);
+  border: 1px solid var(--vscode-testing-iconFailed);
+  border-radius: var(--proto-radius); cursor: pointer;
+}
+.ctx-pct.warn { color: var(--vscode-charts-orange); font-weight: 600; }
+.ctx-pct.danger { color: var(--vscode-errorForeground); font-weight: 600; }
+
+/* ---------- 浮层（选择器 / 菜单） ---------- */
+.overlay-anchor { position: relative; }
+.popover {
+  position: absolute; z-index: 60;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: var(--proto-radius-lg);
+  box-shadow: var(--proto-shadow);
+  font-size: 12px;
+}
+.search-box {
+  display: flex; align-items: center; gap: 6px;
+  margin: 8px; padding: 5px 9px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: var(--proto-radius);
+}
+.search-box input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--vscode-input-foreground); font-family: inherit; font-size: 12px;
+}
+.list-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 14px; cursor: pointer;
+}
+.list-row:hover { background: var(--proto-hover); }
+.list-row.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+.list-row .row-main { flex: 1; min-width: 0; }
+.list-row .row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row .row-desc { font-size: 10.5px; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row.disabled { opacity: 0.55; cursor: not-allowed; }
+.list-row .row-meta { font-size: 10.5px; color: var(--vscode-descriptionForeground); white-space: nowrap; }
+.group-label {
+  padding: 6px 14px 2px;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---------- Changed Files ---------- */
+.changed-files {
+  border: 1px solid var(--proto-border);
+  border-radius: var(--proto-radius-lg);
+  margin: 8px 0; overflow: hidden;
+  background: var(--vscode-editorWidget-background);
+}
+.changed-files summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; cursor: pointer;
+  font-size: 12px; font-weight: 600;
+  list-style: none;
+}
+.changed-files summary::-webkit-details-marker { display: none; }
+.cf-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px 4px 24px;
+  font-size: 12px; font-family: var(--proto-mono);
+  cursor: pointer; border-top: 1px solid var(--proto-border);
+}
+.cf-item:hover { background: var(--proto-hover); }
+.cf-item .cf-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-add { color: var(--vscode-gitDecoration-addedResourceForeground); font-size: 11px; }
+.stat-del { color: var(--vscode-gitDecoration-deletedResourceForeground); font-size: 11px; }
+.turn-tag { font-size: 10px; color: var(--vscode-descriptionForeground); font-family: var(--proto-font); }
+
+/* ---------- Diff 视图 ---------- */
+.diff-view {
+  font-family: var(--proto-mono); font-size: 11.5px; line-height: 1.6;
+  border: 1px solid var(--proto-border); border-radius: var(--proto-radius-lg);
+  overflow: hidden; margin: 8px 0;
+}
+.diff-line { display: flex; padding: 0 10px; white-space: pre; }
+.diff-line .ln-no { width: 30px; text-align: right; margin-right: 12px; color: var(--vscode-disabledForeground); flex-shrink: 0; user-select: none; }
+.diff-line.add { background: var(--diff-add-bg); }
+.diff-line.add .sign { color: var(--diff-add-fg); margin-right: 8px; }
+.diff-line.del { background: var(--diff-del-bg); }
+.diff-line.del .sign { color: var(--diff-del-fg); margin-right: 8px; }
+
+/* ---------- 错误态页 ---------- */
+.error-state {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; padding: 32px; gap: 6px;
+}
+.error-state .es-icon { font-size: 40px; margin-bottom: 8px; color: var(--vscode-errorForeground); }
+.error-state .es-title { font-size: 15px; font-weight: 700; }
+.error-state .es-desc { color: var(--vscode-descriptionForeground); line-height: 1.6; max-width: 340px; }
+.error-state .es-link { color: var(--vscode-charts-blue); cursor: pointer; text-decoration: underline; font-size: 12px; }
+
+/* ---------- 设置页 ---------- */
+.settings-page { flex: 1; overflow-y: auto; padding: 0; }
+.settings-section { border-bottom: 1px solid var(--proto-border); padding: 14px 16px; }
+.settings-section h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+.settings-section .sec-desc { font-size: 11.5px; color: var(--vscode-descriptionForeground); margin-bottom: 10px; line-height: 1.5; }
+.rule-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0; border-bottom: 1px dashed var(--proto-border);
+  font-size: 12px;
+}
+.rule-row:last-child { border-bottom: none; }
+.rule-row .rule-tool { font-family: var(--proto-mono); color: var(--vscode-charts-blue); }
+.rule-row .rule-meta { color: var(--vscode-descriptionForeground); font-size: 11px; }
+.rule-row .rule-actions { margin-left: auto; }
+.select-input {
+  padding: 4px 8px; font-size: 12px; font-family: inherit;
+  background: var(--vscode-dropdown-background); color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-dropdown-border); border-radius: var(--proto-radius);
+}
+.toggle-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 12px; }
+
+/* ---------- Inline Chat ---------- */
+.inline-chat-widget {
+  margin: 4px 0 4px 2.2em;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: var(--proto-radius-lg);
+  background: var(--vscode-editorWidget-background);
+  box-shadow: var(--proto-shadow);
+  overflow: hidden;
+}
+.inline-chat-widget .icw-input {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+}
+.inline-chat-widget .icw-input input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--vscode-input-foreground); font-family: inherit; font-size: 12.5px;
+}
+.inline-chat-widget .icw-actions {
+  display: flex; gap: 6px; align-items: center;
+  padding: 6px 10px; border-top: 1px solid var(--proto-border);
+  font-size: 11px; color: var(--vscode-descriptionForeground);
+}
+.inline-chat-widget .icw-gen { padding: 8px 12px; font-size: 11.5px; color: var(--vscode-descriptionForeground); }
+.inline-chat-widget .icw-gen .gen-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--vscode-charts-blue); margin-right: 7px;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* ---------- 右键菜单 ---------- */
+.context-menu {
+  position: absolute; z-index: 80;
+  min-width: 200px;
+  background: var(--vscode-menu-background);
+  border: 1px solid var(--vscode-menu-border);
+  border-radius: var(--proto-radius-lg);
+  box-shadow: var(--proto-shadow);
+  padding: 4px; font-size: 12px;
+}
+.context-menu .cm-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px; border-radius: 3px; cursor: pointer;
+}
+.context-menu .cm-item:hover { background: var(--proto-hover); }
+.context-menu .cm-key { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 10.5px; }
+.context-menu .cm-sep { height: 1px; margin: 4px 6px; background: var(--proto-border-strong); }
+
+/* ---------- 后台任务面板 ---------- */
+.task-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border-bottom: 1px solid var(--proto-border);
+  font-size: 12px;
+}
+.task-row .task-status { font-size: 11px; }
+.task-row .task-status.running { color: var(--vscode-charts-blue); }
+.task-row .task-status.done { color: var(--vscode-testing-iconPassed); }
+.task-row .task-status.failed { color: var(--vscode-errorForeground); }
+
+/* ---------- 空态 / 杂项 ---------- */
+.empty-hint { text-align: center; color: var(--vscode-descriptionForeground); font-size: 12px; padding: 24px 12px; line-height: 1.7; }
+.divider-label {
+  display: flex; align-items: center; gap: 10px;
+  margin: 18px 0 10px; font-size: 11px; font-weight: 700;
+  color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: 0.5px;
+}
+.divider-label::after { content: ""; flex: 1; height: 1px; background: var(--proto-border-strong); }
+
+kbd {
+  display: inline-block; padding: 1px 5px;
+  border: 1px solid var(--proto-border-strong); border-bottom-width: 2px;
+  border-radius: 3px; font-family: var(--proto-mono); font-size: 10.5px;
+  background: var(--vscode-input-background);
+}
+
+/* 页面标注（原型说明用） */
+.proto-note {
+  position: fixed; bottom: 0; left: 0; z-index: 999;
+  padding: 5px 12px;
+  background: var(--vscode-editorWidget-background);
+  border-top: 1px solid var(--vscode-editorWidget-border);
+  border-right: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 0 6px 0 0;
+  font-size: 11px; color: var(--vscode-descriptionForeground);
+}

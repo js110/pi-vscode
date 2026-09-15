@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>04 · 模型选择器浮层 — pi-vscode UI 原型</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+  /* 场景设定：消息流作为浮层背景整体变暗且不可交互 */
+  .messages.dimmed { opacity: 0.4; pointer-events: none; }
+
+  /* Footer 模型触发按钮（浮层锚点） */
+  .model-trigger {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px;
+    background: transparent; color: var(--vscode-foreground);
+    border: 1px solid transparent; border-radius: var(--proto-radius);
+    font-size: 11.5px; font-family: var(--proto-mono);
+    cursor: pointer;
+  }
+  .model-trigger:hover { background: var(--proto-hover); border-color: var(--proto-border); }
+  .model-trigger .chev { font-size: 9px; color: var(--vscode-descriptionForeground); }
+
+  /* 模型选择器浮层：绝对定位在 input-footer 上方，宽 450px，内部滚动 */
+  .model-popover {
+    bottom: calc(100% + 6px); left: 0; width: 450px;
+    display: flex; flex-direction: column;
+    max-height: 420px; overflow: hidden;
+  }
+  .model-popover .notice-bar { margin: 8px 10px 2px; }
+  .mp-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 6px; }
+  .model-popover .row-title { font-family: var(--proto-mono); font-size: 11.5px; }
+  .row-check { width: 16px; flex-shrink: 0; text-align: center; font-weight: 700; }
+  .badge.custom-badge { background: var(--vscode-charts-purple); color: var(--proto-on-accent); }
+
+  /* 浮层底部固定条：思考级别 + 刷新 */
+  .mp-footer { border-top: 1px solid var(--proto-border); padding: 7px 10px 8px; }
+  .mp-footer .toggle-row { padding: 2px 0; }
+  .mp-footer .tl-label { color: var(--vscode-descriptionForeground); }
+  .mp-footer .btn { margin-left: auto; }
+  .mp-hint { font-size: 10.5px; color: var(--vscode-descriptionForeground); padding-top: 2px; }
+</style>
+</head>
+<body>
+
+  <div class="proto-stage centered">
+    <div class="pi-panel">
+
+      <div class="pi-header">
+        <span class="title" data-i18n="panel.title">Pi</span>
+        <div class="pi-header-actions">
+          <button class="icon-btn" title="新建 Tab" aria-label="新建 Tab">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+          </button>
+          <button class="icon-btn" title="会话历史" aria-label="会话历史">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+          </button>
+          <button class="icon-btn" title="设置" aria-label="设置">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2M3.4 3.4l1.55 1.55M11.05 11.05l1.55 1.55M12.6 3.4l-1.55 1.55M4.95 11.05L3.4 12.6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="tab-strip">
+        <div class="tab active"><span class="tab-title" data-i18n="tab1">新对话</span><span class="tab-close">✕</span></div>
+        <div class="tab"><span class="tab-status done" style="color: var(--vscode-testing-iconPassed);">●</span><span class="tab-title" data-i18n="tab2">重构登录模块</span><span class="tab-close">✕</span></div>
+      </div>
+
+      <!-- 背景消息流：模型选择器展开时整体变暗（opacity .4） -->
+      <div class="messages dimmed">
+        <div class="msg user">
+          <div class="msg-head"><span class="msg-avatar user">你</span><span data-i18n="youL">你</span><span class="msg-turn">14:02</span></div>
+          <div class="msg-body" data-i18n="msgUser">把 utils.ts 里的 formatDate 抽成公共函数，并替换两处调用点</div>
+        </div>
+        <div class="msg assistant">
+          <div class="msg-head"><span class="msg-avatar assistant">P</span><span data-i18n="piL">Pi</span><span class="msg-turn">14:02</span></div>
+          <div class="msg-body" data-i18n="msgAssistant">好的，我先定位 formatDate 的实现与调用点，再统一替换。</div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-box">
+          <textarea rows="1" data-i18n-ph="inputPh" placeholder="输入消息，@ 引用文件 / 粘贴图片"></textarea>
+          <div class="input-tools">
+            <button class="icon-btn" title="添加图片（当前模型支持）" aria-label="添加图片">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.8" cy="6.4" r="1.1"/><path d="M2.5 11.5 6 8.5l2.4 2 2.3-2.4 2.8 2.9"/></svg>
+            </button>
+            <button class="icon-btn" title="@ 引用文件/符号" aria-label="@ 引用" style="font-weight:600">@</button>
+          </div>
+        </div>
+
+        <div class="overlay-anchor">
+          <div class="input-footer">
+            <button class="model-trigger" title="切换模型"><span data-i18n="footerModel">deepseek-chat</span><span class="chev">▾</span></button>
+            <span class="ctx-pct" data-i18n="ctxPct">上下文 42%</span>
+            <span class="spacer"></span>
+            <button class="send-btn" title="发送" aria-label="发送">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>
+            </button>
+          </div>
+
+          <!-- 模型选择器浮层 -->
+          <div class="popover model-popover" aria-label="模型选择器">
+
+            <!-- PRD 9.1 配置热刷新：使用中的模型被删除 -->
+            <div class="notice-bar warn">
+              <span class="nb-icon">⚠</span>
+              <span class="nb-body" data-i18n="noticeDeleted">上次使用的模型 glm-4.7 已从配置删除，请选择替代模型</span>
+            </div>
+
+            <div class="mp-scroll">
+              <div class="search-box">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.4"/><path d="m10.4 10.4 3 3"/></svg>
+                <input type="text" data-i18n-ph="searchPh" placeholder="搜索模型（100+ 条目过滤 ≤100ms）">
+              </div>
+
+              <div class="group-label" data-i18n="stats">已从 Pi 读取 3 provider / 12 模型 / 5 技能 · 刚刚刷新</div>
+
+              <div class="group-label">DeepSeek</div>
+              <div class="list-row selected">
+                <div class="row-main">
+                  <div class="row-title">deepseek-chat</div>
+                  <div class="row-desc" data-i18n="m1desc">当前使用 · 上下文 128K</div>
+                </div>
+                <span class="row-meta">$0.14/1M</span>
+                <span class="row-check">✓</span>
+              </div>
+              <div class="list-row">
+                <div class="row-main">
+                  <div class="row-title">deepseek-reasoner</div>
+                  <div class="row-desc" data-i18n="m2desc">推理模型</div>
+                </div>
+              </div>
+
+              <div class="group-label">Anthropic</div>
+              <div class="list-row">
+                <div class="row-main">
+                  <div class="row-title">claude-sonnet-5</div>
+                </div>
+                <!-- 自定义条目覆盖内置 -->
+                <span class="badge custom-badge" data-i18n="badgeCustom">自定义</span>
+              </div>
+              <div class="list-row">
+                <div class="row-main">
+                  <div class="row-title">claude-opus-5</div>
+                </div>
+              </div>
+
+              <div class="group-label">Qwen</div>
+              <!-- PRD 11.3：凭证无效 → 置灰 + 失效标识，不从列表消失 -->
+              <div class="list-row disabled">
+                <div class="row-main">
+                  <div class="row-title">qwen-max</div>
+                  <div class="row-desc" data-i18n="qwenDesc">provider 凭证无效，请在终端更新 Pi 凭证</div>
+                </div>
+                <span class="badge danger" data-i18n="badgeInvalid">凭证无效</span>
+              </div>
+
+              <!-- PRD 11.1：本地模型未配置费率 → 费率显示"未知"，不显示 0 -->
+              <div class="group-label" data-i18n="groupLocal">Local</div>
+              <div class="list-row">
+                <div class="row-main">
+                  <div class="row-title">ollama-qwen3:8b</div>
+                  <div class="row-desc" data-i18n="localDesc">本地模型 · 未配置费率</div>
+                </div>
+                <span class="row-meta" data-i18n="rateUnknown">费率未知</span>
+              </div>
+            </div>
+
+            <!-- 固定底条：思考级别 + 拉取式刷新 -->
+            <div class="mp-footer">
+              <div class="toggle-row">
+                <span class="tl-label" data-i18n="thinkLevel">思考级别 Thinking Level</span>
+                <select class="select-input" aria-label="思考级别">
+                  <option>off</option>
+                  <option>minimal</option>
+                  <option>low</option>
+                  <option selected>medium</option>
+                  <option>high</option>
+                </select>
+                <button class="btn" data-i18n="refresh">刷新</button>
+              </div>
+              <div class="mp-hint" data-i18n="pullHint">打开选择器即拉取式重读配置 · 无后台监听</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="proto-note" data-i18n="note">覆盖 PRD 9.1 模型选择 / 11.3 凭证无效 / 11.1 费率未知 / 13.1 过滤指标</div>
+
+  <script>
+    window.PI_PAGE = {
+      zh: {
+        "panel.title": "Pi",
+        tab1: "新对话",
+        tab2: "重构登录模块",
+        youL: "你",
+        piL: "Pi",
+        msgUser: "把 utils.ts 里的 formatDate 抽成公共函数，并替换两处调用点",
+        msgAssistant: "好的，我先定位 formatDate 的实现与调用点，再统一替换。",
+        inputPh: "输入消息，@ 引用文件 / 粘贴图片",
+        footerModel: "deepseek-chat",
+        ctxPct: "上下文 42%",
+        noticeDeleted: "上次使用的模型 glm-4.7 已从配置删除，请选择替代模型",
+        searchPh: "搜索模型（100+ 条目过滤 ≤100ms）",
+        stats: "已从 Pi 读取 3 provider / 12 模型 / 5 技能 · 刚刚刷新",
+        m1desc: "当前使用 · 上下文 128K",
+        m2desc: "推理模型",
+        badgeCustom: "自定义",
+        qwenDesc: "provider 凭证无效，请在终端更新 Pi 凭证",
+        badgeInvalid: "凭证无效",
+        groupLocal: "Local",
+        localDesc: "本地模型 · 未配置费率",
+        rateUnknown: "费率未知",
+        thinkLevel: "思考级别 Thinking Level",
+        refresh: "刷新",
+        pullHint: "打开选择器即拉取式重读配置 · 无后台监听",
+        note: "覆盖 PRD 9.1 模型选择 / 11.3 凭证无效 / 11.1 费率未知 / 13.1 过滤指标"
+      },
+      en: {
+        "panel.title": "Pi",
+        tab1: "New Chat",
+        tab2: "Refactor login module",
+        youL: "You",
+        piL: "Pi",
+        msgUser: "Extract formatDate from utils.ts into a shared helper and update both call sites",
+        msgAssistant: "Sure — locating the current implementation and call sites before refactoring.",
+        inputPh: "Type a message · @ to reference files / paste images",
+        footerModel: "deepseek-chat",
+        ctxPct: "Context 42%",
+        noticeDeleted: "Last-used model glm-4.7 was removed from the config — please choose a replacement",
+        searchPh: "Search models (filters 100+ entries in ≤100 ms)",
+        stats: "Read 3 providers / 12 models / 5 skills from Pi · just refreshed",
+        m1desc: "In use · 128K context",
+        m2desc: "Reasoning model",
+        badgeCustom: "Custom",
+        qwenDesc: "Provider credentials invalid — update Pi credentials in the terminal",
+        badgeInvalid: "Invalid credentials",
+        groupLocal: "Local",
+        localDesc: "Local model · no rate configured",
+        rateUnknown: "rate unknown",
+        thinkLevel: "Thinking Level",
+        refresh: "Refresh",
+        pullHint: "Config re-read on open (pull-based) · no background watcher",
+        note: "Covers PRD 9.1 model selector / 11.3 invalid credentials / 11.1 unknown rate / 13.1 filter metrics"
+      }
+    };
+  </script>
+  <script src="assets/shared.js"></script>
+
+</body>
+</html>
