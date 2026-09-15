@@ -151,6 +151,21 @@
           "minimum": 0,
           "maximum": 100,
           "description": "Show a warning when context usage exceeds this percentage of the context window"
+        },
+        "pi-agent.displayLanguage": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "en",
+            "zh"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Follow the VS Code display language",
+            "English",
+            "简体中文"
+          ],
+          "description": "Display language for the Pi Agent panel"
         }
       }
     }

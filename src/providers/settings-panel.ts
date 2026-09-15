@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import type { SettingsClientMessage, SettingsServerMessage, SettingsData } from '../shared/protocol';
+import type { SettingsClientMessage, SettingsServerMessage, SettingsData, Lang } from '../shared/protocol';
 import type { GlobalRuleStore } from '../pi/approval-memory';
 import { discoverSkills } from '../pi/skills';
+import { resolveDisplayLang } from './lang';
 
 const API_KEY_PREFIX = 'pi-agent.apiKey.';
 
@@ -45,6 +46,11 @@ export class SettingsPanel {
         this._disposables.push(configListener);
     }
 
+    /** Push a language change to the open settings webview, if any. */
+    static notifyLanguage(lang: Lang): void {
+        SettingsPanel._instance?._post({ type: 'langChanged', lang });
+    }
+
     static show(
         extensionUri: vscode.Uri,
         secrets: vscode.SecretStorage,
@@ -75,6 +81,7 @@ export class SettingsPanel {
             switch (msg.type) {
                 case 'getSettings':
                     await this._sendSettings();
+                    this._post({ type: 'langChanged', lang: resolveDisplayLang() });
                     break;
                 case 'updateSetting':
                     await this._updateSetting(msg.key, msg.value);

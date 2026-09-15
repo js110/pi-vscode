@@ -1,4 +1,5 @@
 import type { ApprovalRuleInfo, SettingsClientMessage, SettingsServerMessage, SettingsData, SkillInfo } from '../shared/protocol';
+import { t, setLang } from '../shared/i18n';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: SettingsClientMessage): void;
@@ -33,6 +34,11 @@ window.addEventListener('message', (event) => {
             approvalRules = msg.rules;
             renderApprovalSection();
             break;
+        case 'langChanged':
+            setLang(msg.lang);
+            if (currentSettings) render(currentSettings);
+            renderApprovalSection();
+            break;
         case 'error':
             showToast(msg.message, 'error');
             break;
@@ -46,58 +52,58 @@ function render(data: SettingsData): void {
     const container = el('div', 'settings-container');
 
     const header = el('div', 'settings-header');
-    header.innerHTML = `<h1>Pi Agent Settings</h1>`;
+    header.innerHTML = `<h1>${escHtml(t('settings.title'))}</h1>`;
     container.appendChild(header);
 
-    container.appendChild(buildSection('API Connection', [
-        buildSelect('apiProvider', 'Provider', data.apiProvider, [
-            { value: '', label: 'Auto-detect' },
+    container.appendChild(buildSection(t('settings.section.api'), [
+        buildSelect('apiProvider', t('settings.provider'), data.apiProvider, [
+            { value: '', label: t('settings.autoDetect') },
             { value: 'anthropic', label: 'Anthropic' },
             { value: 'openai', label: 'OpenAI' },
             { value: 'google', label: 'Google Gemini' },
             { value: 'deepseek', label: 'DeepSeek' },
-        ], 'Select which AI provider to use. Leave on Auto-detect for automatic resolution.'),
+        ], t('settings.providerDesc')),
         buildApiKeyField(data),
         buildAuthIndicator(data.authMethod),
     ]));
 
-    container.appendChild(buildSection('Default Model & Thinking', [
-        buildTextInput('defaultModel', 'Default Model', data.defaultModel,
-            'Model ID to use when starting new sessions (e.g. claude-sonnet-4-20250514). Leave empty for automatic.'),
-        buildSelect('thinkingLevel', 'Default Thinking Level', data.thinkingLevel, [
-            { value: 'off', label: 'Off' },
-            { value: 'minimal', label: 'Minimal' },
-            { value: 'low', label: 'Low' },
-            { value: 'medium', label: 'Medium' },
-            { value: 'high', label: 'High' },
-        ], 'How verbose the agent\'s chain-of-thought should be by default.'),
+    container.appendChild(buildSection(t('settings.section.model'), [
+        buildTextInput('defaultModel', t('settings.defaultModel'), data.defaultModel,
+            t('settings.defaultModelDesc')),
+        buildSelect('thinkingLevel', t('settings.thinkingLevel'), data.thinkingLevel, [
+            { value: 'off', label: t('settings.think.off') },
+            { value: 'minimal', label: t('settings.think.minimal') },
+            { value: 'low', label: t('settings.think.low') },
+            { value: 'medium', label: t('settings.think.medium') },
+            { value: 'high', label: t('settings.think.high') },
+        ], t('settings.thinkingLevelDesc')),
     ]));
 
-    container.appendChild(buildSection('Tool Execution', [
-        buildToggle('autoApproveTools', 'Auto-approve tool calls', data.autoApproveTools,
-            'When enabled, the agent executes tools without asking for confirmation. When disabled, each tool call shows an inline approval card.'),
-        buildTextarea('allowedTools', 'Allowed Tools', data.allowedTools.join(', '),
-            'Comma-separated list of tool names to allow (e.g. read, grep, bash). Leave empty to allow all.'),
+    container.appendChild(buildSection(t('settings.section.tools'), [
+        buildToggle('autoApproveTools', t('settings.autoApprove'), data.autoApproveTools,
+            t('settings.autoApproveDesc')),
+        buildTextarea('allowedTools', t('settings.allowedTools'), data.allowedTools.join(', '),
+            t('settings.allowedToolsDesc')),
     ]));
 
-    const approvalSection = buildSection('Approval Memory', [buildApprovalPlaceholder()]);
+    const approvalSection = buildSection(t('settings.section.approval'), [buildApprovalPlaceholder()]);
     approvalSection.id = 'approval-section';
     container.appendChild(approvalSection);
 
-    container.appendChild(buildSection('Session Behavior', [
-        buildToggle('autoSaveSessions', 'Auto-save sessions', data.autoSaveSessions,
-            'Automatically persist sessions after each turn.'),
-        buildTextInput('sessionStoragePath', 'Session Storage Path', data.sessionStoragePath,
-            'Custom path for session data. Leave empty for the default workspace .pi/ directory.'),
-        buildRange('contextUsageWarningThreshold', 'Context Usage Warning', data.contextUsageWarningThreshold, 0, 100,
-            `Warn when context usage exceeds ${data.contextUsageWarningThreshold}% of the context window.`),
+    container.appendChild(buildSection(t('settings.section.session'), [
+        buildToggle('autoSaveSessions', t('settings.autoSave'), data.autoSaveSessions,
+            t('settings.autoSaveDesc')),
+        buildTextInput('sessionStoragePath', t('settings.sessionPath'), data.sessionStoragePath,
+            t('settings.sessionPathDesc')),
+        buildRange('contextUsageWarningThreshold', t('settings.contextWarning'), data.contextUsageWarningThreshold, 0, 100,
+            t('settings.contextWarningDesc', { n: data.contextUsageWarningThreshold })),
     ]));
 
-    const skillsSection = buildSection('Skills', [buildSkillsPlaceholder()], true);
+    const skillsSection = buildSection(t('settings.section.skills'), [buildSkillsPlaceholder()], true);
     skillsSection.id = 'skills-section';
     container.appendChild(skillsSection);
 
-    container.appendChild(buildSection('Credits', [
+    container.appendChild(buildSection(t('settings.section.credits'), [
         buildCredits(),
     ]));
 
@@ -144,7 +150,7 @@ function buildTextInput(key: string, label: string, value: string, description: 
         <div class="setting-label-row">
             <label for="setting-${key}">${escHtml(label)}</label>
         </div>
-        <input type="text" id="setting-${key}" class="setting-input" data-key="${key}" value="${escHtml(value)}" placeholder="${escHtml(description.split('.')[0])}">
+        <input type="text" id="setting-${key}" class="setting-input" data-key="${key}" value="${escAttr(value)}" placeholder="${escHtml(description.split('.')[0])}">
         <p class="setting-description">${escHtml(description)}</p>
     `;
     return row;
@@ -156,7 +162,7 @@ function buildTextarea(key: string, label: string, value: string, description: s
         <div class="setting-label-row">
             <label for="setting-${key}">${escHtml(label)}</label>
         </div>
-        <input type="text" id="setting-${key}" class="setting-input" data-key="${key}" value="${escHtml(value)}" placeholder="e.g. read, grep, bash">
+        <input type="text" id="setting-${key}" class="setting-input" data-key="${key}" value="${escHtml(value)}" placeholder="${escHtml(t('settings.allowedToolsPlaceholder'))}">
         <p class="setting-description">${escHtml(description)}</p>
     `;
     return row;
@@ -199,26 +205,26 @@ function buildApiKeyField(data: SettingsData): HTMLElement {
     if (data.apiKeySet) {
         row.innerHTML = `
             <div class="setting-label-row">
-                <label>API Key</label>
-                <span class="key-status set">Key stored</span>
+                <label>${escHtml(t('settings.apiKey'))}</label>
+                <span class="key-status set">${escHtml(t('settings.keyStored'))}</span>
             </div>
             <div class="api-key-actions">
-                <button class="setting-btn secondary" id="btn-change-key">Change</button>
-                <button class="setting-btn danger" id="btn-clear-key">Remove</button>
+                <button class="setting-btn secondary" id="btn-change-key">${escHtml(t('settings.change'))}</button>
+                <button class="setting-btn danger" id="btn-clear-key">${escHtml(t('settings.remove'))}</button>
             </div>
-            <p class="setting-description">API key is securely stored and never written to settings files.</p>
+            <p class="setting-description">${escHtml(t('settings.keyStoredDesc'))}</p>
         `;
     } else {
         row.innerHTML = `
             <div class="setting-label-row">
-                <label for="api-key-input">API Key</label>
-                <span class="key-status unset">No key stored</span>
+                <label for="api-key-input">${escHtml(t('settings.apiKey'))}</label>
+                <span class="key-status unset">${escHtml(t('settings.noKey'))}</span>
             </div>
             <div class="api-key-input-row">
-                <input type="password" id="api-key-input" class="setting-input" placeholder="Enter your API key">
-                <button class="setting-btn primary" id="btn-save-key">Save</button>
+                <input type="password" id="api-key-input" class="setting-input" placeholder="${escHtml(t('settings.enterKey'))}">
+                <button class="setting-btn primary" id="btn-save-key">${escHtml(t('settings.save'))}</button>
             </div>
-            <p class="setting-description">Securely stored via VS Code SecretStorage. Never written to settings files.</p>
+            <p class="setting-description">${escHtml(t('settings.keySecureDesc'))}</p>
         `;
     }
     return row;
@@ -227,10 +233,10 @@ function buildApiKeyField(data: SettingsData): HTMLElement {
 function buildAuthIndicator(method: SettingsData['authMethod']): HTMLElement {
     const row = el('div', 'setting-row auth-indicator');
     const labels: Record<string, string> = {
-        env: 'Authenticated via environment variable',
-        'pi-login': 'Authenticated via Pi CLI login (~/.pi/agent/)',
-        manual: 'Authenticated via stored API key',
-        none: 'No credentials detected',
+        env: t('settings.authEnv'),
+        'pi-login': t('settings.authLogin'),
+        manual: t('settings.authKey'),
+        none: t('settings.authNone'),
     };
     const icons: Record<string, string> = {
         env: '&#10003;',
@@ -250,21 +256,21 @@ function buildAuthIndicator(method: SettingsData['authMethod']): HTMLElement {
 
 function buildCredits(): HTMLElement {
     const row = el('div', 'setting-row');
-    row.innerHTML = `<p class="setting-description">Icons by <a href="https://www.flaticon.com/authors/royyan-wijaya">Royyan Wijaya</a> on Flaticon.</p>`;
+    row.innerHTML = `<p class="setting-description">${t('settings.credits')}</p>`;
     return row;
 }
 
 function buildSkillsPlaceholder(): HTMLElement {
     const row = el('div', 'setting-row');
     row.id = 'skills-list';
-    row.innerHTML = `<p class="setting-description">Loading skills...</p>`;
+    row.innerHTML = `<p class="setting-description">${escHtml(t('settings.skillsLoading'))}</p>`;
     return row;
 }
 
 function buildApprovalPlaceholder(): HTMLElement {
     const row = el('div', 'setting-row');
     row.id = 'approval-rules';
-    row.innerHTML = `<p class="setting-description">Loading approval rules...</p>`;
+    row.innerHTML = `<p class="setting-description">${escHtml(t('settings.approvalLoading'))}</p>`;
     return row;
 }
 
@@ -275,14 +281,12 @@ function renderApprovalSection(): void {
     container.innerHTML = '';
 
     const description = el('p', 'setting-description');
-    description.textContent =
-        'Tools you chose to "Remember" from approval cards, allowed in every tab. '
-        + 'Shell tools are never remembered. Changes take effect immediately.';
+    description.textContent = t('settings.approvalDesc');
     container.appendChild(description);
 
     if (approvalRules.length === 0) {
         const empty = el('p', 'setting-description approval-empty');
-        empty.textContent = 'No global approval rules yet.';
+        empty.textContent = t('settings.approvalEmpty');
         container.appendChild(empty);
         return;
     }
@@ -293,9 +297,9 @@ function renderApprovalSection(): void {
         const name = el('span', 'approval-rule-tool');
         name.textContent = rule.tool;
         const date = el('span', 'approval-rule-date');
-        date.textContent = `since ${formatDate(rule.createdAt)}`;
+        date.textContent = t('settings.approvalSince', { date: formatDate(rule.createdAt) });
         const revoke = el('button', 'setting-btn danger approval-rule-revoke');
-        revoke.textContent = 'Revoke';
+        revoke.textContent = t('settings.revoke');
         revoke.dataset.tool = rule.tool;
         item.append(name, date, revoke);
         list.appendChild(item);
@@ -305,7 +309,7 @@ function renderApprovalSection(): void {
     const clearRow = el('div', 'approval-clear-row');
     const clear = el('button', 'setting-btn secondary');
     clear.id = 'btn-clear-approval-rules';
-    clear.textContent = `Clear all (${approvalRules.length})`;
+    clear.textContent = t('settings.clearAll', { n: approvalRules.length });
     clearRow.appendChild(clear);
     container.appendChild(clearRow);
 
@@ -339,13 +343,13 @@ function renderSkillsSection(): void {
     if (!container) return;
 
     if (loadedSkills.length === 0) {
-        container.innerHTML = `<p class="setting-description">No skills found. Place <code>SKILL.md</code> files in <code>~/.pi/agent/skills/</code> or <code>.pi/skills/</code> in your workspace.</p>`;
+        container.innerHTML = `<p class="setting-description">${t('settings.skillsEmpty')}</p>`;
         return;
     }
 
     container.innerHTML = loadedSkills.map(skill => {
         const invocation = skill.disableModelInvocation
-            ? '<span class="skill-badge">manual only</span>'
+            ? `<span class="skill-badge">${escHtml(t('settings.manualOnly'))}</span>`
             : '';
         return `<div class="skill-card">
             <div class="skill-card-header">
@@ -411,11 +415,11 @@ function bindEvents(): void {
         const key = input?.value?.trim();
         const provider = currentSettings?.apiProvider || '';
         if (!provider) {
-            showToast('Select a provider first', 'error');
+            showToast(t('settings.toastSelectProvider'), 'error');
             return;
         }
         if (!key) {
-            showToast('Enter an API key', 'error');
+            showToast(t('settings.toastEnterKey'), 'error');
             return;
         }
         vscode.postMessage({ type: 'setApiKey', provider, key });
@@ -468,6 +472,14 @@ function escHtml(s: string): string {
     const div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
+}
+
+function escAttr(s: string): string {
+    return s
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 vscode.postMessage({ type: 'getSettings' });

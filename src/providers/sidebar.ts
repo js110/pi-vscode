@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { ClientMessage, ServerMessage } from '../shared/protocol';
 import { TabManager } from './tab';
+import { resolveDisplayLang } from './lang';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
@@ -39,6 +40,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         });
 
         this.post({ type: 'ready' });
+        this.post({ type: 'langChanged', lang: resolveDisplayLang() });
         this.post({ type: 'stateSync', state: this._tabManager.getState() });
         void this._tabManager.postConfigSnapshot();
     }
@@ -86,9 +88,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this._extensionUri, 'media', 'icons')
         );
         const nonce = getNonce();
+        const lang = resolveDisplayLang();
 
         return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">

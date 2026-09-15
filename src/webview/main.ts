@@ -1,8 +1,9 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, Lang } from '../shared/protocol';
 import { isDangerousTool } from '../shared/tool-safety';
+import { t, setLang } from '../shared/i18n';
 import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon } from '../shared/webview-text';
 import { el, escHtml } from './dom';
-import { renderMarkdown, buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCard, buildModelItem, buildApprovalBadge, resetCodeBlockIds } from './render/messages';
+import { renderMarkdown, buildWelcome, buildThinkingBlock, thinkingLabel, buildDiffCard, buildToolCard, buildModelItem, buildApprovalBadge, resetCodeBlockIds } from './render/messages';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -42,6 +43,7 @@ const state: {
     queuedMessages: string[];
     config?: PiConfigSnapshot;
     approvalTraces: Map<string, ApprovalScope>;
+    pendingApprovals: ToolCallPendingInfo[];
 } = {
     messages: [],
     isStreaming: false,
@@ -61,6 +63,7 @@ const state: {
     commands: [],
     queuedMessages: [],
     approvalTraces: new Map<string, ApprovalScope>(),
+    pendingApprovals: [],
 };
 
 let sessionSearchQuery = '';
@@ -135,6 +138,22 @@ function handleMessage(msg: ServerMessage): void {
                 showModelPicker();
             }
             break;
+        case 'langChanged': {
+            setLang(msg.lang);
+            closeModelPicker();
+            const input = document.getElementById('input') as HTMLTextAreaElement | null;
+            const draft = input?.value ?? '';
+            render();
+            if (input && draft) input.value = draft;
+            for (const pending of state.pendingApprovals) {
+                renderToolApprovalCard(pending);
+            }
+            if (state.isStreaming) {
+                ensurePreparingPlaceholder();
+            }
+            renderStreamingContent();
+            break;
+        }
         case 'error':
             showError(msg.message);
             break;
@@ -296,17 +315,17 @@ function render(): void {
     header.appendChild(tabStrip);
     const headerActions = el('div', 'header-right');
     headerActions.innerHTML = `
-        <button class="icon-btn" id="btn-new-tab" title="New Agent">
+        <button class="icon-btn" id="btn-new-tab" title="${escHtml(t('header.newAgent'))}">
             <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
                 <path d="M8 3v10M3 8h10"/>
             </svg>
         </button>
-        <button class="icon-btn" id="btn-sessions" title="Sessions">
+        <button class="icon-btn" id="btn-sessions" title="${escHtml(t('header.sessions'))}">
             <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
                 <path d="M2 4h12M2 8h12M2 12h12"/>
             </svg>
         </button>
-        <button class="icon-btn" id="btn-settings" title="Settings">
+        <button class="icon-btn" id="btn-settings" title="${escHtml(t('header.settings'))}">
             <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
                 <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/>
                 <path d="M7 1h2l.3 1.6a5.5 5.5 0 0 1 1.5.9l1.5-.5 1 1.7-1.2 1.1a5.5 5.5 0 0 1 .5 1.7L15 7v2l-1.4.7a5.5 5.5 0 0 1-.5 1.7l1.2 1.1-1 1.7-1.5-.5a5.5 5.5 0 0 1-1.5.9L9 15H7l-.3-1.6a5.5 5.5 0 0 1-1.5-.9l-1.5.5-1-1.7 1.2-1.1a5.5 5.5 0 0 1-.5-1.7L1 9V7l1.4-.7a5.5 5.5 0 0 1 .5-1.7L1.7 3.5l1-1.7 1.5.5a5.5 5.5 0 0 1 1.5-.9L7 1z"/>
@@ -330,7 +349,7 @@ function render(): void {
     const scrollWrap = el('div', 'scroll-btn-wrap');
     const scrollBtn = el('button', 'scroll-bottom-btn');
     scrollBtn.id = 'btn-scroll-bottom';
-    scrollBtn.title = 'Scroll to bottom';
+    scrollBtn.title = t('header.scrollToBottom');
     scrollBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 13L3 8M8 13L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     scrollWrap.appendChild(scrollBtn);
     app.appendChild(scrollWrap);
@@ -347,7 +366,7 @@ function render(): void {
     slashMenu.style.display = 'none';
     inputContainer.appendChild(slashMenu);
     const area = el('div', 'input-area');
-    area.innerHTML = `<textarea id="input" placeholder="Ask Pi anything..." rows="1"></textarea>`;
+    area.innerHTML = `<textarea id="input" placeholder="${escHtml(t('input.ask'))}" rows="1"></textarea>`;
     inputContainer.appendChild(area);
     const footer = el('div', 'input-footer');
     inputContainer.appendChild(footer);
@@ -420,8 +439,8 @@ function updateMessages(): void {
             if (role === 'user' && dimming && !redoPlaced && rollbackUserIdx !== null) {
                 const redoWrap = el('div', 'redo-anchor');
                 const redoBtn = el('button', 'redo-btn');
-                redoBtn.title = 'Redo changes';
-                redoBtn.textContent = 'Redo';
+                redoBtn.title = t('files.redoTitle');
+                redoBtn.textContent = t('files.redo');
                 redoWrap.appendChild(redoBtn);
                 container.insertBefore(redoWrap, streamingEl);
                 redoPlaced = true;
@@ -471,7 +490,7 @@ function updateTabs(): void {
         if (state.tabs.length > 1) {
             const closeBtn = el('button', 'tab-close');
             closeBtn.innerHTML = '&times;';
-            closeBtn.title = 'Close tab';
+            closeBtn.title = t('header.closeTab');
             closeBtn.dataset.tabId = tab.id;
             tabEl.appendChild(closeBtn);
         }
@@ -485,10 +504,8 @@ function updateTabs(): void {
 function updateInputArea(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (input) {
-        const inputHint = state.isStreaming
-            ? 'Queue a message...'
-            : 'Ask Pi anything... (type / for commands)';
-        input.placeholder = state.isStreaming ? 'Queue a message...' : inputHint;
+        const inputHint = state.isStreaming ? t('input.queue') : t('input.ask');
+        input.placeholder = inputHint;
         input.title = inputHint;
         input.setAttribute('aria-label', inputHint);
     }
@@ -506,23 +523,23 @@ function updateInputArea(): void {
         const windowK = formatTokenCount(cu.contextWindow);
         const pct = cu.percent != null ? Math.round(cu.percent) : null;
         if (tokensK !== null && pct !== null) {
-            contextHtml = `<span class="footer-context" title="Context: ${tokensK} / ${windowK} tokens (${pct}%)">${tokensK} / ${windowK} &middot; ${pct}%</span>`;
+            contextHtml = `<span class="footer-context" title="${escAttr(t('input.contextTooltip', { tokens: tokensK, window: windowK, percent: pct }))}">${tokensK} / ${windowK} &middot; ${pct}%</span>`;
         } else {
-            contextHtml = `<span class="footer-context" title="Context window: ${windowK} tokens">${windowK}</span>`;
+            contextHtml = `<span class="footer-context" title="${escAttr(t('input.contextWindowTooltip', { window: windowK }))}">${windowK}</span>`;
         }
     }
 
     const steerBtnHtml = state.isStreaming
-        ? `<button id="btn-steer" class="steer-btn" title="Steer"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
+        ? `<button id="btn-steer" class="steer-btn" title="${escHtml(t('input.steer'))}"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
         : '';
 
     footer.innerHTML = `
         <span class="footer-model">${escHtml(modelName)}</span>
         <span class="footer-spacer"></span>
         ${contextHtml}
-        ${state.isStreaming ? '<button id="btn-abort" class="abort-btn" title="Stop">&#9632; Stop</button>' : ''}
+        ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}
         ${steerBtnHtml}
-        <button id="btn-send" class="send-btn" title="${state.isStreaming ? 'Queue' : 'Send'}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.queueSend') : t('input.send'))}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     `;
 
     // Rebind the dynamic footer elements
@@ -582,7 +599,7 @@ function updateQueuedMessageBanner(): void {
     section.innerHTML = `
         <summary class="queued-summary">
             <span class="queued-chevron">&#9656;</span>
-            <span class="queued-count">${count} Queued</span>
+            <span class="queued-count">${escHtml(t('queue.count', { n: count }))}</span>
         </summary>
         <div class="queued-list">
             ${state.queuedMessages.map((msg, i) => {
@@ -590,16 +607,16 @@ function updateQueuedMessageBanner(): void {
                     return `<div class="queued-item queued-item-editing" data-index="${i}">
                         <span class="queued-item-icon">&#9675;</span>
                         <input class="queued-edit-input" data-index="${i}" type="text" value="${escAttr(msg)}">
-                        <button class="queued-edit-save" data-index="${i}" title="Save">&#10003;</button>
-                        <button class="queued-edit-cancel" data-index="${i}" title="Cancel">&#10005;</button>
+                        <button class="queued-edit-save" data-index="${i}" title="${escHtml(t('queue.save'))}">&#10003;</button>
+                        <button class="queued-edit-cancel" data-index="${i}" title="${escHtml(t('queue.cancel'))}">&#10005;</button>
                     </div>`;
                 }
                 return `<div class="queued-item" data-index="${i}">
                     <span class="queued-item-icon">&#9675;</span>
                     <span class="queued-item-text">${escHtml(msg)}</span>
                     <span class="queued-item-actions">
-                        <button class="queued-item-btn queued-item-edit" data-index="${i}" title="Edit"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/></svg></button>
-                        <button class="queued-item-btn queued-item-delete" data-index="${i}" title="Remove"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M5.5 4V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1M6 7v4M8 7v4M10 7v4M4 4l.7 9.1a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4"/></svg></button>
+                        <button class="queued-item-btn queued-item-edit" data-index="${i}" title="${escHtml(t('queue.edit'))}"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/></svg></button>
+                        <button class="queued-item-btn queued-item-delete" data-index="${i}" title="${escHtml(t('queue.remove'))}"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M5.5 4V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1M6 7v4M8 7v4M10 7v4M4 4l.7 9.1a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4"/></svg></button>
                     </span>
                 </div>`;
             }).join('')}
@@ -690,7 +707,7 @@ function showSteerToast(text: string): void {
     toast.id = 'steer-toast';
     toast.innerHTML = `
         <span class="steer-toast-indicator"></span>
-        <span class="steer-toast-label">Steering...</span>
+        <span class="steer-toast-label">${escHtml(t('stream.steering'))}</span>
         <span class="steer-toast-text">${escHtml(truncate(text, 80))}</span>
     `;
 
@@ -732,14 +749,14 @@ function buildChangedFilesSection(): HTMLElement {
     const summary = document.createElement('summary');
     summary.className = 'changed-files-summary';
     const undoRedoBtn = state.rollbackPoint !== null
-        ? `<button class="changed-files-link" id="btn-redo" title="Redo changes">Redo</button>`
-        : `<button class="changed-files-link" id="btn-undo" title="Undo last change">Undo</button>`;
+        ? `<button class="changed-files-link" id="btn-redo" title="${escHtml(t('files.redoTitle'))}">${escHtml(t('files.redo'))}</button>`
+        : `<button class="changed-files-link" id="btn-undo" title="${escHtml(t('files.undoTitle'))}">${escHtml(t('files.undo'))}</button>`;
     summary.innerHTML = `
         <span class="changed-files-arrow">&#9656;</span>
-        <span class="changed-files-count">${count} File${count !== 1 ? 's' : ''}</span>
+        <span class="changed-files-count">${escHtml(t('files.count', { n: count, s: count !== 1 ? 's' : '' }))}</span>
         <span class="changed-files-spacer"></span>
         ${undoRedoBtn}
-        <button class="changed-files-review-btn" id="btn-review-all" title="Review all changes">Review</button>
+        <button class="changed-files-review-btn" id="btn-review-all" title="${escHtml(t('files.reviewTitle'))}">${escHtml(t('files.review'))}</button>
     `;
     details.appendChild(summary);
 
@@ -803,7 +820,7 @@ function updateChangedFiles(): void {
         vscode.postMessage({
             type: 'confirmAction',
             action: 'restoreCheckpoint',
-            message: 'Undo changes from the last turn?',
+            message: t('files.undoConfirm'),
             payload: { messageIndex: lastUserTurn - 1 },
         });
     });
@@ -815,7 +832,7 @@ function updateChangedFiles(): void {
         vscode.postMessage({
             type: 'confirmAction',
             action: 'redoCheckpoint',
-            message: 'Re-apply the rolled-back changes?',
+            message: t('files.redoConfirm'),
         });
     });
 
@@ -843,7 +860,7 @@ function renderChangedFilesBar(): void {
         const count = fileMap.size;
         const countEl = existing.querySelector('.changed-files-count');
         if (countEl) {
-            countEl.textContent = `${count} File${count !== 1 ? 's' : ''}`;
+            countEl.textContent = t('files.count', { n: count, s: count !== 1 ? 's' : '' });
         }
     }
 }
@@ -892,7 +909,7 @@ function renderMessage(msg: any, index: number, turnNumber?: number): HTMLElemen
         const wrapper = el('div', `message message-${role}`);
         if (turnNumber !== undefined && !state.isStreaming) {
             const checkpointBtn = el('button', 'checkpoint-btn');
-            checkpointBtn.title = 'Restore to this checkpoint';
+            checkpointBtn.title = t('checkpoint.restore');
             checkpointBtn.dataset.turn = String(turnNumber);
             checkpointBtn.innerHTML = '&#8634;';
             wrapper.appendChild(checkpointBtn);
@@ -976,7 +993,7 @@ function showPreparingPlaceholder(): void {
     if (document.getElementById('preparing-placeholder')) return;
     const ph = el('div', 'preparing-placeholder');
     ph.id = 'preparing-placeholder';
-    ph.textContent = 'Preparing next moves...';
+    ph.textContent = t('stream.preparing');
     container.appendChild(ph);
     scrollToBottom();
 }
@@ -997,7 +1014,7 @@ function showRetryPlaceholder(attempt: number, maxAttempts: number, delayMs: num
     if (!container) return;
     const ph = el('div', 'preparing-placeholder retry-placeholder');
     ph.id = 'retry-placeholder';
-    ph.textContent = `Retrying (${attempt}/${maxAttempts}) after error: ${truncate(errorMessage, 80)}`;
+    ph.textContent = t('stream.retrying', { attempt, max: maxAttempts, error: truncate(errorMessage, 80) });
     container.appendChild(ph);
     scrollToBottom();
 }
@@ -1019,7 +1036,7 @@ function renderStreamingContent(): void {
                 <details class="thinking-block active" open id="streaming-thinking" style="display:none">
                     <summary class="thinking-summary">
                         <span class="thinking-indicator"></span>
-                        <span class="thinking-label">Thinking...</span>
+                        <span class="thinking-label"></span>
                         <span class="thinking-chevron">&#9656;</span>
                     </summary>
                     <div class="thinking-content"></div>
@@ -1036,17 +1053,11 @@ function renderStreamingContent(): void {
             const contentEl = thinkingEl.querySelector('.thinking-content');
             if (contentEl) contentEl.innerHTML = renderMarkdown(state.streamingThinking);
             const labelEl = thinkingEl.querySelector('.thinking-label');
+            if (labelEl) labelEl.textContent = thinkingLabel(state.isThinking, state.streamingThinkingDuration);
             if (state.isThinking) {
                 thinkingEl.classList.add('active');
-                if (labelEl) labelEl.textContent = 'Thinking...';
             } else {
                 thinkingEl.classList.remove('active');
-                if (labelEl) {
-                    const dur = state.streamingThinkingDuration;
-                    labelEl.textContent = dur > 0
-                        ? `Thought for ${dur} second${dur !== 1 ? 's' : ''}`
-                        : 'Thought';
-                }
             }
         } else {
             thinkingEl.style.display = 'none';
@@ -1072,8 +1083,8 @@ function buildToolFooter(msg: any, allMessages: any[], msgIndex: number): HTMLEl
     const precedingAssistant = findPrecedingAssistant(allMessages, msgIndex);
     if (precedingAssistant?.usage) {
         const u = precedingAssistant.usage;
-        if (u.input > 0) parts.push(`${u.input.toLocaleString()} in`);
-        if (u.output > 0) parts.push(`${u.output.toLocaleString()} out`);
+        if (u.input > 0) parts.push(t('meta.tokensIn', { n: u.input.toLocaleString() }));
+        if (u.output > 0) parts.push(t('meta.tokensOut', { n: u.output.toLocaleString() }));
     }
 
     if (parts.length === 0) return null;
@@ -1099,7 +1110,7 @@ function buildToolResultCard(msg: any, allMessages: any[], msgIndex: number): HT
     const matchingCall = findToolCallInMessages(allMessages, msgIndex, toolCallId);
     const args = matchingCall?.arguments ?? matchingCall?.args ?? matchingCall?.input ?? {};
     const parsedArgs = typeof args === 'string' ? tryParseJSON(args) : args;
-    const label = toolName ? getToolLabel(toolName, parsedArgs) : 'Tool Result';
+    const label = toolName ? getToolLabel(toolName, parsedArgs) : t('tool.result');
     const icon = getToolIcon(toolName ?? '');
     const isBash = nameLower === 'bash';
     const isRead = nameLower === 'read';
@@ -1127,7 +1138,7 @@ function buildToolResultCard(msg: any, allMessages: any[], msgIndex: number): HT
 
         const body = el('div', 'tool-body');
         const result = el('pre', 'tool-result');
-        result.textContent = resultContent || '(no output)';
+        result.textContent = resultContent || t('tool.noOutput');
         if (!resultContent) result.classList.add('empty');
         body.appendChild(result);
         details.appendChild(body);
@@ -1182,7 +1193,7 @@ function renderToolStart(event: any): void {
             <div class="diff-file-header">
                 <span class="diff-file-icon">&#9998;</span>
                 <span class="diff-file-name">${escHtml(fileName)}</span>
-                <span class="tool-status running">running</span>
+                <span class="tool-status running">${escHtml(t('tool.running'))}</span>
             </div>
         `;
         container.appendChild(card);
@@ -1205,7 +1216,7 @@ function renderToolStart(event: any): void {
         <div class="tool-header">
             <span class="tool-icon">${getToolIcon(event.toolName)}</span>
             <span class="tool-name">${escHtml(getToolLabel(event.toolName, parsedArgs))}</span>
-            <span class="tool-status running">running</span>
+            <span class="tool-status running">${escHtml(t('tool.running'))}</span>
         </div>
     `;
 
@@ -1237,7 +1248,7 @@ function renderToolEnd(event: any): void {
     if (card.classList.contains('diff-card')) {
         const statusEl = card.querySelector('.tool-status');
         if (statusEl) {
-            statusEl.textContent = event.isError ? 'error' : 'done';
+            statusEl.textContent = event.isError ? t('tool.error') : t('tool.done');
             statusEl.className = `tool-status ${event.isError ? 'error' : 'done'}`;
         }
         return;
@@ -1263,7 +1274,7 @@ function renderToolEnd(event: any): void {
         const statusEl = details.querySelector('.tool-status');
         if (statusEl) {
             if (event.isError) {
-                statusEl.textContent = 'error';
+                statusEl.textContent = t('tool.error');
                 statusEl.className = 'tool-status error';
             } else {
                 statusEl.remove();
@@ -1276,7 +1287,7 @@ function renderToolEnd(event: any): void {
 
         const body = el('div', 'tool-body');
         const resultEl = el('pre', 'tool-result');
-        resultEl.textContent = text || '(no output)';
+        resultEl.textContent = text || t('tool.noOutput');
         if (!text) resultEl.classList.add('empty');
         body.appendChild(resultEl);
         details.appendChild(body);
@@ -1288,7 +1299,7 @@ function renderToolEnd(event: any): void {
         const statusEl = card.querySelector('.tool-status');
         if (statusEl) {
             if (event.isError) {
-                statusEl.textContent = 'error';
+                statusEl.textContent = t('tool.error');
                 statusEl.className = 'tool-status error';
             } else {
                 statusEl.remove();
@@ -1322,6 +1333,10 @@ function renderToolApprovalCard(pending: ToolCallPendingInfo): void {
     const existing = document.getElementById(`approval-${pending.toolCallId}`);
     if (existing) return;
 
+    if (!state.pendingApprovals.some(p => p.toolCallId === pending.toolCallId)) {
+        state.pendingApprovals.push(pending);
+    }
+
     const card = el('div', 'tool-approval-card');
     card.id = `approval-${pending.toolCallId}`;
 
@@ -1332,20 +1347,20 @@ function renderToolApprovalCard(pending: ToolCallPendingInfo): void {
         <div class="tool-header">
             <span class="tool-icon">${getToolIcon(pending.toolName)}</span>
             <span class="tool-name">${escHtml(label)}</span>
-            <span class="tool-status pending">awaiting approval</span>
+            <span class="tool-status pending">${escHtml(t('approval.awaiting'))}</span>
         </div>
         <div class="approval-args">${escHtml(formatToolArgs(parsedArgs))}</div>
         <div class="approval-actions">
-            <button class="approval-btn approve" data-toolcallid="${escHtml(pending.toolCallId)}">Approve</button>
+            <button class="approval-btn approve" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.approve'))}</button>
             ${isDangerousTool(pending.toolName) ? '' : `
             <span class="remember-split">
-                <button class="approval-btn remember" data-toolcallid="${escHtml(pending.toolCallId)}">Remember &#9662;</button>
+                <button class="approval-btn remember" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.remember'))}</button>
                 <div class="remember-menu" hidden>
-                    <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="session">This session only</div>
-                    <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="global">All tabs (global)</div>
+                    <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="session">${escHtml(t('approval.rememberSession'))}</div>
+                    <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="global">${escHtml(t('approval.rememberGlobal'))}</div>
                 </div>
             </span>`}
-            <button class="approval-btn reject" data-toolcallid="${escHtml(pending.toolCallId)}">Reject</button>
+            <button class="approval-btn reject" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.reject'))}</button>
         </div>
     `;
 
@@ -1380,6 +1395,7 @@ function bindRememberButtons(card: HTMLElement): void {
 
 function removeToolApprovalCard(toolCallId: string): void {
     document.getElementById(`approval-${toolCallId}`)?.remove();
+    state.pendingApprovals = state.pendingApprovals.filter(p => p.toolCallId !== toolCallId);
 }
 
 function bindApprovalButtons(): void {
@@ -1439,25 +1455,27 @@ function buildConfigBanner(): HTMLElement | null {
     const banner = el('div', 'config-banner');
     if (config.status === 'not-found') {
         const msg = el('div', 'config-issue');
-        msg.textContent = `Pi config not found at ${config.agentDir} — install Pi or check the agent directory.`;
+        msg.textContent = t('config.notFound', { dir: config.agentDir });
         banner.appendChild(msg);
     } else {
         const stats = el('div', 'config-stats');
-        stats.textContent = `Read from Pi: ${config.providers.length} provider${config.providers.length === 1 ? '' : 's'}` +
-            ` · ${config.models.length} model${config.models.length === 1 ? '' : 's'}` +
-            ` · ${config.skills.length} skill${config.skills.length === 1 ? '' : 's'}`;
+        stats.textContent = t('config.stats', {
+            providers: t('config.providerCount', { n: config.providers.length, s: config.providers.length === 1 ? '' : 's' }),
+            models: t('config.modelCount', { n: config.models.length, s: config.models.length === 1 ? '' : 's' }),
+            skills: t('config.skillCount', { n: config.skills.length, s: config.skills.length === 1 ? '' : 's' }),
+        });
         banner.appendChild(stats);
         if (config.status === 'partial' || config.status === 'error') {
             const issue = el('div', 'config-issue');
             issue.textContent = config.errors[0]
-                ? `Config issue (${config.errors[0].source}): ${config.errors[0].message}`
-                : 'Some Pi config sources could not be read.';
+                ? t('config.issue', { source: config.errors[0].source, message: config.errors[0].message })
+                : t('config.issueFallback');
             banner.appendChild(issue);
         }
     }
 
     const refresh = el('button', 'config-refresh');
-    refresh.textContent = 'Re-check';
+    refresh.textContent = t('config.recheck');
     refresh.addEventListener('click', (e) => {
         e.stopPropagation();
         vscode.postMessage({ type: 'refreshConfig' });
@@ -1478,7 +1496,7 @@ function showModelPicker(): void {
 
     const searchInput = document.createElement('input');
     searchInput.className = 'model-search';
-    searchInput.placeholder = 'Search models...';
+    searchInput.placeholder = t('models.search');
     searchInput.type = 'text';
     picker.appendChild(searchInput);
 
@@ -1489,7 +1507,7 @@ function showModelPicker(): void {
 
     if (state.recentModels.length > 0) {
         const recentHeader = el('div', 'model-section-header');
-        recentHeader.textContent = 'Recent';
+        recentHeader.textContent = t('models.recent');
         list.appendChild(recentHeader);
 
         for (const r of state.recentModels) {
@@ -1502,7 +1520,7 @@ function showModelPicker(): void {
         }
 
         const allHeader = el('div', 'model-section-header');
-        allHeader.textContent = 'All Models';
+        allHeader.textContent = t('models.all');
         list.appendChild(allHeader);
     }
 
@@ -1512,9 +1530,9 @@ function showModelPicker(): void {
     picker.appendChild(list);
 
     const thinkingRow = el('div', 'thinking-chips');
-    const thinkingLabel = el('span', 'thinking-label');
-    thinkingLabel.textContent = 'Thinking:';
-    thinkingRow.appendChild(thinkingLabel);
+    const thinkingCaption = el('span', 'thinking-label');
+    thinkingCaption.textContent = t('models.thinking');
+    thinkingRow.appendChild(thinkingCaption);
     const supported = state.supportsThinking && (state.availableThinkingLevels?.length ?? 0) > 0;
     if (supported) {
         for (const level of state.availableThinkingLevels!) {
@@ -1608,7 +1626,7 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     }
 
     if (sessions.length === 0) {
-        panel.innerHTML = '<div class="session-empty">No previous sessions</div>';
+        panel.innerHTML = `<div class="session-empty">${escHtml(t('sessions.empty'))}</div>`;
         return;
     }
 
@@ -1619,22 +1637,22 @@ function renderSessionList(sessions: any[], currentId?: string): void {
 
     panel.innerHTML = `
         <div class="session-header">
-            <span>Sessions</span>
-            <button class="icon-btn" id="btn-close-sessions" title="Close">&times;</button>
+            <span>${escHtml(t('sessions.title'))}</span>
+            <button class="icon-btn" id="btn-close-sessions" title="${escHtml(t('sessions.close'))}">&times;</button>
         </div>
         <div class="session-search">
             <svg class="session-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>
-            <input type="text" id="session-search-input" placeholder="Search sessions..." value="${escHtml(sessionSearchQuery ?? '')}" aria-label="Search sessions">
+            <input type="text" id="session-search-input" placeholder="${escHtml(t('sessions.search'))}" value="${escAttr(sessionSearchQuery ?? '')}" aria-label="${escHtml(t('sessions.search'))}">
         </div>
         <div class="session-list">
             ${filtered.length === 0
-                ? '<div class="session-empty">No matching sessions</div>'
+                ? `<div class="session-empty">${escHtml(t('sessions.noMatch'))}</div>`
                 : filtered.map(s => {
                     const name = s.name ?? s.id ?? '';
                     return `
-                        <div class="session-item ${s.id === currentId ? 'active' : ''}" data-path="${escHtml(s.path)}">
-                            <span class="session-item-name" title="${escHtml(name)}">${escHtml(name)}</span>
-                            <button class="session-item-rename" title="Rename session">✎</button>
+                        <div class="session-item ${s.id === currentId ? 'active' : ''}" data-path="${escAttr(s.path)}">
+                            <span class="session-item-name" title="${escAttr(name)}">${escHtml(name)}</span>
+                            <button class="session-item-rename" title="${escHtml(t('header.renameSession'))}">✎</button>
                         </div>
                     `;
                 }).join('')}
@@ -1674,7 +1692,7 @@ function renderSessionList(sessions: any[], currentId?: string): void {
             input.type = 'text';
             input.maxLength = 100;
             input.value = originalName;
-            input.setAttribute('aria-label', 'Rename session');
+            input.setAttribute('aria-label', t('header.renameSession'));
             item.appendChild(input);
             input.focus();
             input.select();
@@ -1833,7 +1851,7 @@ function startTabRename(tabEl: HTMLElement, tab: any): void {
     input.type = 'text';
     input.maxLength = 100;
     input.value = tab.name;
-    input.setAttribute('aria-label', 'Rename session');
+    input.setAttribute('aria-label', t('header.renameSession'));
     stopClickPropagation(input);
     const original = tab.name;
 
@@ -1878,7 +1896,7 @@ function bindCheckpointButtons(): void {
             vscode.postMessage({
                 type: 'confirmAction',
                 action: 'restoreCheckpoint',
-                message: 'Discard all changes after this checkpoint?',
+                message: t('checkpoint.discardConfirm'),
                 payload: { messageIndex: turn - 1 },
             });
         });
@@ -1893,7 +1911,7 @@ function bindRedoButtons(): void {
             vscode.postMessage({
                 type: 'confirmAction',
                 action: 'redoCheckpoint',
-                message: 'Re-apply the rolled-back changes?',
+                message: t('files.redoConfirm'),
             });
         });
     });
@@ -1969,8 +1987,8 @@ function bindCopyButtons(): void {
             const codeEl = document.getElementById(id);
             if (!codeEl) return;
             navigator.clipboard.writeText(codeEl.textContent ?? '').then(() => {
-                btn.textContent = 'Copied!';
-                setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+                btn.textContent = t('code.copied');
+                setTimeout(() => { btn.textContent = t('code.copy'); }, 1500);
             });
         });
     });
@@ -2112,7 +2130,7 @@ function buildMessageFooter(msg: any, index: number): HTMLElement | null {
         for (let j = index + 1; j < state.messages.length; j++) {
             const next = state.messages[j];
             if (next.role === 'assistant' && next.usage && next.usage.input > 0) {
-                parts.push(`${next.usage.input.toLocaleString()} input tokens`);
+                parts.push(t('meta.inputTokens', { n: next.usage.input.toLocaleString() }));
                 break;
             }
             if (next.role === 'user') break;
@@ -2132,7 +2150,7 @@ function buildMessageFooter(msg: any, index: number): HTMLElement | null {
 
         const usage = msg.usage;
         if (usage && usage.output > 0) {
-            parts.push(`${usage.output.toLocaleString()} output tokens`);
+            parts.push(t('meta.outputTokens', { n: usage.output.toLocaleString() }));
         }
     }
 

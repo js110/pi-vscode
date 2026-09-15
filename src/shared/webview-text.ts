@@ -1,5 +1,6 @@
 // Pure, DOM-free text/value formatting helpers shared by the webview.
 // No vscode, no state, no document — directly unit-testable.
+import { t, type TextKey } from './i18n';
 
 export function escAttr(s: string): string {
     return s
@@ -100,10 +101,18 @@ export function formatToolArgs(args: any): string {
         .join('\n');
 }
 
+const STATUS_LABEL_KEYS: Record<string, TextKey> = {
+    running: 'tool.running',
+    pending: 'tool.pending',
+    error: 'tool.error',
+    done: 'tool.done',
+};
+
 export function buildStatusHtml(status: string): string {
     if (status === 'done') return '';
-    const label = status.charAt(0).toUpperCase() + status.slice(1);
-    return `<span class="tool-status ${status}">${label}</span>`;
+    const key = STATUS_LABEL_KEYS[status];
+    const label = key ? t(key) : escAttr(status.charAt(0).toUpperCase() + status.slice(1));
+    return `<span class="tool-status ${escAttr(status)}">${label}</span>`;
 }
 
 const TOOL_ICONS: Record<string, string> = {
@@ -126,17 +135,17 @@ export function getToolIcon(name: string): string {
 export function getToolLabel(name: string, args: any): string {
     switch (name.toLowerCase()) {
         case 'bash':
-            return args?.command ? truncate(args.command, 60) : 'Execute command';
+            return args?.command ? truncate(args.command, 60) : t('tool.bashFallback');
         case 'read':
-            return args?.path ? `Read ${truncate(args.path, 50)}` : 'Read file';
+            return args?.path ? t('tool.read', { path: truncate(args.path, 50) }) : t('tool.readFallback');
         case 'write':
-            return args?.path ? `Write ${truncate(args.path, 50)}` : 'Write file';
+            return args?.path ? t('tool.write', { path: truncate(args.path, 50) }) : t('tool.writeFallback');
         case 'edit':
-            return args?.path ? `Edit ${truncate(args.path, 50)}` : 'Edit file';
+            return args?.path ? t('tool.edit', { path: truncate(args.path, 50) }) : t('tool.editFallback');
         case 'glob':
-            return args?.pattern ? `Glob ${truncate(args.pattern, 50)}` : 'Find files';
+            return args?.pattern ? t('tool.glob', { pattern: truncate(args.pattern, 50) }) : t('tool.globFallback');
         case 'grep':
-            return args?.pattern ? `Grep ${truncate(args.pattern, 50)}` : 'Search files';
+            return args?.pattern ? t('tool.grep', { pattern: truncate(args.pattern, 50) }) : t('tool.grepFallback');
         default:
             return name;
     }

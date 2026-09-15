@@ -6,6 +6,7 @@
 // directly unit-testable with happy-dom.
 import { marked } from 'marked';
 import type { FileChangeInfo } from '../../shared/protocol';
+import { t } from '../../shared/i18n';
 import {
     escAttr,
     formatTimestamp,
@@ -27,7 +28,7 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string | undefi
     const id = `cb-${++codeBlockId}`;
     const langLabel = lang ? `<span class="code-lang">${escHtml(lang)}</span>` : '';
     return `<div class="code-block-wrapper">
-        <div class="code-block-header">${langLabel}<button class="copy-btn" data-code-id="${id}">Copy</button></div>
+        <div class="code-block-header">${langLabel}<button class="copy-btn" data-code-id="${id}">${escHtml(t('code.copy'))}</button></div>
         <pre class="code-block-pre" id="${id}"><code class="code-block-code">${escHtml(text)}</code></pre>
     </div>`;
 };
@@ -57,30 +58,31 @@ export function buildWelcome(): HTMLElement {
     const w = el('div', 'welcome');
     w.innerHTML = `
         <div class="welcome-icon">&pi;</div>
-        <div class="welcome-title">Pi Agent</div>
-        <div class="welcome-subtitle">Pi reads, writes, and runs code in this workspace. Tell it what to build and it will show its work as it goes.</div>
+        <div class="welcome-title">${escHtml(t('welcome.title'))}</div>
+        <div class="welcome-subtitle">${escHtml(t('welcome.subtitle'))}</div>
         <div class="welcome-hints">
-            <div class="welcome-hint">Type <kbd>/</kbd> for commands and skills</div>
+            <div class="welcome-hint">${t('welcome.hint')}</div>
         </div>
     `;
     return w;
 }
 
+export function thinkingLabel(active: boolean, durationSec?: number): string {
+    if (active) return t('stream.thinking');
+    if (durationSec && durationSec > 0) {
+        return t('stream.thoughtFor', { n: durationSec, s: durationSec !== 1 ? 's' : '' });
+    }
+    return t('stream.thought');
+}
+
 export function buildThinkingBlock(text: string, active: boolean, durationSec?: number): HTMLElement {
     const details = document.createElement('details');
     details.className = `thinking-block${active ? ' active' : ''}`;
-    let label: string;
-    if (active) {
-        label = 'Thinking...';
-    } else if (durationSec && durationSec > 0) {
-        label = `Thought for ${durationSec} second${durationSec !== 1 ? 's' : ''}`;
-    } else {
-        label = 'Thought';
-    }
+    const label = thinkingLabel(active, durationSec);
     details.innerHTML = `
         <summary class="thinking-summary">
             <span class="thinking-indicator"></span>
-            <span class="thinking-label">${label}</span>
+            <span class="thinking-label">${escHtml(label)}</span>
             <span class="thinking-chevron">&#9656;</span>
         </summary>
         <div class="thinking-content">${renderMarkdown(text)}</div>
@@ -111,7 +113,7 @@ export function buildDiffCard(change: FileChangeInfo, msg?: any): HTMLElement {
             <span class="diff-file-name">${escHtml(fileName)}</span>
             ${dirPath ? `<span class="diff-file-dir">${escHtml(dirPath)}</span>` : ''}
             ${statsHtml}
-            ${change.isNew ? '<span class="diff-new-badge">NEW</span>' : ''}
+            ${change.isNew ? `<span class="diff-new-badge">${escHtml(t('diff.new'))}</span>` : ''}
         </div>
     `;
 
@@ -136,7 +138,7 @@ export function buildDiffCard(change: FileChangeInfo, msg?: any): HTMLElement {
 /** Badge marking a tool card as auto-approved by approval memory (PRD 9.3). */
 export function buildApprovalBadge(scope: string): HTMLElement {
     const badge = el('span', 'memory-badge');
-    badge.textContent = `memory · ${scope === 'global' ? 'all tabs' : 'session'}`;
+    badge.textContent = scope === 'global' ? t('approval.memoryGlobal') : t('approval.memorySession');
     return badge;
 }
 

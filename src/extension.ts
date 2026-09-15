@@ -4,6 +4,7 @@ import { SidebarProvider } from './providers/sidebar';
 import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from './providers/tab';
 import { StatusBarManager } from './providers/status-bar';
 import { SettingsPanel } from './providers/settings-panel';
+import { resolveDisplayLang } from './providers/lang';
 
 import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
@@ -165,6 +166,14 @@ export async function activate(context: vscode.ExtensionContext) {
                         }
                     },
                 );
+            }),
+
+            vscode.workspace.onDidChangeConfiguration((e) => {
+                if (e.affectsConfiguration('pi-agent.displayLanguage')) {
+                    const lang = resolveDisplayLang();
+                    sidebarProvider.post({ type: 'langChanged', lang });
+                    SettingsPanel.notifyLanguage(lang);
+                }
             }),
         );
 

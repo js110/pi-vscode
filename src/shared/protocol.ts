@@ -25,6 +25,8 @@ export interface ToolCallPendingInfo {
 
 export type ApprovalScope = 'session' | 'global';
 
+export type Lang = 'en' | 'zh';
+
 export interface ApprovalRuleInfo {
     tool: string;
     createdAt: number;
@@ -183,6 +185,7 @@ export type ServerMessage =
     | { type: 'approvalTrace'; toolCallId: string; toolName: string; scope: ApprovalScope }
     | { type: 'skills'; skills: SkillInfo[]; commands?: CommandInfo[] }
     | { type: 'configState'; config: PiConfigSnapshot }
+    | { type: 'langChanged'; lang: Lang }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages
@@ -191,4 +194,5 @@ export type SettingsServerMessage =
     | { type: 'settingChanged'; key: string; value: any }
     | { type: 'skills'; skills: SkillInfo[] }
     | { type: 'approvalRules'; rules: ApprovalRuleInfo[] }
+    | { type: 'langChanged'; lang: Lang }
     | { type: 'error'; message: string };
