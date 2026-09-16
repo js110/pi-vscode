@@ -572,7 +572,6 @@ function updateMessages(): void {
         const rollbackUserIdx = state.rollbackPoint;
         let dimming = false;
         let redoPlaced = false;
-        let lastUserGroup: HTMLElement | null = null;
 
         for (let i = 0; i < state.messages.length; i++) {
             const msg = state.messages[i];
@@ -592,10 +591,6 @@ function updateMessages(): void {
 
             container.insertBefore(msgEl, streamingEl);
 
-            if (role === 'user' && !dimming) {
-                lastUserGroup = msgEl;
-            }
-
             if (role === 'user' && dimming && !redoPlaced && rollbackUserIdx !== null) {
                 const redoWrap = el('div', 'redo-anchor');
                 const redoBtn = el('button', 'redo-btn');
@@ -605,10 +600,6 @@ function updateMessages(): void {
                 container.insertBefore(redoWrap, streamingEl);
                 redoPlaced = true;
             }
-        }
-
-        if (lastUserGroup) {
-            lastUserGroup.classList.add('message-group-user-latest');
         }
     }
 

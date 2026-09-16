@@ -437,13 +437,9 @@ body {
 .messages {
     flex: 1;
     overflow-y: auto;
-    /* No top padding: the pinned-question bar (.message-group-user-latest)
-       can only cover the scrollport, not container padding — content would
-       peek out above it. The top gap lives on the first child instead. */
-    padding: 0 0 12px 0;
+    padding: 14px 0 12px 0;
     scroll-behavior: smooth;
 }
-.messages > :first-child { margin-top: 14px; }
 .messages::-webkit-scrollbar { width: 6px; }
 .messages::-webkit-scrollbar-track { background: transparent; }
 .messages::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
@@ -456,15 +452,6 @@ body {
     margin-top: 0;
     margin-bottom: 12px;
     background: transparent;
-}
-.message-group-user-latest {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    /* Opaque: scrolled content passing under the pinned question must
-       not bleed through the group's transparent meta footer. */
-    background: var(--bg);
-    padding-bottom: 4px;
 }
 
 .message-group-assistant {
