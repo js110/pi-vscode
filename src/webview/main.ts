@@ -689,7 +689,9 @@ function updateInputArea(): void {
         ? `<button id="btn-steer" class="steer-btn" title="${escHtml(t('input.steer'))}"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
         : '';
 
-    const attachBtnHtml = state.supportsImages && !state.isStreaming
+    // Always visible (like the paperclip in Copilot/Claude Code): attaching on a
+    // non-vision model surfaces image.unsupported instead of hiding the affordance.
+    const attachBtnHtml = !state.isStreaming
         ? `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.2l-5.3 5.3a3.4 3.4 0 0 1-4.8-4.8l5.4-5.4a2.3 2.3 0 0 1 3.2 3.2L6.6 10.9a1.15 1.15 0 0 1-1.6-1.6l4.9-4.9"/></svg></button>`
         : '';
 
