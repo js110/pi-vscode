@@ -19,8 +19,8 @@
 - [x] T10 拖拽文件（C7）。→ AC-FN-21
 - [x] T11 Plan 模式 + TODO 卡（C8/C9）：只读白名单、计划卡、批准执行、失败暂停、Esc 中断、按步回滚。→ AC-FN-13/14/20/22、AC-FN-25
 - [x] T12 Inline Chat（C13，先 spike）：行内输入 + 行内 diff + 接受/放弃 + 冲突提示 + 会话归属（spike 结论见 tech-doc §2.1：稳定 API 自绘方案）。→ AC-FN-11/12、9.4
-- [ ] T13 终端集成（C10）：AI 读取终端输出 + 引用入口。→ AC-FN-23
-- [ ] T14 commit message 生成（C10）：SCM 按钮 + diff 生成只填入。→ AC-FN-16
+- [x] T13 终端集成（C10）：AI 读取终端输出 + 引用入口。→ AC-FN-23
+- [x] T14 commit message 生成（C10）：SCM 按钮 + diff 生成只填入。→ AC-FN-16
 - [ ] T15 后台任务面板（C11）+ 单写者语义呈现。→ AC-FN-24、AC-OP-03、9.8
 
 ## 批次三：产品化底座（M3 发布）
