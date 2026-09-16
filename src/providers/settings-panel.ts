@@ -1,11 +1,10 @@
 import * as vscode from 'vscode';
 import type { SettingsClientMessage, SettingsServerMessage, SettingsData, Lang } from '../shared/protocol';
+import { API_KEY_PREFIX } from '../shared/protocol';
 import type { GlobalRuleStore } from '../pi/approval-memory';
 import { discoverSkills } from '../pi/skills';
 import { resolveDisplayLang } from './lang';
 import { humanizeErrorMessage } from '../shared/error-copy';
-
-const API_KEY_PREFIX = 'pi-agent.apiKey.';
 
 export class SettingsPanel {
     private static _instance: SettingsPanel | undefined;

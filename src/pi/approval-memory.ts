@@ -30,6 +30,22 @@ export interface GlobalRuleStore {
     save(rules: ApprovalRuleInfo[]): void;
 }
 
+/**
+ * Validate persisted global rules (AC-OP-04): absent or corrupt state
+ * initializes empty, malformed entries are dropped — never a crash, never a
+ * silent reinterpretation of an old format.
+ */
+export function parseGlobalRules(raw: unknown): ApprovalRuleInfo[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+        (r): r is ApprovalRuleInfo =>
+            !!r && typeof r === 'object'
+            && typeof (r as ApprovalRuleInfo).tool === 'string'
+            && (r as ApprovalRuleInfo).tool.length > 0
+            && typeof (r as ApprovalRuleInfo).createdAt === 'number',
+    );
+}
+
 function normalizeTool(toolName: string): string {
     return String(toolName ?? '').trim().toLowerCase();
 }

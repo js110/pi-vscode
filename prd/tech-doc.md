@@ -161,6 +161,23 @@
 
 **E. 人工走查清单**（机械验证之外的四组合遍历，F5 手工执行）：面板空态/流式/工具卡/审批卡/模型选择/会话面板/计划卡/任务面板/占用横幅/apply 卡 × 深浅 × 中英；设置页全部区块；inline chat 三态提示。机械部分（文案扫描、CSS 变量、参数一致性、key 奇偶）已由测试固化。
 
+### 2.7 升级/回退与数据迁移验证（T18，2026-09-16）
+
+结论：本项目对上游（Zetaphor/pi-vscode-extension 首提交 e12decae）的全部数据变更均为**加性**——无设置键重命名/删除、无既有存储格式改写，升级保留全部旧数据，回退到旧版本无静默失效（AC-OP-04、13.5）。
+
+| 数据 | 位置 | 上游 | 本项目 | 回退影响 |
+|------|------|------|--------|----------|
+| 设置键 ×8 | contributes.configuration | 有 | 全保留，仅新增 displayLanguage | 旧版忽略新键 |
+| API 密钥 | SecretStorage `pi-agent.apiKey.<provider>` | 有 | 同名沿用（settings-panel API_KEY_PREFIX 不变） | 保留 |
+| SDK 凭据 | SDK ModelRuntime credentials（与 Pi CLI 共享） | 有 | 同一 SDK 机制透传 | 与 CLI 一致 |
+| 审批记忆 | globalState `pi-agent.approvalRules.global` | 无（新增） | 缺失/损坏初始化为空，畸形条目滤除不崩溃 | 旧版不读该键 |
+| 面板放置标记 | globalState `pi-agent.sidebarPlacementDone` | 无（新增） | — | 旧版不读 |
+| 会话 | 工作区 .pi/ pi 原生 jsonl | 有 | 只读不改写格式 | 天然兼容 |
+| 会话锁 | globalStorage/locks/<sha1>.lock | 无（新增） | 呈现层标记，绝不写 ~/.pi/agent | 旧版不读，残留文件无害 |
+| checkpoint 快照 | 内存（不落盘） | 有 | 同 | — |
+
+守卫测试（test/unit/migration.test.ts）：上游 8 个设置键必须仍存在于 package.json（防未来重命名）；`parseGlobalRules`（自 extension.ts 内联提取至 pi/approval-memory.ts 纯函数）对 undefined/null/非数组/畸形条目的行为——初始化为空、逐条校验（tool 非空字符串 + createdAt 数字）、绝不过滤出合法规则也绝不抛错。迁移无需用户提示（无格式转换）。
+
 
 
 | 方向 | 消息 | 用途 |

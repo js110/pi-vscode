@@ -7,6 +7,7 @@ import type {
     ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
 import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo } from '../shared/protocol';
+import { API_KEY_PREFIX } from '../shared/protocol';
 import { modelSupportsImages, type ImagePayload } from '../shared/image-input';
 import { EventRouter } from './events';
 import { loadPiSdk, getSdkSource, hasFunction, type PiSdk } from './compat';
@@ -292,7 +293,7 @@ export class PiSessionManager {
     private async _applyStoredApiKey(): Promise<void> {
         const provider = vscode.workspace.getConfiguration('pi-agent').get<string>('apiProvider', '');
         if (!provider || !this._secrets || !this._modelRuntime) { return; }
-        const key = await this._secrets.get(`pi-agent.apiKey.${provider}`);
+        const key = await this._secrets.get(`${API_KEY_PREFIX}${provider}`);
         if (key) {
             await this._modelRuntime.setRuntimeApiKey(provider, key);
         }

@@ -26,10 +26,10 @@ import {
     selectionLineRange,
     MAX_SELECTION_CHARS,
 } from './providers/send-to-pi';
-import type { GlobalRuleStore } from './pi/approval-memory';
+import { parseGlobalRules, type GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
-import type { ApprovalRuleInfo, DropResolveResult, MentionSymbolItem, ServerMessage } from './shared/protocol';
+import type { DropResolveResult, MentionSymbolItem, ServerMessage } from './shared/protocol';
 import { isImagePath, relativeToWorkspace, uriToPath } from './shared/drop-files';
 
 let bridgeContext: BridgeContext | undefined;
@@ -183,17 +183,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Global (all-tabs) approval memory rules, persisted in global state.
         const globalRuleStore: GlobalRuleStore = {
-            load: () => {
-                const raw = context.globalState.get<unknown>(APPROVAL_RULES_KEY);
-                if (!Array.isArray(raw)) return [];
-                return raw.filter(
-                    (r): r is ApprovalRuleInfo =>
-                        !!r && typeof r === 'object'
-                        && typeof (r as ApprovalRuleInfo).tool === 'string'
-                        && (r as ApprovalRuleInfo).tool.length > 0
-                        && typeof (r as ApprovalRuleInfo).createdAt === 'number',
-                );
-            },
+            load: () => parseGlobalRules(context.globalState.get<unknown>(APPROVAL_RULES_KEY)),
             save: (rules) => {
                 void context.globalState.update(APPROVAL_RULES_KEY, rules);
             },

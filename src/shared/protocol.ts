@@ -52,6 +52,9 @@ export interface ApprovalRuleInfo {
     createdAt: number;
 }
 
+/** SecretStorage key namespace for per-provider API keys (upgrade-stable, AC-OP-04). */
+export const API_KEY_PREFIX = 'pi-agent.apiKey.';
+
 export interface FileChangeInfo {
     filePath: string;
     toolCallId: string;
