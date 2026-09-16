@@ -30,6 +30,8 @@ import {
 } from '../shared/mention';
 import { t } from '../shared/i18n';
 import { isDangerousTool } from '../shared/tool-safety';
+import { applyTaskEvent, type TaskInfo } from '../shared/tasks';
+import { SessionLockManager, LOCK_HEARTBEAT_MS, type SessionLockDeps } from '../pi/session-lock';
 import {
     PlanMachine,
     parsePlanBlock,
@@ -151,16 +153,40 @@ export class TabManager {
         compactionPrompt: number | null;
         compactionInFlight: boolean;
         plan: PlanRuntime;
+        tasks: TaskInfo[];
+        lock: SessionLockManager | null;
     }>();
     private _activeTabId = '';
     private _tabSubscriptions = new Map<string, (() => void)[]>();
     private _stateListeners: (() => void)[] = [];
+    private _heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
     constructor(
         private _factory: TabFactory,
         private _hooks: TabManagerHooks,
         private _globalRules: GlobalRuleStore = inMemoryGlobalRuleStore(),
-    ) {}
+        private _lockDeps?: SessionLockDeps,
+    ) {
+        if (this._lockDeps) {
+            this._heartbeatTimer = setInterval(() => {
+                void this._heartbeatAll();
+            }, LOCK_HEARTBEAT_MS);
+        }
+    }
+
+    private async _heartbeatAll(): Promise<void> {
+        let changed = false;
+        for (const tab of this._tabs.values()) {
+            const lock = tab.lock;
+            if (!lock || !lock.sessionFile) { continue; }
+            const before = lock.occupancy;
+            try {
+                await lock.heartbeat();
+            } catch { /* fs hiccup — retry next tick */ }
+            if (lock.occupancy !== before) { changed = true; }
+        }
+        if (changed) { this._emitStateChange(); }
+    }
 
     async initialize(): Promise<void> {
         const tab = await this._createTabState();
@@ -263,6 +289,12 @@ export class TabManager {
         state.compactionPrompt = tab.compactionPrompt;
         state.supportsImages = tab.session.supportsImages();
         state.plan = tab.plan.machine.snapshot();
+        if (tab.tasks.length > 0) {
+            state.tasks = tab.tasks;
+        }
+        if (tab.lock && tab.lock.occupancy !== 'none') {
+            state.occupancy = tab.lock.occupancy;
+        }
 
         let assistantOrdinal = 0;
         for (let i = 0; i < state.messages.length; i++) {
@@ -329,6 +361,8 @@ export class TabManager {
                 abortSeen: false,
                 capturedSteps: null,
             },
+            tasks: [],
+            lock: this._lockDeps ? new SessionLockManager(this._lockDeps) : null,
         };
     }
 
@@ -509,6 +543,32 @@ export class TabManager {
             tab.queuedMessages = [...(event.followUp ?? [])];
         }
 
+        if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
+            const next = applyTaskEvent(tab.tasks, { ...event, now: Date.now() });
+            if (next !== tab.tasks) {
+                tab.tasks = next;
+                if (isActive) { this._emitStateChange(); }
+            }
+            if (!isActive && event.type === 'tool_execution_end' && event.isError) {
+                tab.hasNotification = true;
+            }
+        }
+
+        // A brand-new session's file only exists after its first persisted
+        // entry — acquire the single-writer lock at that point.
+        if (event.type === 'entry_appended' && tab.lock && !tab.lock.sessionFile) {
+            const sessionFile = tab.session.getCurrentSessionPath();
+            if (sessionFile) {
+                const lock = tab.lock;
+                void lock.adopt(sessionFile)
+                    .then(() => {
+                        if (this._tabs.get(tab.id) !== tab) { return; }
+                        if (lock.occupancy !== 'none') { this._emitStateChange(); }
+                    })
+                    .catch(() => { /* fs hiccup — the heartbeat tick retries */ });
+            }
+        }
+
         if (event.type === 'message_update' && event.assistantMessageEvent) {
             const ae = event.assistantMessageEvent;
             switch (ae.type) {
@@ -569,6 +629,10 @@ export class TabManager {
                 if (tab.isStreaming) {
                     console.log('[Pi] prompt rejected: tab is streaming');
                     throw new Error('Agent is still processing. Please wait or queue your message.');
+                }
+                if (tab.lock && tab.lock.occupancy !== 'none') {
+                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    break;
                 }
                 let images: ImagePayload[] | undefined;
                 if (msg.images && msg.images.length > 0) {
@@ -699,6 +763,10 @@ export class TabManager {
                 break;
             case 'newSession':
                 await tab.session.newSession();
+                if (tab.lock) {
+                    await tab.lock.release();
+                }
+                tab.tasks = [];
                 tab.diffManager.clearAll();
                 tab.checkpointManager.clearAll();
                 tab.turnCounter = 0;
@@ -714,6 +782,10 @@ export class TabManager {
                 break;
             case 'loadSession':
                 await tab.session.loadSession(msg.sessionPath);
+                if (tab.lock) {
+                    await tab.lock.adopt(msg.sessionPath);
+                }
+                tab.tasks = [];
                 tab.diffManager.clearAll();
                 tab.checkpointManager.clearAll();
                 tab.suspendedMessages = [];
@@ -733,6 +805,10 @@ export class TabManager {
                 if (targetPath && currentPath !== targetPath) {
                     // 方案B：加载目标会话后改名，并停留在该会话
                     await tab.session.loadSession(targetPath);
+                    if (tab.lock) {
+                        await tab.lock.adopt(targetPath);
+                    }
+                    tab.tasks = [];
                     tab.diffManager.clearAll();
                     tab.checkpointManager.clearAll();
                     tab.suspendedMessages = [];
@@ -1000,6 +1076,19 @@ export class TabManager {
             case 'openSettings':
                 this._hooks.openSettings();
                 break;
+            case 'taskCancel': {
+                const task = tab.tasks.find((task) => task.id === msg.taskId);
+                if (task?.status === 'running' && typeof tab.session.abortBash === 'function') {
+                    tab.session.abortBash();
+                }
+                break;
+            }
+            case 'sessionTakeover':
+                if (tab.lock) {
+                    await tab.lock.takeover();
+                    this._emitStateChange();
+                }
+                break;
         }
     }
 
@@ -1222,6 +1311,7 @@ export class TabManager {
         this._unsubscribeTab(tabId);
         tab.diffManager.dispose();
         tab.checkpointManager.dispose();
+        void tab.lock?.release();
         await tab.session.dispose();
         this._tabs.delete(tabId);
 
@@ -1300,6 +1390,10 @@ export class TabManager {
     }
 
     dispose(): void {
+        if (this._heartbeatTimer !== undefined) {
+            clearInterval(this._heartbeatTimer);
+            this._heartbeatTimer = undefined;
+        }
         for (const [, unsubs] of this._tabSubscriptions) {
             for (const unsub of unsubs) unsub();
         }
@@ -1307,6 +1401,7 @@ export class TabManager {
         for (const tab of this._tabs.values()) {
             tab.diffManager.dispose();
             tab.checkpointManager.dispose();
+            void tab.lock?.release();
         }
         this._tabs.clear();
         this._stateListeners = [];

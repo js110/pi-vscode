@@ -170,6 +170,13 @@ export class PiSessionManager {
         await this._session.abort();
     }
 
+    /** Cancel the running shell command without aborting the whole turn (SDK 0.84+). */
+    abortBash(): void {
+        if (typeof (this._session as any)?.abortBash === 'function') {
+            (this._session as any).abortBash();
+        }
+    }
+
     async setModel(provider: string, modelId: string): Promise<void> {
         if (!this._session || !this._modelRegistry) {
             throw new Error('Session not initialized');

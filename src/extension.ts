@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { PiSessionManager } from './pi/session';
 import { SidebarProvider } from './providers/sidebar';
 import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from './providers/tab';
@@ -13,6 +14,7 @@ import { TerminalCapture } from './providers/terminal-capture';
 import type { TerminalQuoteResult } from './shared/terminal-quote';
 import { InlineChatManager } from './providers/inline-chat';
 import { CommitMessageManager, type CommitGitApi } from './providers/commit-message';
+import { createNodeLockDeps } from './pi/session-lock';
 import { getModelRuntime } from './pi/auth';
 import { getModelRegistry, findConfiguredModel } from './pi/models';
 import { setLang, t } from './shared/i18n';
@@ -262,7 +264,10 @@ export async function activate(context: vscode.ExtensionContext) {
             },
         };
 
-        const tabManager = new TabManager(factory, hooks, globalRuleStore);
+        const lockDeps = createNodeLockDeps(
+            path.join(context.globalStorageUri.fsPath, 'locks'),
+        );
+        const tabManager = new TabManager(factory, hooks, globalRuleStore, lockDeps);
         tabManagerRef = tabManager;
         await tabManager.initialize();
 
@@ -314,6 +319,7 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('pi-agent.chat', sidebarProvider),
             vscode.workspace.registerTextDocumentContentProvider('pi-diff', diffContentProvider),
+            tabManager,
             statusBar,
             inlineChat,
             terminalCapture,

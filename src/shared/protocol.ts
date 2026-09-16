@@ -1,6 +1,11 @@
 import type { TerminalQuoteResult } from './terminal-quote';
+import type { TaskInfo } from './tasks';
 
 export type { TerminalQuoteResult, TerminalOutputEntry, TerminalQuoteFailureReason } from './terminal-quote';
+export type { TaskInfo } from './tasks';
+
+/** Single-writer session occupancy marker (PRD 9.8, presentation layer only). */
+export type SessionOccupancy = 'none' | 'occupiedByOther' | 'releasedByOther' | 'lostLock';
 
 export interface ContextUsageInfo {
     tokens: number | null;
@@ -119,6 +124,8 @@ export interface SerializedAgentState {
     compactionPrompt?: number | null;
     supportsImages?: boolean;
     plan?: PlanSnapshot;
+    tasks?: TaskInfo[];
+    occupancy?: SessionOccupancy;
 }
 
 export interface ModelInfo {
@@ -221,7 +228,9 @@ export type ClientMessage =
     | { type: 'planAdjust'; titles: string[] }
     | { type: 'planResume' }
     | { type: 'planAbandon' }
-    | { type: 'planClose' };
+    | { type: 'planClose' }
+    | { type: 'taskCancel'; taskId: string }
+    | { type: 'sessionTakeover' };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =

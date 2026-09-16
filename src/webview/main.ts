@@ -1,5 +1,6 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, PlanSnapshot, PlanStepStatus } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, PlanSnapshot, PlanStepStatus, TaskInfo, SessionOccupancy } from '../shared/protocol';
 import { PLAN_DANGEROUS_REASON } from '../shared/protocol';
+import { buildTasksListHtml, buildOccupancyBannerHtml } from './render/tasks';
 import { isDangerousTool } from '../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
@@ -57,6 +58,9 @@ const state: {
     supportsImages: boolean;
     mentions: string[];
     plan: PlanSnapshot | null;
+    tasks: TaskInfo[];
+    occupancy: SessionOccupancy | null;
+    tasksPanelOpen: boolean;
 } = {
     messages: [],
     isStreaming: false,
@@ -84,6 +88,9 @@ const state: {
     supportsImages: false,
     mentions: [],
     plan: null,
+    tasks: [],
+    occupancy: null,
+    tasksPanelOpen: false,
 };
 
 let sessionSearchQuery = '';
@@ -274,6 +281,8 @@ function applyStateSync(s: SerializedAgentState): void {
     state.compactionPrompt = s.compactionPrompt ?? null;
     state.supportsImages = s.supportsImages ?? false;
     state.plan = s.plan ?? null;
+    state.tasks = s.tasks ?? [];
+    state.occupancy = s.occupancy ?? null;
     if (!state.supportsImages && state.pendingImages.length > 0) {
         // The model can switch under attached images; drop them rather than
         // delivering to a text-only model.
@@ -309,6 +318,8 @@ function applyStateSync(s: SerializedAgentState): void {
         updateCompactionBanner();
         updatePlanCard();
         updateImageChips();
+        updateTasksPanel();
+        updateOccupancyBanner();
         if (state.isStreaming) {
             ensurePreparingPlaceholder();
         }
@@ -435,6 +446,13 @@ function render(): void {
                 <path d="M8 3v10M3 8h10"/>
             </svg>
         </button>
+        <button class="icon-btn" id="btn-tasks" title="${escHtml(t('tasks.panel'))}">
+            <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2.5 3.5h7M2.5 8h11M2.5 12.5h11"/>
+                <path d="M12.2 1.8l1.2 1.2-2.4 2.6-1.4.2.2-1.4z"/>
+            </svg>
+            <span class="tasks-badge" id="tasks-badge" style="display:none">0</span>
+        </button>
         <button class="icon-btn" id="btn-sessions" title="${escHtml(t('header.sessions'))}">
             <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
                 <path d="M2 4h12M2 8h12M2 12h12"/>
@@ -469,8 +487,12 @@ function render(): void {
     scrollWrap.appendChild(scrollBtn);
     app.appendChild(scrollWrap);
 
-    // Input container: changed-files slot + compaction banner + queued section + slash menu + input-area (persistent textarea) + footer
+    // Input container: changed-files slot + occupancy banner + compaction banner + queued section + slash menu + input-area (persistent textarea) + footer
     const inputContainer = el('div', 'input-container');
+    const occupancyBanner = el('div', 'compaction-banner occupancy-banner');
+    occupancyBanner.id = 'occupancy-banner';
+    occupancyBanner.style.display = 'none';
+    inputContainer.appendChild(occupancyBanner);
     const compactionBanner = el('div', 'compaction-banner');
     compactionBanner.id = 'compaction-banner';
     compactionBanner.style.display = 'none';
@@ -529,6 +551,8 @@ function render(): void {
     updateCompactionBanner();
     updatePlanCard();
     updateImageChips();
+    updateTasksPanel();
+    updateOccupancyBanner();
     scrollToBottom();
 }
 
@@ -613,6 +637,8 @@ function updateTabs(): void {
         const icon = el('span', 'tab-icon');
         if (tab.isStreaming) {
             icon.innerHTML = '<span class="tab-spinner"></span>';
+        } else if (tab.id === state.activeTabId && state.tasks.some((task) => task.status === 'running')) {
+            icon.innerHTML = '<span class="tab-spinner tab-spinner-task"></span>';
         } else if (tab.hasNotification) {
             icon.innerHTML = `<svg class="tab-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5.5a4 4 0 0 1 8 0c0 2.5 1 4 2 5H2c1-1 2-2.5 2-5zM6.5 13a1.5 1.5 0 0 0 3 0"/></svg>`;
         } else {
@@ -646,10 +672,14 @@ function updateTabs(): void {
 function updateInputArea(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (input) {
-        const inputHint = state.isStreaming ? t('input.queue') : t('input.ask');
+        const readOnly = isSessionReadOnly();
+        const inputHint = readOnly
+            ? t('occupancy.readOnlyBlocked')
+            : state.isStreaming ? t('input.queue') : t('input.ask');
         input.placeholder = inputHint;
         input.title = inputHint;
         input.setAttribute('aria-label', inputHint);
+        input.disabled = readOnly;
     }
 
     const footer = document.querySelector('.input-footer');
@@ -844,6 +874,86 @@ function updateCompactionBanner(): void {
         state.compactionPrompt = null;
         updateCompactionBanner();
         vscode.postMessage({ type: 'compactionDismiss' });
+    });
+}
+
+// ── Background tasks panel (C11) ──
+
+function updateTasksBadge(): void {
+    const badge = document.getElementById('tasks-badge');
+    if (!badge) { return; }
+    const running = state.tasks.filter((task) => task.status === 'running').length;
+    badge.textContent = String(running);
+    badge.style.display = running > 0 ? '' : 'none';
+    document.getElementById('btn-tasks')?.classList.toggle('has-tasks', running > 0);
+}
+
+function updateTasksPanel(): void {
+    updateTasksBadge();
+    let panel = document.getElementById('tasks-panel');
+    if (!panel) {
+        if (!state.tasksPanelOpen) { return; }
+        panel = el('div', 'tasks-panel');
+        panel.id = 'tasks-panel';
+        const app = document.getElementById('app');
+        const modelBar = document.getElementById('model-bar');
+        if (app && modelBar?.nextSibling) {
+            app.insertBefore(panel, modelBar.nextSibling);
+        } else {
+            app?.appendChild(panel);
+        }
+    }
+    if (!state.tasksPanelOpen) {
+        panel.remove();
+        return;
+    }
+
+    panel.innerHTML = `
+        <div class="session-header">
+            <span>${escHtml(t('tasks.panel'))}</span>
+            <button class="icon-btn" id="btn-close-tasks">&times;</button>
+        </div>
+        ${buildTasksListHtml(state.tasks, Date.now())}
+    `;
+
+    document.getElementById('btn-close-tasks')?.addEventListener('click', () => {
+        state.tasksPanelOpen = false;
+        updateTasksPanel();
+    });
+    panel.querySelectorAll('.task-cancel').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = (btn as HTMLElement).closest('.task-item') as HTMLElement | null;
+            const taskId = item?.dataset.taskId;
+            if (taskId) {
+                vscode.postMessage({ type: 'taskCancel', taskId });
+            }
+        });
+    });
+}
+
+// ── Single-writer occupancy banner (PRD 9.8) ──
+
+function isSessionReadOnly(): boolean {
+    return state.occupancy === 'occupiedByOther'
+        || state.occupancy === 'releasedByOther'
+        || state.occupancy === 'lostLock';
+}
+
+function updateOccupancyBanner(): void {
+    updateInputArea();
+
+    const banner = document.getElementById('occupancy-banner');
+    if (!banner) { return; }
+    if (!state.occupancy || state.occupancy === 'none') {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
+    }
+    banner.style.display = '';
+    banner.innerHTML = buildOccupancyBannerHtml(state.occupancy);
+    document.getElementById('occupancy-takeover')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'sessionTakeover' });
     });
 }
 
@@ -2306,6 +2416,10 @@ function bindStableEvents(): void {
     newTabBtn?.addEventListener('click', () => vscode.postMessage({ type: 'createTab' }));
     sessionsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'getSessions' }));
     settingsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
+    document.getElementById('btn-tasks')?.addEventListener('click', () => {
+        state.tasksPanelOpen = !state.tasksPanelOpen;
+        updateTasksPanel();
+    });
 
     const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
     fileInput?.addEventListener('change', () => {

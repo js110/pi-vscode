@@ -79,6 +79,32 @@
 7. **多仓库局限**：`scm/inputBox` 按钮出现在每个仓库输入框；命令优先使用 VS Code 传入的 repository 参数（duck-type 校验），否则写与工作区路径（大小写不敏感，Windows）匹配的仓库，再退回第一个仓库。
 8. **数据流与隐私**：diff 全文（截断后）作为 prompt 上下文发送给所配模型 provider——新增行可能含密钥/敏感内容，与 Copilot 等同类功能语义一致；不留存、不落日志。
 
+### 2.4 C11 后台任务面板 + 单写者呈现（T15，2026-09-16）
+
+**SDK 现状核实（pi monorepo 源码 + SDK 0.84.x dist）**：
+
+- **无原生子代理**：内置工具仅 bash/powershell/edit/read/write/find/grep/ls，pi-agent-core `AgentEvent` 仅有 agent/turn/message/tool_execution 族事件，全库 grep 无 subagent/task 工具。PRD Q3 风险预案启用——**降级为状态列表**。
+- **可取消能力**：`AgentSession.abortBash(): void`（agent-session.d.ts:597）独立于整轮 abort，支持运行中 bash/powershell 任务单独取消。
+- **无会话锁机制**：SessionManager 无 lock/occupied API；`getSessionFile()` 新会话首次持久化前为 undefined（`isPersisted()` 区分）。
+
+**A. 后台任务面板（经 SDK 事件呈现，不本地建模）**：
+
+1. **任务投影**（`shared/tasks.ts` 纯模块）：以 `tool_execution_start/end` 事件为唯一事实源投影任务条目 {id: toolCallId, toolName, label（参数摘要，命令截 80 字符）, status: running|done|failed, startedAt, endedAt?}。只有长时执行类工具入列表（`TASK_TOOLS = ['bash','powershell']`，未来子代理工具名加入即自动呈现——feature-detect 常量表）；瞬时工具（read/grep 等）不进，信息密度按 SDK 现状裁剪。isError → failed。投影返回原引用表示无变化（调用方以 !== 跳过 stateSync 推送）；完成态历史裁剪至最近 `TASK_HISTORY_MAX`(20) 条，running 恒保留。
+2. **协议**：stateSync 增 `tasks?: TaskInfo[]`（数量小，全量快照同 plan 模式）；client→host 增 `taskCancel {taskId}` → 活跃 Tab `session.abortBash()`。TabInfo 不变。
+3. **UI**：Header 右侧任务图标按钮（运行中数量徽标）→ 浮层面板（列表：状态图标+label+耗时+取消按钮；空态说明"子代理能力由 Pi SDK 提供后自动呈现"）。**Tab 标题状态图标**：活跃 Tab 有运行中任务时 tab-strip 图标切换为运行态（与流式 spinner 区分）。
+4. **后台失败通知口径**：failed 任务 → Tab hasNotification 图标（既有机制）+ 面板内红态；不弹 OS 通知（bash 失败高频，Copilot/Claude Code 同为应用内通知语义）。
+5. 非 bash 工具运行中不可取消（无 per-tool abort API），取消按钮置灰。
+
+**B. 单写者语义呈现（呈现层标记，不新增状态机状态）**：
+
+1. **锁文件**（`src/pi/session-lock.ts`，注入 fs + pid 探测器可测）：`<globalStorageUri>/locks/<sha1(sessionFile)>.lock`，内容 {pid, token, acquiredAt, heartbeatAt}——**不写 ~/.pi/agent**（红线）。心跳 15s。**所有权 = pid && token**：token 由每个 Tab 的 lock manager 生成（randomUUID），区分同窗口多 Tab（同 pid 不同 token，接管/被接管语义与跨窗口一致）。acquire 判定：无锁→占有（排他写 wx flag，EEXIST 即争用失败——关闭双窗口同时通过 stale 判定的 TOCTOU 窗口）；锁且 (pid 死 ∨ heartbeat 超 45s)→先删再排他写；否则 occupied。全部锁操作经 per-manager promise 队列串行化，避免 adopt/heartbeat 交错。
+2. **获取时机**：loadSession 立即 acquire；新会话在 `entry_appended` 事件回调发现 getSessionFile() 首次非 undefined 时 acquire。释放：切走会话/Tab 关闭/扩展停用（best-effort，仅删除自己 pid+token 持有的锁）。
+3. **接管与被接管**：client→host `sessionTakeover` → 覆盖写锁（owner=自己新 token）→ 恢复可写；被接管方心跳发现锁 token 不是自己 → 转只读（occupancy: 'lostLock'），**绝不自动抢回**。
+4. **呈现**：stateSync 增 `occupancy?: 'none'|'occupiedByOther'|'releasedByOther'|'lostLock'`。occupiedByOther → 输入区 disabled + 占用提示条（复用 compaction-banner 样式，含"接管"按钮）；releasedByOther → 占用者释放/死亡后心跳发现，提示"占用已解除" + "恢复可写"（同接管语义，AC-OP-03 出口）；lostLock → "已被其他窗口接管" + "接管"按钮；接管/恢复后回 none。
+5. pid 存活：`process.kill(pid, 0)` ESRCH 判死（同机窗口前提，跨机不适用——本地扩展场景成立）。
+
+**协议扩展汇总**：stateSync 增 `tasks`/`occupancy` 字段；client→host 增 `taskCancel`/`sessionTakeover`；无 host→client 新消息（均走既有 stateSync 全量）。i18n 增 tasks.* 与 occupancy.*。
+
 ## 3. 协议扩展（`src/shared/protocol.ts`，向后兼容新增）
 
 | 方向 | 消息 | 用途 |
