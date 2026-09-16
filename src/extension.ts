@@ -11,6 +11,7 @@ import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
 import { ApplyManager } from './providers/apply';
 import { InlineChatManager } from './providers/inline-chat';
+import { SelectionContextTracker } from './providers/selection-context';
 import { CommitMessageManager, type CommitGitApi } from './providers/commit-message';
 import { createNodeLockDeps } from './pi/session-lock';
 import { getModelRuntime } from './pi/auth';
@@ -268,7 +269,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 void vscode.commands.executeCommand('setContext', key, value),
         });
 
-        const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager);
+        const selectionTracker = new SelectionContextTracker(
+            (msg) => providerRef?.post(msg),
+            (message) => void vscode.window.showInformationMessage(message),
+        );
+
+        const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager, selectionTracker);
         providerRef = sidebarProvider;
 
         const commitMessage = new CommitMessageManager({
@@ -305,6 +311,7 @@ export async function activate(context: vscode.ExtensionContext) {
             tabManager,
             statusBar,
             inlineChat,
+            selectionTracker,
 
             vscode.commands.registerCommand('pi-agent.inlineChat', () => {
                 void inlineChat.start();

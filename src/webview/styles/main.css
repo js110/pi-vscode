@@ -1559,6 +1559,52 @@ body {
     background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
+.selection-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 4px 12px 0;
+    padding: 3px 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+    font-size: var(--fs-sm);
+    color: var(--muted);
+}
+
+.selection-chip-icon {
+    flex: none;
+}
+
+.selection-chip-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.selection-chip-close {
+    flex: none;
+    padding: 0;
+    width: 14px;
+    height: 14px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+    font-size: 9px;
+    line-height: 14px;
+    text-align: center;
+    cursor: pointer;
+}
+
+.selection-chip-close:hover {
+    background: color-mix(in srgb, var(--fg) 12%, transparent);
+    color: var(--fg);
+}
+
 .image-chips {
     display: flex;
     flex-wrap: wrap;

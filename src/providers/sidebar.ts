@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
-import type { ClientMessage, ServerMessage } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SelectionContextInfo } from '../shared/protocol';
 import { TabManager } from './tab';
+import { SelectionContextTracker } from './selection-context';
 import { resolveDisplayLang } from './lang';
 import { t } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
@@ -13,6 +14,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     constructor(
         extensionUri: vscode.Uri,
         tabManager: TabManager,
+        private _selectionTracker?: SelectionContextTracker,
     ) {
         this._extensionUri = extensionUri;
         this._tabManager = tabManager;
@@ -46,6 +48,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         this.post({ type: 'ready' });
         this.post({ type: 'langChanged', lang: resolveDisplayLang() });
+        // The view may have been hidden while a selection chip was showing.
+        this.post({
+            type: 'selectionChanged',
+            selection: this._selectionTracker?.current ?? null,
+        });
         // SDK loading runs off the activation path; the panel shows the empty
         // state immediately and gets the real state once the first tab exists.
         this.post({ type: 'stateSync', state: this._tabManager.getState() });
@@ -67,7 +74,35 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     private async _handleMessage(msg: ClientMessage): Promise<void> {
         try {
-            await this._tabManager.dispatch(msg);
+            if (msg.type === 'dismissSelection') {
+                this._selectionTracker?.dismiss();
+                return;
+            }
+            // Copilot-style auto-attach: a plain text prompt rides the active
+            // selection (one-shot). Explicit @-mentions opt out — they already
+            // carry their own file context.
+            const mentions = msg.type === 'prompt' ? msg.mentions : undefined;
+            let wrapped: string | null = null;
+            let priorSelection: SelectionContextInfo | null = null;
+            if (
+                (msg.type === 'prompt' || msg.type === 'queueMessage')
+                && !mentions
+                && this._selectionTracker
+            ) {
+                priorSelection = this._selectionTracker.current;
+                wrapped = this._selectionTracker.consumePrompt(msg.text);
+                if (wrapped !== null) {
+                    msg = { ...msg, text: wrapped } as typeof msg;
+                }
+            }
+            try {
+                await this._tabManager.dispatch(msg);
+            } catch (err: unknown) {
+                // The turn never started — give the chip back so the user can
+                // retry without re-selecting.
+                if (wrapped !== null) this._selectionTracker?.reinstate(priorSelection);
+                throw err;
+            }
         } catch (err: unknown) {
             // Raw detail goes to the host console for diagnosis; the panel
             // only ever sees humanized copy (T17).

@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, TaskInfo, SessionOccupancy } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, TaskInfo, SessionOccupancy, SelectionContextInfo } from '../shared/protocol';
 import { buildTasksListHtml, buildOccupancyBannerHtml } from './render/tasks';
 import { isDangerousTool } from '../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
@@ -54,6 +54,7 @@ const state: {
     pendingImages: string[];
     supportsImages: boolean;
     mentions: string[];
+    selection: SelectionContextInfo | null;
     tasks: TaskInfo[];
     occupancy: SessionOccupancy | null;
     tasksPanelOpen: boolean;
@@ -85,6 +86,7 @@ const state: {
     pendingImages: [],
     supportsImages: false,
     mentions: [],
+    selection: null,
     tasks: [],
     occupancy: null,
     tasksPanelOpen: false,
@@ -108,6 +110,10 @@ function handleMessage(msg: ServerMessage): void {
         case 'stateSync':
             if (msg.images) Object.assign(state.imageCache, msg.images);
             applyStateSync(msg.state);
+            break;
+        case 'selectionChanged':
+            state.selection = msg.selection;
+            updateSelectionChip();
             break;
         case 'agentEvent':
             handleAgentEvent(msg.event);
@@ -499,6 +505,10 @@ function render(): void {
     mentionMenu.id = 'mention-menu';
     mentionMenu.style.display = 'none';
     inputContainer.appendChild(mentionMenu);
+    const selectionChip = el('div', 'selection-chip');
+    selectionChip.id = 'selection-chip';
+    selectionChip.style.display = 'none';
+    inputContainer.appendChild(selectionChip);
     const imageChips = el('div', 'image-chips');
     imageChips.id = 'image-chips';
     imageChips.style.display = 'none';
@@ -534,6 +544,7 @@ function render(): void {
     updateInputArea();
     updateChangedFiles();
     updateCompactionBanner();
+    updateSelectionChip();
     updateImageChips();
     updateTasksPanel();
     updateOccupancyBanner();
@@ -2522,6 +2533,28 @@ function addImageFiles(files: File[]): void {
         };
         reader.readAsDataURL(file);
     }
+}
+
+/** Copilot-style chip showing which editor selection rides the next prompt. */
+function updateSelectionChip(): void {
+    const chip = document.getElementById('selection-chip');
+    if (!chip) return;
+    const sel = state.selection;
+    if (!sel) {
+        chip.style.display = 'none';
+        chip.innerHTML = '';
+        return;
+    }
+    const range = sel.startLine === sel.endLine ? `${sel.startLine}` : `${sel.startLine}-${sel.endLine}`;
+    chip.style.display = '';
+    chip.innerHTML = `
+        <svg class="selection-chip-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2v12M12 2v12M4 4h8M4 12h8"/></svg>
+        <span class="selection-chip-label">${escHtml(sel.path)}:${escHtml(range)}</span>
+        <button class="selection-chip-close" title="${escHtml(t('selection.detach'))}">&#10005;</button>
+    `;
+    chip.querySelector('.selection-chip-close')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'dismissSelection' });
+    });
 }
 
 function updateImageChips(): void {

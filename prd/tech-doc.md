@@ -198,7 +198,7 @@ AC-FN-28 验收：已配置 Pi 的环境中，从一个可复现 bug 出发完�
 1. **描述问题**：侧栏新开 Tab →（可选 `@`-mention 相关文件/符号）→ 输入 bug 描述发送；验证流式回复、思考块与工具卡逐帧渲染。
 2. **AI 改文件**：Pi 调用编辑类工具产生 diff 预览卡 → Preview 逐文件查看 → Confirm 写入；验证 apply 卡状态流转与 per-file undo。
 3. **审 diff**：VS Code 原生 diff 视图复查改动；或用 Inline Chat（命令面板 `pi-agent.inlineChat`）改一行 → 状态栏 Accept/Discard 两向验证。
-4. **跑测试**：在扩展宿主工作区的集成终端跑 `npm run check`（或让 Pi 的 bash 工具跑）→ 失败时用输入区"引用终端"把失败输出贴回聊天继续修复。
+4. **跑测试**：在扩展宿主工作区的集成终端跑 `npm run check`（或让 Pi 的 bash 工具跑）→ 失败时复制终端输出粘贴回聊天继续修复（原"引用终端"按钮已于 2026-09-16 按用户要求删除，见 §2.10）。
 5. **生成 commit**：SCM input box 右侧菜单触发 commit message 生成 → 验证生成文案写入输入框。
 
 演练结果（bug 场景、各环节结果、发现的问题）回填本节。
@@ -209,6 +209,24 @@ AC-FN-28 验收：已配置 Pi 的环境中，从一个可复现 bug 出发完�
 |------|------|------|
 | client→host | `config.refresh` / `approval.remember` / `approval.revoke` / `apply.preview` / `apply.confirm` / `plan.approve` / `plan.adjust` / `plan.abort` / `mention.query` / `terminalQuote` / `commit.generate` / `queue.confirm` / `queue.clear` | 对应 C1–C11 操作（消息名按代码惯例 camelCase，`terminalQuote` 即原计划 `terminal.quote`） |
 | host→client | `config.state` / `approval.trace` / `apply.previewResult` / `apply.done` / `plan.state` / `todo.update` / `compaction.prompt` / `compaction.result` / `mention.results` / `terminalQuoted` / `queue.state` / `lang.changed` | 状态与结果推送 |
+
+> 勘误（2026-09-16）：按用户要求，`plan.approve`/`plan.adjust`/`plan.abort`/`plan.state`/`todo.update`（计划模式）与 `terminalQuote`/`terminalQuoted`（引用终端）已全部删除，对应实现见 §2.10；上表保留为设计史记录。
+
+### 2.10 会话存活修复 + Copilot 式选中上下文（2026-09-16）
+
+**a) 侧栏隐藏丢失会话（用户报告"点开插件后聊天记录消失"）**：VS Code 在视图隐藏时销毁侧栏 webview，`resolveWebviewView` 里的 `onDidDispose` 钩子随即 dispose 整个 TabManager（tab.ts M4 注释表明上游有意为之：隐藏即弃）。修复：删除该钩子，TabManager 生命周期跟随扩展（已在 context.subscriptions）；webview 重建时 `resolveWebviewView` 经 `getSnapshot(true)` 重发全量状态原地恢复。会话文件本有 SDK 磁盘持久化，历史可经会话列表重载。新增 sidebar.test.ts 回归测试。
+
+**b) 选中上下文 chip（用户需求：与 Copilot 一致感知编辑器选区）**：
+
+- **协议**：host→client `selectionChanged`（`SelectionContextInfo {path,startLine,endLine}` 或 null）；client→host `dismissSelection`。选区代码永不出主机——webview 只拿显示信息。
+- **主机**：新模块 `providers/selection-context.ts` `SelectionContextTracker`——订阅 activeEditor 变化/选区变化/活动文档编辑，150ms 防抖重算；非空选区 → 工作区相对 posix 路径 + 1-based 行段（复用 send-to-pi `selectionLineRange` 的整行拖拽折算）；信息变化才推送（防抖后仍可能重复事件）。发送时 `consumePrompt(text)` 一次性重读活动编辑器当前选区（显示信息可能过期，代码以发送瞬间为准），经 `buildSelectionPrompt` 包裹为 `用户文本前置选区上下文`；选区已空→原样发送；超 40K→提示 `sendToPi.tooLarge` 并丢弃选区不阻塞消息；消费/关闭后芯片清除。**@-mention 消息不包裹**（mention 自带文件上下文，避免重复注入）；queueMessage 同样包裹（FollowUp 轮同样需要上下文）。
+- **webview**：输入区上方 `.selection-chip`（`路径:行段` + × 关闭）；`dismissSelection` 发回主机；发送后由主机的 `selectionChanged(null)` 驱动清除（单一状态源在主机）。视图重建时 resolveWebviewView 重发当前芯片状态。
+- **装配**：extension.ts 创建 tracker（post 走 providerRef、notify 走 showInformationMessage），随 subscriptions 释放。
+- 边界：纯选区光标移动不推送（null→null / 同值不重复）；文档编辑触发重算（行段可能漂移）；芯片状态不进 stateSync（独立消息，主机为单一事实源）；render() 全量重建骨架时随 populate 调 updateSelectionChip() 恢复芯片。
+- **面板焦点（审查 HIGH，VS Code #180720）**：聚焦侧栏 webview 时 `window.activeTextEditor` 变 undefined——若按"无编辑器=清除"处理，用户点进输入框的瞬间芯片消失且发送永远包不上选区。故 activeTextEditor 为空时**保持现状**（只有真实编辑器/空选区能改变芯片），且芯片出现时即快照完整选区（含 code），发送用快照而非实时读编辑器。
+- **失败回滚（审查 MEDIUM）**：consumePrompt 在 dispatch 前消费芯片；dispatch 抛出（如流式中发送）时 sidebar 调 `reinstate(prior)` 用 `_priorLive` 快照恢复芯片。局限：dispatch 内部早退路径（图片校验失败/mention 全失效/只读锁占用地）以 error 消息结束且不抛出，芯片不回滚——此时消息本身也未发出，用户重发时需重新框选，记为已知局限。
+- steer（Ctrl+Enter 流式中插话）有意不包裹：插话是对运行中轮次的中途纠正，附带文件上下文语义不明（审查 LOW，定为设计意图）。
+- 测试：selection-context.test.ts 14 例（广播/面板焦点保持/面板焦点后仍包裹/切换编辑器清除/折叠/去重/包裹/空快照/超大丢弃/reinstate/关闭/dispose 丢防抖/文档变化）+ sidebar.test.ts 7 例（回归 3 + 包裹/mention 豁免/queueMessage 包裹/dispatch 拒绝回滚）。
 
 ## 4. 安全与边界
 

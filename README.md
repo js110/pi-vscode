@@ -18,6 +18,7 @@ The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetapho
 - Credentials from the normal Pi config (`~/.pi/agent`) plus optional VS Code SecretStorage overrides.
 - IDE bridge tools for selections, diagnostics, open editors, symbols, definitions, type definitions, implementations, declarations, hover information, references, workspace symbols, Code Actions, formatting, saving, WorkspaceEdit, and notifications.
 - Editor integration: send the current selection to the active tab from the context menu, `@`-mention files and symbols with fuzzy completion, drag and drop files into the prompt, and attach images for vision-capable models.
+- Selection awareness: selecting code in the editor shows a chip above the prompt and the next message automatically carries the selection (Copilot-style, one-shot, dismissible).
 - Inline chat from a quick-input prompt, with per-turn change highlighting and an accept/discard review flow in the status bar.
 - Commit message generation from the working-tree diff, written straight into the SCM input box.
 - Background task panel with live per-tab activity, occupancy banners, a single-writer session lock, and tool cancellation.

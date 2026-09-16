@@ -174,6 +174,9 @@ const EN = {
     'image.queueUnsupported': 'Images cannot be added while the agent is streaming',
     'image.remove': 'Remove image',
 
+    // Selection context chip (Copilot-style auto-attach)
+    'selection.detach': "Don't attach the selection",
+
     // Send to Pi (editor context menu)
     'sendToPi.intro': 'Here is a code selection from `{path}:{range}`:',
     'sendToPi.noSelection': 'Select some code in the editor first.',
@@ -445,6 +448,9 @@ const ZH: Record<TextKey, string> = {
     'image.invalid': '无法识别的图片数据',
     'image.queueUnsupported': '智能体回复期间无法添加图片',
     'image.remove': '移除图片',
+
+    // Selection context chip (Copilot-style auto-attach)
+    'selection.detach': '不附加选中代码',
 
     // Send to Pi (editor context menu)
     'sendToPi.intro': '这是 `{path}:{range}` 处的选区代码：',

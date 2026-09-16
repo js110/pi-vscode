@@ -192,7 +192,8 @@ export type ClientMessage =
     | { type: 'mentionQuery'; query: string; requestId: number }
     | { type: 'dropFiles'; uris: string[]; requestId: number }
     | { type: 'taskCancel'; taskId: string }
-    | { type: 'sessionTakeover' };
+    | { type: 'sessionTakeover' }
+    | { type: 'dismissSelection' };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =
@@ -220,9 +221,19 @@ export interface DropResolveResult {
     path?: string;
 }
 
+/** Display info for the active editor selection (Copilot-style chip). */
+export interface SelectionContextInfo {
+    /** Workspace-relative posix display path. */
+    path: string;
+    /** 1-based inclusive bounds. */
+    startLine: number;
+    endLine: number;
+}
+
 export type ServerMessage =
     | { type: 'ready' }
     | { type: 'stateSync'; state: SerializedAgentState; images?: Record<string, string> }
+    | { type: 'selectionChanged'; selection: SelectionContextInfo | null }
     | { type: 'agentEvent'; event: any }
     | { type: 'models'; models: ModelInfo[]; current?: ModelInfo; thinkingLevel?: string; availableThinkingLevels?: string[]; supportsThinking?: boolean }
     | { type: 'modelChanged'; model: ModelInfo; thinkingLevel?: string }
