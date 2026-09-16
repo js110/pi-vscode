@@ -4,7 +4,7 @@ import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from '../
 import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
-import type { PiConfigSnapshot, TerminalQuoteResult } from '../../../shared/protocol';
+import type { PiConfigSnapshot } from '../../../shared/protocol';
 import type { SessionLockDeps } from '../../../pi/session-lock';
 
 vi.mock('../../../pi/config', () => ({
@@ -132,7 +132,6 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         resolveMentionPath: vi.fn(async () => null),
         readTextFile: vi.fn(async () => null),
         resolveDroppedFiles: vi.fn(async () => []),
-        quoteTerminal: vi.fn(async (): Promise<TerminalQuoteResult> => ({ ok: false, reason: 'noTerminal' })),
         ...overrides,
     };
 }

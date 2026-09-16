@@ -1,7 +1,5 @@
-import type { TerminalQuoteResult } from './terminal-quote';
 import type { TaskInfo } from './tasks';
 
-export type { TerminalQuoteResult, TerminalOutputEntry, TerminalQuoteFailureReason } from './terminal-quote';
 export type { TaskInfo } from './tasks';
 
 /** Single-writer session occupancy marker (PRD 9.8, presentation layer only). */
@@ -74,35 +72,6 @@ export interface TabInfo {
     hasNotification: boolean;
 }
 
-// Plan mode wire types (PRD C8/C9, state machine 8.5)
-export type PlanPhase =
-    | 'off'
-    | 'planning'
-    | 'awaitingApproval'
-    | 'executing'
-    | 'paused'
-    | 'done'
-    | 'interrupted';
-
-export type PlanStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
-
-/** pausedReason marker for a plan step paused on a dangerous-tool card. */
-export const PLAN_DANGEROUS_REASON = 'dangerousTool';
-
-export interface PlanStep {
-    title: string;
-    status: PlanStepStatus;
-}
-
-export interface PlanSnapshot {
-    phase: PlanPhase;
-    steps: PlanStep[];
-    /** Index of the step currently running or paused on (-1 when none). */
-    currentStep: number;
-    /** Why execution paused (step failure, dangerous-tool card, …). */
-    pausedReason?: string;
-}
-
 export interface SerializedAgentState {
     /** Omitted when unchanged since the last frame (T16 incremental stateSync). */
     messages?: any[];
@@ -127,7 +96,6 @@ export interface SerializedAgentState {
     queuedMessages?: string[];
     compactionPrompt?: number | null;
     supportsImages?: boolean;
-    plan?: PlanSnapshot;
     tasks?: TaskInfo[];
     occupancy?: SessionOccupancy;
 }
@@ -223,16 +191,6 @@ export type ClientMessage =
     | { type: 'compactionDismiss' }
     | { type: 'mentionQuery'; query: string; requestId: number }
     | { type: 'dropFiles'; uris: string[]; requestId: number }
-    | { type: 'terminalQuote'; requestId: number }
-    | { type: 'planStart' }
-    | { type: 'planCancel' }
-    | { type: 'planApprove' }
-    | { type: 'planReplan'; feedback?: string }
-    | { type: 'planSetSteps'; titles: string[] }
-    | { type: 'planAdjust'; titles: string[] }
-    | { type: 'planResume' }
-    | { type: 'planAbandon' }
-    | { type: 'planClose' }
     | { type: 'taskCancel'; taskId: string }
     | { type: 'sessionTakeover' };
 
@@ -274,7 +232,7 @@ export type ServerMessage =
     | { type: 'confirmResult'; action: string; confirmed: boolean; payload?: any }
     | { type: 'toolCallPending'; pending: ToolCallPendingInfo }
     | { type: 'toolCallResolved'; toolCallId: string }
-    | { type: 'approvalTrace'; toolCallId: string; toolName: string; scope: ApprovalScope; source?: 'plan' }
+    | { type: 'approvalTrace'; toolCallId: string; toolName: string; scope: ApprovalScope }
     | { type: 'skills'; skills: SkillInfo[]; commands?: CommandInfo[] }
     | { type: 'configState'; config: PiConfigSnapshot }
     | { type: 'langChanged'; lang: Lang }
@@ -283,7 +241,6 @@ export type ServerMessage =
     | { type: 'compactionResult'; ok: boolean }
     | { type: 'mentionResults'; requestId: number; files: string[]; symbols: MentionSymbolItem[] }
     | { type: 'dropResolved'; requestId: number; results: DropResolveResult[] }
-    | { type: 'terminalQuoted'; requestId: number; result: TerminalQuoteResult }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages

@@ -18,10 +18,8 @@ The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetapho
 - Credentials from the normal Pi config (`~/.pi/agent`) plus optional VS Code SecretStorage overrides.
 - IDE bridge tools for selections, diagnostics, open editors, symbols, definitions, type definitions, implementations, declarations, hover information, references, workspace symbols, Code Actions, formatting, saving, WorkspaceEdit, and notifications.
 - Editor integration: send the current selection to the active tab from the context menu, `@`-mention files and symbols with fuzzy completion, drag and drop files into the prompt, and attach images for vision-capable models.
-- Plan mode that restricts Pi to read-only tools, renders the plan as a card, and tracks its TODO list to completion.
 - Inline chat from a quick-input prompt, with per-turn change highlighting and an accept/discard review flow in the status bar.
 - Commit message generation from the working-tree diff, written straight into the SCM input box.
-- Terminal awareness: quote recent terminal output (captured via shell integration) directly into the prompt.
 - Background task panel with live per-tab activity, occupancy banners, a single-writer session lock, and tool cancellation.
 - English and 中文 UI — `pi-agent.displayLanguage` follows VS Code by default (`auto`), and can be pinned to either language.
 

@@ -3,7 +3,6 @@ import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from '../
 import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
-import type { TerminalQuoteResult } from '../../../shared/protocol';
 
 const PNG = 'iVBORw0KGgo=';
 const JPEG = '/9j/4AAQ';
@@ -89,7 +88,6 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         resolveMentionPath: vi.fn(async () => null),
         readTextFile: vi.fn(async () => null),
         resolveDroppedFiles: vi.fn(async () => []),
-        quoteTerminal: vi.fn(async (): Promise<TerminalQuoteResult> => ({ ok: false, reason: 'noTerminal' })),
         ...overrides,
     };
 }

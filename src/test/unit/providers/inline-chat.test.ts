@@ -143,7 +143,6 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         resolveMentionPath: vi.fn(async () => null),
         readTextFile: vi.fn(async () => null),
         resolveDroppedFiles: vi.fn(async () => []),
-        quoteTerminal: vi.fn(async () => ({ ok: false as const, reason: 'noTerminal' as const })),
         ...overrides,
     };
 }
@@ -399,15 +398,6 @@ describe('InlineChatManager (C13)', () => {
         expect(deps.showMessage).toHaveBeenCalledWith(expect.stringContaining('still processing'));
         expect(h.inputBox).toBeUndefined();
         expect(manager.active).toBe(false);
-    });
-
-    it('refuses to start while plan mode is active', async () => {
-        await tm.dispatch({ type: 'planStart' });
-
-        await manager.start();
-
-        expect(deps.showMessage).toHaveBeenCalledWith(expect.stringContaining('Plan mode'));
-        expect(h.inputBox).toBeUndefined();
     });
 
     it('requires saving a dirty buffer before invoking', async () => {

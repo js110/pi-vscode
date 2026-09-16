@@ -104,9 +104,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const styleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles', 'main.css')
         );
-        const iconsUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(this._extensionUri, 'media', 'icons')
-        );
         const nonce = getNonce();
         const lang = resolveDisplayLang();
 
@@ -121,7 +118,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <title>Pi Agent</title>
 </head>
 <body>
-    <div id="app" data-icons-uri="${iconsUri}"></div>
+    <div id="app"></div>
     <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

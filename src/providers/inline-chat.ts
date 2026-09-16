@@ -81,11 +81,6 @@ export class InlineChatManager implements vscode.Disposable {
             this._deps.showMessage(t('inline.busy'));
             return;
         }
-        const plan = tm.getState().plan;
-        if (plan && plan.phase !== 'off') {
-            this._deps.showMessage(t('inline.planActive'));
-            return;
-        }
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
 
