@@ -187,6 +187,22 @@
 - **README 发布向扩写**：What works 补齐 T8–T18 已实现功能（右键发送选区/文件、@-mention、拖拽文件、图片附件、Plan 模式、inline chat、commit message 生成、终端引用、后台任务面板与占用横幅、双语 UI）；新增 Getting started 三步；Package 段的排除说明与实际 .vscodeignore 对齐。
 - **已知非阻塞项**：vsce 警告 `out/extension.js` 11.9 MB（SDK 全量 bundle；远低于 Marketplace 限额，minify/裁剪留待后续优化）。`publisher` 仍为占位 `"local"`——正式发布需注册 Marketplace publisher 后改名（账号所有权属用户决定）；`npm run package` 本地打包验证通过。打包脚本暂带 `--allow-missing-repository`（历史遗留 flag）：repository 字段实际已配置且公网可达，正式提审前应跑一次不带该 flag 的打包确认 vsce 仓库校验独立通过。
 
+### 2.9 E2E 全循环演练方案（T20，2026-09-16）
+
+AC-FN-28 验收：已配置 Pi 的环境中，从一个可复现 bug 出发完成"描述问题→AI 改文件→审 diff→跑测试→生成 commit"全流程，全程不出 VS Code。五个环节全部由扩展内 UI 承载（聊天面板 / diff 预览卡 / 内置终端 / SCM input box），无外部工具依赖，故演练本身是 GUI 人工验收。
+
+**自动化覆盖**（已验证）：`npm run test:integration` 在真实 VS Code Extension Host（本地 code.cmd + 隔离 profile `.vscode-test-local/`）通过激活冒烟与命令注册（exit 0）；`npm run check` 492 单测覆盖各环节核心逻辑——① 描述问题：流式渲染/stateSync/@-mention（mention.ts、render-messages）；② 改文件：diff 计算/apply 状态机（tab-snapshot、shared/diff）；③ 审 diff：apply 卡接受/放弃 + inline chat 接受/放弃状态栏流（inline-chat.test）；④ 跑测试：终端捕获/引用（terminal-capture、terminal-quote）；⑤ commit message：diff 源选择/截断/提取（commit-message.test 20 例）。
+
+**人工演练清单**（需真实凭据与 GUI，留待用户执行；建议用装好的 vsix 或 F5）：
+
+1. **描述问题**：侧栏新开 Tab →（可选 `@`-mention 相关文件/符号）→ 输入 bug 描述发送；验证流式回复、思考块与工具卡逐帧渲染。
+2. **AI 改文件**：Pi 调用编辑类工具产生 diff 预览卡 → Preview 逐文件查看 → Confirm 写入；验证 apply 卡状态流转与 per-file undo。
+3. **审 diff**：VS Code 原生 diff 视图复查改动；或用 Inline Chat（命令面板 `pi-agent.inlineChat`）改一行 → 状态栏 Accept/Discard 两向验证。
+4. **跑测试**：在扩展宿主工作区的集成终端跑 `npm run check`（或让 Pi 的 bash 工具跑）→ 失败时用输入区"引用终端"把失败输出贴回聊天继续修复。
+5. **生成 commit**：SCM input box 右侧菜单触发 commit message 生成 → 验证生成文案写入输入框。
+
+演练结果（bug 场景、各环节结果、发现的问题）回填本节。
+
 
 
 | 方向 | 消息 | 用途 |

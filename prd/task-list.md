@@ -29,7 +29,7 @@
 - [x] T17 四组合兼容收口（设计见 tech-doc §2.6）：主题×语言遍历、无残留无破版；错误文案人话。→ AC-OP-02、13.4
 - [x] T18 升级/回退与数据迁移验证（验证矩阵见 tech-doc §2.7）。→ AC-OP-04、13.5
 - [x] T19 Marketplace 资产：README、图标（已落地 media/pi-icon-full.png + pi-icon.svg）、分类、打包提审。→ AC-FN-29、发布验收（设计见 tech-doc §2.8；keywords/.vscodeignore 收口/README 扩写，vsce 打包 2.55 MB 验证通过；提审需真实 publisher，留待用户）
-- [ ] T20 E2E 全循环演练：描述问题→改文件→审 diff→跑测试→生成 commit 全程不出 VS Code。→ AC-FN-28
+- [ ] T20 E2E 全循环演练：描述问题→改文件→审 diff→跑测试→生成 commit 全程不出 VS Code。→ AC-FN-28（自动化部分完成：集成冒烟通过 + 492 单测覆盖五环节核心；GUI 全循环需真实凭据，按 tech-doc §2.9 演练清单留待用户执行）
 
 ## 依赖与顺序
 
