@@ -33,7 +33,7 @@
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
-      "activitybar": [
+      "secondarySidebar": [
         {
           "id": "pi-agent",
           "title": "Pi Agent",

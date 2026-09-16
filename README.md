@@ -44,7 +44,7 @@ Pi remains the backend. VS Code supplies presentation, approvals, editor state, 
 
 ## Getting started
 
-1. Open the Pi icon in the activity bar to start chatting in the sidebar.
+1. Open the Pi icon in the secondary sidebar (right side by default) to start chatting.
 2. Sign in with `/login` in the chat input, or store a provider API key from the extension's settings panel.
 3. Pick a model from the model picker and prompt away. Existing Pi configuration (`~/.pi/agent`), skills, and sessions are picked up automatically.
 

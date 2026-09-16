@@ -171,7 +171,7 @@
 | API 密钥 | SecretStorage `pi-agent.apiKey.<provider>` | 有 | 同名沿用（settings-panel API_KEY_PREFIX 不变） | 保留 |
 | SDK 凭据 | SDK ModelRuntime credentials（与 Pi CLI 共享） | 有 | 同一 SDK 机制透传 | 与 CLI 一致 |
 | 审批记忆 | globalState `pi-agent.approvalRules.global` | 无（新增） | 缺失/损坏初始化为空，畸形条目滤除不崩溃 | 旧版不读该键 |
-| 面板放置标记 | globalState `pi-agent.sidebarPlacementDone` | 无（新增） | — | 旧版不读 |
+| 面板放置标记 | globalState `pi-agent.sidebarPlacementDone` | 无（新增） | **已移除**（2026-09-16）：首次运行移动 hack 被声明式 `viewsContainers.secondarySidebar`（本机 1.112 manifest schema 稳定支持）取代，残留在用户 globalState 中的旧键无人读取、无害 | 旧版不读 |
 | 会话 | 工作区 .pi/ pi 原生 jsonl | 有 | 只读不改写格式 | 天然兼容 |
 | 会话锁 | globalStorage/locks/<sha1>.lock | 无（新增） | 呈现层标记，绝不写 ~/.pi/agent | 旧版不读，残留文件无害 |
 | checkpoint 快照 | 内存（不落盘） | 有 | 同 | — |
@@ -227,6 +227,8 @@ AC-FN-28 验收：已配置 Pi 的环境中，从一个可复现 bug 出发完�
 - **失败回滚（审查 MEDIUM）**：consumePrompt 在 dispatch 前消费芯片；dispatch 抛出（如流式中发送）时 sidebar 调 `reinstate(prior)` 用 `_priorLive` 快照恢复芯片。局限：dispatch 内部早退路径（图片校验失败/mention 全失效/只读锁占用地）以 error 消息结束且不抛出，芯片不回滚——此时消息本身也未发出，用户重发时需重新框选，记为已知局限。
 - steer（Ctrl+Enter 流式中插话）有意不包裹：插话是对运行中轮次的中途纠正，附带文件上下文语义不明（审查 LOW，定为设计意图）。
 - 测试：selection-context.test.ts 14 例（广播/面板焦点保持/面板焦点后仍包裹/切换编辑器清除/折叠/去重/包裹/空快照/超大丢弃/reinstate/关闭/dispose 丢防抖/文档变化）+ sidebar.test.ts 7 例（回归 3 + 包裹/mention 豁免/queueMessage 包裹/dispatch 拒绝回滚）。
+
+**c) 面板默认右侧改为声明式（用户报告"打开插件还是默认显示在左侧"，2026-09-16）**：原"首次运行自动移至次侧边栏"实现在 `activate()` 末尾先写 `sidebarPlacementDone` 标记再执行 `workbench.action.moveViewToSecondarySideBar`——标记先于结果落盘，而移动依赖"先聚焦容器再 300ms 等待"的碰运气时序，失败只写 outputChannel 日志；重装扩展不清 globalState，第一次没移成功就永不重试。修复：核实本机 1.112 稳定 manifest schema 后把 `viewsContainers` 从 `activitybar` 改声明到 `secondarySidebar`（VS Code 注册处直接支持位置 2），默认位置由清单保证、零运行时时序依赖；删除 `SIDEBAR_PLACEMENT_KEY` 与首次运行移动块，`moveToSecondarySidebar`/`moveToPrimarySidebar` 手动命令保留（用户后续自行搬动）。曾评估内部命令 `vscode.moveViews`（本机 bundle 存在，`{viewIds, destinationId}` 无需聚焦）——未文档化 API，不采用（项目坚持 100% 稳定 API）。
 
 ## 4. 安全与边界
 

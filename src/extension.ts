@@ -33,7 +33,6 @@ import { isImagePath, relativeToWorkspace, uriToPath } from './shared/drop-files
 
 let bridgeContext: BridgeContext | undefined;
 
-const SIDEBAR_PLACEMENT_KEY = 'pi-agent.sidebarPlacementDone';
 const APPROVAL_RULES_KEY = 'pi-agent.approvalRules.global';
 
 // ── @-mention workspace glue (AC-FN-21/22) ──
@@ -436,14 +435,6 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         outputChannel.appendLine('Pi Agent extension activated.');
-
-        // First run only: default the panel to the secondary (right) sidebar.
-        // Afterwards the user's own placement is respected.
-        const placementDone = context.globalState.get<boolean>(SIDEBAR_PLACEMENT_KEY);
-        if (!placementDone) {
-            await context.globalState.update(SIDEBAR_PLACEMENT_KEY, true);
-            await moveSidebarView('secondary', outputChannel);
-        }
     } catch (err: any) {
         outputChannel.appendLine(`Failed to activate: ${err.message}`);
         vscode.window.showErrorMessage(`Pi Agent failed to activate: ${err.message}`);
