@@ -1238,7 +1238,7 @@ function buildChangedFilesSection(): HTMLElement {
         : `<button class="changed-files-link" id="btn-undo" title="${escHtml(t('files.undoTitle'))}">${escHtml(t('files.undo'))}</button>`;
     summary.innerHTML = `
         <span class="changed-files-arrow">&#9656;</span>
-        <span class="changed-files-count">${escHtml(t('files.count', { n: count, s: count !== 1 ? 's' : '' }))}</span>
+        <span class="changed-files-count">${escHtml(t(count === 1 ? 'files.countOne' : 'files.countMany', { n: count }))}</span>
         <span class="changed-files-spacer"></span>
         ${undoRedoBtn}
         <button class="changed-files-review-btn" id="btn-review-all" title="${escHtml(t('files.reviewTitle'))}">${escHtml(t('files.review'))}</button>
@@ -1345,7 +1345,7 @@ function renderChangedFilesBar(): void {
         const count = fileMap.size;
         const countEl = existing.querySelector('.changed-files-count');
         if (countEl) {
-            countEl.textContent = t('files.count', { n: count, s: count !== 1 ? 's' : '' });
+            countEl.textContent = t(count === 1 ? 'files.countOne' : 'files.countMany', { n: count });
         }
     }
 }
@@ -2048,9 +2048,9 @@ function buildConfigBanner(): HTMLElement | null {
     } else {
         const stats = el('div', 'config-stats');
         stats.textContent = t('config.stats', {
-            providers: t('config.providerCount', { n: config.providers.length, s: config.providers.length === 1 ? '' : 's' }),
-            models: t('config.modelCount', { n: config.models.length, s: config.models.length === 1 ? '' : 's' }),
-            skills: t('config.skillCount', { n: config.skills.length, s: config.skills.length === 1 ? '' : 's' }),
+            providers: t(config.providers.length === 1 ? 'config.providerCountOne' : 'config.providerCountMany', { n: config.providers.length }),
+            models: t(config.models.length === 1 ? 'config.modelCountOne' : 'config.modelCountMany', { n: config.models.length }),
+            skills: t(config.skills.length === 1 ? 'config.skillCountOne' : 'config.skillCountMany', { n: config.skills.length }),
         });
         banner.appendChild(stats);
         if (config.status === 'partial' || config.status === 'error') {

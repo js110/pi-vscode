@@ -431,7 +431,8 @@ describe('InlineChatManager (C13)', () => {
         await startRound('make it better');
 
         expect(manager.active).toBe(false);
-        expect(deps.showMessage).toHaveBeenCalledWith('no model');
+        // Raw errors are humanized (T17): the copy wraps the raw detail.
+        expect(deps.showMessage).toHaveBeenCalledWith(expect.stringContaining('no model'));
     });
 
     it('refuses to discard while the round tab is streaming again', async () => {

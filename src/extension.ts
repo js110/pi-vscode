@@ -17,7 +17,8 @@ import { CommitMessageManager, type CommitGitApi } from './providers/commit-mess
 import { createNodeLockDeps } from './pi/session-lock';
 import { getModelRuntime } from './pi/auth';
 import { getModelRegistry, findConfiguredModel } from './pi/models';
-import { setLang, t } from './shared/i18n';
+import { setLang, t, thinkingLevelLabel } from './shared/i18n';
+import { humanizeErrorMessage } from './shared/error-copy';
 import { fuzzyFilterFiles, MAX_MENTION_RESULTS } from './shared/mention';
 import {
     buildSelectionPrompt,
@@ -218,10 +219,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 );
             },
             showMessage: (message) => void vscode.window.showInformationMessage(message),
-            confirmDialog: (message) =>
-                Promise.resolve(
-                    vscode.window.showWarningMessage(message, { modal: true }, 'Yes'),
-                ).then((answer): boolean => answer === 'Yes'),
+            confirmDialog: (message) => {
+                const yes = t('common.yes');
+                return Promise.resolve(
+                    vscode.window.showWarningMessage(message, { modal: true }, yes),
+                ).then((answer): boolean => answer === yes);
+            },
             openSettings: () => void vscode.commands.executeCommand('pi-agent.openSettings'),
             getCwd: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
             applyPreview: (code, lang, tabId) => applyManager.buildPreview(code, lang, tabId),
@@ -281,10 +284,12 @@ export async function activate(context: vscode.ExtensionContext) {
         const inlineChat = new InlineChatManager({
             getTabManager: () => tabManagerRef,
             showMessage: (message) => void vscode.window.showInformationMessage(message),
-            confirmDialog: (message) =>
-                Promise.resolve(
-                    vscode.window.showWarningMessage(message, { modal: true }, 'Yes'),
-                ).then((answer): boolean => answer === 'Yes'),
+            confirmDialog: (message) => {
+                const yes = t('common.yes');
+                return Promise.resolve(
+                    vscode.window.showWarningMessage(message, { modal: true }, yes),
+                ).then((answer): boolean => answer === yes);
+            },
             setContext: (key, value) =>
                 void vscode.commands.executeCommand('setContext', key, value),
         });
@@ -355,13 +360,15 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('pi-agent.toggleThinking', async () => {
                 const level = await sidebarProvider.toggleThinking();
                 if (level) {
-                    vscode.window.showInformationMessage(`Thinking level: ${level}`);
+                    vscode.window.showInformationMessage(
+                        t('command.thinkingChanged', { level: thinkingLevelLabel(level) }),
+                    );
                 }
             }),
 
             vscode.commands.registerCommand('pi-agent.compact', async () => {
                 await sidebarProvider.compact();
-                vscode.window.showInformationMessage('Pi context compacted.');
+                vscode.window.showInformationMessage(t('compact.done'));
             }),
 
             vscode.commands.registerCommand('pi-agent.sendToPi', async () => {
@@ -400,8 +407,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 void vscode.commands.executeCommand('pi-agent.chat.focus');
                 try {
                     await tabManagerRef?.sendToPi(promptText);
-                } catch (err: any) {
-                    vscode.window.showErrorMessage(err?.message ?? String(err));
+                } catch (err) {
+                    const text = humanizeErrorMessage(err);
+                    if (text) vscode.window.showErrorMessage(text);
                 }
             }),
 

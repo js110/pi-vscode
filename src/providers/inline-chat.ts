@@ -12,6 +12,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { t } from '../shared/i18n';
+import { humanizeErrorMessage } from '../shared/error-copy';
 import { parseChangedLineRanges } from '../shared/inline-diff';
 import { computeUnifiedDiff } from '../utils/diff';
 import { buildSelectionPrompt, selectionLineRange, isSelectionTooLarge } from './send-to-pi';
@@ -93,8 +94,9 @@ export class InlineChatManager implements vscode.Disposable {
             if (!ok) return;
             try {
                 await editor.document.save();
-            } catch (err: any) {
-                this._deps.showMessage(err?.message ?? String(err));
+            } catch (err: unknown) {
+                const text = humanizeErrorMessage(err);
+                if (text) this._deps.showMessage(text);
                 return;
             }
             if (editor.document.isDirty) return;
@@ -144,9 +146,10 @@ export class InlineChatManager implements vscode.Disposable {
         if (tm) {
             try {
                 await tm.restoreCheckpointOnTab(round.tabId, round.firstTurnIdx - 1);
-            } catch (err: any) {
+            } catch (err: unknown) {
                 // Keep the pending state so the user can retry.
-                this._deps.showMessage(err?.message ?? String(err));
+                const text = humanizeErrorMessage(err);
+                if (text) this._deps.showMessage(text);
                 return;
             }
         }
@@ -226,10 +229,11 @@ export class InlineChatManager implements vscode.Disposable {
 
         try {
             await dispatching;
-        } catch (err: any) {
+        } catch (err: unknown) {
             if (this._round === round) {
                 this._cleanup();
-                this._deps.showMessage(err?.message ?? String(err));
+                const text = humanizeErrorMessage(err);
+                if (text) this._deps.showMessage(text);
             }
         }
     }

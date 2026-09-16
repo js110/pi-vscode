@@ -14,6 +14,7 @@ import { mapSkills } from './skills';
 import { getModelRuntime, disposeModelRuntime } from './auth';
 import { getModelRegistry, getAvailableModels, findModel, findConfiguredModel, disposeModelRegistry } from './models';
 import { TtlCache } from '../shared/ttl-cache';
+import { t } from '../shared/i18n';
 
 export type ToolApprovalHandler = (toolCallId: string, toolName: string, args: any) => Promise<boolean>;
 
@@ -549,7 +550,7 @@ export class PiSessionManager {
     async showModelPicker(): Promise<void> {
         const models = this.getModels();
         if (models.length === 0) {
-            vscode.window.showWarningMessage('No models available. Check your Pi configuration.');
+            vscode.window.showWarningMessage(t('models.noneAvailable'));
             return;
         }
         const items = models.map((m) => ({
@@ -558,7 +559,7 @@ export class PiSessionManager {
             model: m,
         }));
         const pick = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Select a model',
+            placeHolder: t('models.selectPlaceholder'),
         });
         if (pick) {
             await this.setModel(pick.model.provider, pick.model.id);

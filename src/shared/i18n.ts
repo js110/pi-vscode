@@ -41,7 +41,8 @@ const EN = {
     'stream.retrying': 'Retrying ({attempt}/{max}) after error: {error}',
     'stream.thinking': 'Thinking...',
     'stream.thought': 'Thought',
-    'stream.thoughtFor': 'Thought for {n} second{s}',
+    'stream.thoughtForOne': 'Thought for {n} second',
+    'stream.thoughtForMany': 'Thought for {n} seconds',
     'stream.steering': 'Steering...',
 
     // Queued messages
@@ -52,7 +53,8 @@ const EN = {
     'queue.cancel': 'Cancel',
 
     // Changed files
-    'files.count': '{n} file{s}',
+    'files.countOne': '{n} file',
+    'files.countMany': '{n} files',
     'files.undo': 'Undo',
     'files.redo': 'Redo',
     'files.review': 'Review',
@@ -108,15 +110,20 @@ const EN = {
     'config.issue': 'Config issue ({source}): {message}',
     'config.issueFallback': 'Some Pi config sources could not be read.',
     'config.recheck': 'Re-check',
-    'config.providerCount': '{n} provider{s}',
-    'config.modelCount': '{n} model{s}',
-    'config.skillCount': '{n} skill{s}',
+    'config.providerCountOne': '{n} provider',
+    'config.providerCountMany': '{n} providers',
+    'config.modelCountOne': '{n} model',
+    'config.modelCountMany': '{n} models',
+    'config.skillCountOne': '{n} skill',
+    'config.skillCountMany': '{n} skills',
 
     // Model picker
     'models.search': 'Search models...',
     'models.recent': 'Recent',
     'models.all': 'All Models',
     'models.thinking': 'Thinking:',
+    'models.selectPlaceholder': 'Select a model',
+    'models.noneAvailable': 'No models available. Check your Pi configuration.',
 
     // Sessions panel
     'sessions.title': 'Sessions',
@@ -144,6 +151,7 @@ const EN = {
     'apply.exists': 'File already exists. Please preview again.',
     'apply.deleted': 'File was deleted since preview. Please preview again.',
     'apply.dirty': 'File has unsaved editor changes. Save it and preview again.',
+    'apply.cancelled': 'Preview cancelled.',
     'apply.writeError': 'Failed to write file: {message}',
     'apply.noWorkspace': 'Open a workspace folder to apply code.',
     'apply.pickTarget': 'Choose a target file for this code block',
@@ -155,6 +163,7 @@ const EN = {
     'compact.dismiss': 'Not now',
     'compact.compacting': 'Compacting context…',
     'compact.failed': 'Compaction failed — context kept. You can retry with /compact.',
+    'compact.done': 'Context compacted.',
 
     // Image input
     'image.attach': 'Attach image',
@@ -191,6 +200,18 @@ const EN = {
     'terminal.noTerminal': 'No integrated terminal found.',
     'terminal.noShellIntegration': 'Shell integration is not active in this terminal, so command output cannot be read.',
     'terminal.noOutput': 'No completed terminal command output captured yet.',
+
+    // Humanized error copy (T17): what happened + impact + suggested action.
+    'err.auth': 'Pi could not authenticate with the model provider, so nothing was answered. Check your API key in the settings panel, or run Pi login again.',
+    'err.network': 'Pi could not reach the model provider, so this turn did not complete. Check your network or proxy connection, then try again.',
+    'err.rateLimit': 'The model provider is rate-limiting requests, so this turn stopped early. Wait a moment and try again; if it persists, check your account quota.',
+    'err.config': 'Pi configuration is missing or unreadable, so the request could not start. Open the settings panel to review the provider and model.',
+    'err.unknown': 'Pi hit an unexpected error and stopped this turn — your context is kept. Try again; if it repeats, check the Pi Agent output channel. Detail: {message}',
+
+    // Host command toasts / prompts (T17 leftover copy)
+    'command.thinkingChanged': 'Thinking level: {level}',
+    'common.yes': 'Yes',
+    'init.failed': 'Pi Agent failed to initialize: {message}',
     // Background tasks panel (C11)
     'tasks.panel': 'Background tasks',
     'tasks.empty': 'No background tasks. Subagent tasks will appear here once the Pi SDK provides them.',
@@ -333,7 +354,8 @@ const ZH: Record<TextKey, string> = {
     'stream.retrying': '出错后重试中（{attempt}/{max}）：{error}',
     'stream.thinking': '思考中...',
     'stream.thought': '已思考',
-    'stream.thoughtFor': '思考了 {n} 秒',
+    'stream.thoughtForOne': '思考了 {n} 秒',
+    'stream.thoughtForMany': '思考了 {n} 秒',
     'stream.steering': '转向中...',
 
     'queue.count': '排队 {n} 条',
@@ -342,7 +364,8 @@ const ZH: Record<TextKey, string> = {
     'queue.save': '保存',
     'queue.cancel': '取消',
 
-    'files.count': '{n} 个文件',
+    'files.countOne': '{n} 个文件',
+    'files.countMany': '{n} 个文件',
     'files.undo': '撤销',
     'files.redo': '重做',
     'files.review': '审查',
@@ -393,14 +416,19 @@ const ZH: Record<TextKey, string> = {
     'config.issue': '配置问题（{source}）：{message}',
     'config.issueFallback': '部分 Pi 配置源无法读取。',
     'config.recheck': '重新检测',
-    'config.providerCount': '{n} 个提供者',
-    'config.modelCount': '{n} 个模型',
-    'config.skillCount': '{n} 个技能',
+    'config.providerCountOne': '{n} 个提供者',
+    'config.providerCountMany': '{n} 个提供者',
+    'config.modelCountOne': '{n} 个模型',
+    'config.modelCountMany': '{n} 个模型',
+    'config.skillCountOne': '{n} 个技能',
+    'config.skillCountMany': '{n} 个技能',
 
     'models.search': '搜索模型...',
     'models.recent': '最近使用',
     'models.all': '全部模型',
     'models.thinking': '思考：',
+    'models.selectPlaceholder': '选择模型',
+    'models.noneAvailable': '无可用模型。请检查 Pi 配置。',
 
     'sessions.title': '会话',
     'sessions.empty': '暂无历史会话',
@@ -425,6 +453,7 @@ const ZH: Record<TextKey, string> = {
     'apply.exists': '文件已存在，请重新预览。',
     'apply.deleted': '文件在预览后已被删除，请重新预览。',
     'apply.dirty': '文件在编辑器中有未保存的修改，请先保存后重新预览。',
+    'apply.cancelled': '预览已取消。',
     'apply.writeError': '写入文件失败：{message}',
     'apply.noWorkspace': '请先打开工作区文件夹再应用代码。',
     'apply.pickTarget': '选择此代码块要应用到的文件',
@@ -435,6 +464,7 @@ const ZH: Record<TextKey, string> = {
     'compact.dismiss': '暂不',
     'compact.compacting': '正在压缩上下文…',
     'compact.failed': '压缩失败——已保留原上下文，可稍后用 /compact 重试。',
+    'compact.done': '上下文压缩完成。',
 
     // Image input
     'image.attach': '添加图片',
@@ -470,6 +500,18 @@ const ZH: Record<TextKey, string> = {
     'terminal.noTerminal': '未找到集成终端。',
     'terminal.noShellIntegration': '当前终端未启用 shell integration，无法读取命令输出。',
     'terminal.noOutput': '尚未捕获到已完成的终端命令输出。',
+
+    // 错误人话（T17）：发生了什么 + 影响 + 建议动作。
+    'err.auth': 'Pi 无法通过模型提供者的身份验证，本轮没有产生回答。请在设置面板检查 API 密钥，或重新运行 Pi 登录。',
+    'err.network': 'Pi 无法连接模型提供者，本轮未完成。请检查网络或代理连接后重试。',
+    'err.rateLimit': '模型提供者正在限流，本轮提前停止。请稍候再试；若持续出现，请检查账户额度。',
+    'err.config': 'Pi 配置缺失或无法读取，请求无法开始。请打开设置面板检查提供者与模型。',
+    'err.unknown': 'Pi 遇到意外错误，本轮已停止——上下文已保留。可重试；若反复出现，请查看 Pi Agent 输出通道。详情：{message}',
+
+    // 宿主命令提示（T17 残留文案收口）
+    'command.thinkingChanged': '思考级别：{level}',
+    'common.yes': '是',
+    'init.failed': 'Pi Agent 初始化失败：{message}',
     // 后台任务面板（C11）
     'tasks.panel': '后台任务',
     'tasks.empty': '暂无后台任务。Pi SDK 提供子代理能力后，任务会自动显示在这里。',
@@ -600,4 +642,16 @@ export function t(key: TextKey, params?: Record<string, string | number>): strin
         const value = params[name];
         return value === undefined ? match : String(value);
     });
+}
+
+/** Translated label for a thinking level id (off/minimal/low/medium/high). */
+export function thinkingLevelLabel(level: string): string {
+    const key = `settings.think.${level}` as TextKey;
+    return key in EN ? t(key) : level;
+}
+
+/** Interpolation parameter names a key uses in `lang` (translation guard). */
+export function textParams(lang: Lang, key: TextKey): string[] {
+    const template = lang === 'zh' ? ZH[key] : EN[key];
+    return [...template.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
 }

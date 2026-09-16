@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import type { ClientMessage, ServerMessage } from '../shared/protocol';
 import { TabManager } from './tab';
 import { resolveDisplayLang } from './lang';
+import { t } from '../shared/i18n';
+import { humanizeErrorMessage } from '../shared/error-copy';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
@@ -55,7 +57,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }, (err: unknown) => {
             if (this._view !== webviewView) return;
             const message = err instanceof Error ? err.message : String(err);
-            this.post({ type: 'error', message: `Initialization failed: ${message}` });
+            this.post({ type: 'error', message: t('init.failed', { message }) });
         });
     }
 
@@ -66,8 +68,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private async _handleMessage(msg: ClientMessage): Promise<void> {
         try {
             await this._tabManager.dispatch(msg);
-        } catch (err: any) {
-            this.post({ type: 'error', message: err.message ?? String(err) });
+        } catch (err: unknown) {
+            // Raw detail goes to the host console for diagnosis; the panel
+            // only ever sees humanized copy (T17).
+            console.error('[pi-vscode] dispatch failed:', err);
+            const text = humanizeErrorMessage(err);
+            if (text) this.post({ type: 'error', message: text });
         }
     }
 

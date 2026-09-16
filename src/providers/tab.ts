@@ -29,6 +29,7 @@ import {
     type MentionContextEntry,
 } from '../shared/mention';
 import { t } from '../shared/i18n';
+import { humanizeErrorMessage } from '../shared/error-copy';
 import { isDangerousTool } from '../shared/tool-safety';
 import { applyTaskEvent, type TaskInfo } from '../shared/tasks';
 import { collectAndReplaceImages } from '../shared/message-assets';
@@ -909,12 +910,12 @@ export class TabManager {
                     if (preview) {
                         this._hooks.post({ type: 'applyPreviewResult', preview });
                     }
-                } catch (err: any) {
+                } catch (err: unknown) {
                     this._hooks.post({
                         type: 'applyResult',
                         previewId: '',
                         ok: false,
-                        message: err?.message ?? String(err),
+                        message: humanizeErrorMessage(err) ?? t('apply.cancelled'),
                     });
                 }
                 break;

@@ -87,7 +87,8 @@ export function buildWelcome(): HTMLElement {
 export function thinkingLabel(active: boolean, durationSec?: number): string {
     if (active) return t('stream.thinking');
     if (durationSec && durationSec > 0) {
-        return t('stream.thoughtFor', { n: durationSec, s: durationSec !== 1 ? 's' : '' });
+        const key = durationSec === 1 ? 'stream.thoughtForOne' : 'stream.thoughtForMany';
+        return t(key, { n: durationSec });
     }
     return t('stream.thought');
 }

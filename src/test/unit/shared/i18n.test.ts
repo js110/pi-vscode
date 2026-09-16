@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { t, setLang, getLang, type Lang, TEXT_KEYS } from '../../../shared/i18n';
+import { t, setLang, getLang, thinkingLevelLabel, textParams, type Lang, TEXT_KEYS } from '../../../shared/i18n';
 
 describe('i18n', () => {
     beforeEach(() => {
@@ -18,15 +18,15 @@ describe('i18n', () => {
 
     it('interpolates composed count fragments', () => {
         expect(t('config.stats', {
-            providers: t('config.providerCount', { n: 2, s: 's' }),
-            models: t('config.modelCount', { n: 5, s: 's' }),
-            skills: t('config.skillCount', { n: 3, s: 's' }),
+            providers: t('config.providerCountMany', { n: 2 }),
+            models: t('config.modelCountMany', { n: 5 }),
+            skills: t('config.skillCountMany', { n: 3 }),
         })).toBe('Read from Pi: 2 providers · 5 models · 3 skills');
     });
 
     it('leaves unknown params as visible markers', () => {
-        expect(t('stream.thoughtFor', { n: 4, s: 's' })).toBe('Thought for 4 seconds');
-        expect(t('stream.thoughtFor', {})).toBe('Thought for {n} second{s}');
+        expect(t('stream.thoughtForMany', { n: 4 })).toBe('Thought for 4 seconds');
+        expect(t('stream.thoughtForMany', {})).toBe('Thought for {n} seconds');
     });
 
     it('falls back to the key itself for unknown keys', () => {
@@ -44,5 +44,21 @@ describe('i18n', () => {
         setLang('fr' as Lang);
         expect(getLang()).toBe<Lang>('en');
         expect(t('approval.approve')).toBe('Approve');
+    });
+
+    it('uses identical interpolation params across languages', () => {
+        for (const key of TEXT_KEYS) {
+            const en = textParams('en', key).sort().join(',');
+            const zh = textParams('zh', key).sort().join(',');
+            expect(zh, `param mismatch for ${key}`).toBe(en);
+        }
+    });
+
+    it('labels thinking levels in the active language', () => {
+        setLang('en');
+        expect(thinkingLevelLabel('high')).toBe('High');
+        setLang('zh');
+        expect(thinkingLevelLabel('high')).toBe('高');
+        expect(thinkingLevelLabel('weird')).toBe('weird');
     });
 });

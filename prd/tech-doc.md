@@ -144,7 +144,24 @@
 
 **协议变更**：`SerializedAgentState.messages` → 可选；stateSync 增顶层 `images?: Record<string, string>`（仅新增资产）；`getSnapshot` 为 host 内部签名（不进协议）。i18n 无新增。
 
-## 3. 协议扩展（`src/shared/protocol.ts`，向后兼容新增）
+### 2.6 四组合兼容收口（T17，2026-09-16）
+
+目标：深/浅主题 × 中/英语言四组合无英文残留、无破版（AC-OP-02）；面向用户错误文案人话——发生什么 + 影响 + 建议动作，不透传 SDK/API 术语堆砌（13.4）。
+
+**A. 错误文案人话层**（`shared/error-copy.ts` 纯模块）：
+- `classifyError(err)`：按 message/name/code 特征把未知错误归为 `auth | network | rateLimit | aborted | config | unknown`（如 401/api key/credential→auth、fetch/ECONN/network→network、429/rate→rateLimit、abort→aborted、config/not found→config）。
+- `humanizeErrorMessage(err)`：返回 i18n 文案；`aborted` 返回 undefined（用户主动停止，静默）。每类文案含三段：发生了什么、影响、建议动作（如 auth→检查 API 密钥/设置入口；network→检查网络与代理后重试）。原始 `err.message` 保留给 outputChannel/console 诊断，不上屏。
+- 应用点（原先均裸透传 `err.message`）：sidebar `_handleMessage` catch（prompt 等主错误出口）、inline-chat 三处（保存/回滚/轮次失败）、extension.ts sendToPi catch、tab.ts applyPreview 意外错误、settings-panel 保存错误。commit-message 已有人话前缀模式，保持。
+
+**B. 残留文案收口**（全部走 i18n 集中层）：`models.selectPlaceholder`（session.ts showModelPicker）、`models.noneAvailable`、`command.thinkingChanged`（extension.ts toggleThinking toast，level 经 `thinkingLevelLabel()` 复用 settings.think.* 译名）、`compact.done`、`common.yes`（两处模态确认按钮）、`init.failed`（sidebar 初始化失败横幅）。例外：extension.ts 激活失败提示保持英文——setLang 可能尚未执行，且激活失败即扩展损坏场景。
+
+**C. 主题四组合**：CSS 审计结论——全部颜色走 `--vscode-*` 变量；仅 box-shadow 的 `color-mix(#000 α)` 与 `-webkit-mask` 渐变含黑色（阴影/遮罩语义，双主题通用，符合 VS Code 内置扩展惯例）。新增守卫测试（theme.test.ts）：静态扫描 main.css/settings.css，硬编码颜色只允许出现在 box-shadow / -webkit-mask 声明行，防止回归。
+
+**D. i18n 一致性守卫**：新增测试——EN 与 ZH 每个同名 key 的 `{param}` 插值参数集合必须一致（防翻译漂移导致运行时留 `{n}` 占位符或缺参）。key 集合一致已由 `ZH: Record<TextKey, string>` 编译期保证。
+
+**E. 人工走查清单**（机械验证之外的四组合遍历，F5 手工执行）：面板空态/流式/工具卡/审批卡/模型选择/会话面板/计划卡/任务面板/占用横幅/apply 卡 × 深浅 × 中英；设置页全部区块；inline chat 三态提示。机械部分（文案扫描、CSS 变量、参数一致性、key 奇偶）已由测试固化。
+
+
 
 | 方向 | 消息 | 用途 |
 |------|------|------|

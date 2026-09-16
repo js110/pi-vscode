@@ -3,6 +3,7 @@ import type { SettingsClientMessage, SettingsServerMessage, SettingsData, Lang }
 import type { GlobalRuleStore } from '../pi/approval-memory';
 import { discoverSkills } from '../pi/skills';
 import { resolveDisplayLang } from './lang';
+import { humanizeErrorMessage } from '../shared/error-copy';
 
 const API_KEY_PREFIX = 'pi-agent.apiKey.';
 
@@ -113,8 +114,10 @@ export class SettingsPanel {
                     this._post({ type: 'approvalRules', rules: [] });
                     break;
             }
-        } catch (err: any) {
-            this._post({ type: 'error', message: err.message ?? String(err) });
+        } catch (err: unknown) {
+            console.error('[pi-vscode] settings message failed:', err);
+            const text = humanizeErrorMessage(err);
+            if (text) this._post({ type: 'error', message: text });
         }
     }
 
