@@ -142,29 +142,6 @@ async function resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>
     );
 }
 
-/**
- * Move the Pi panel view between workbench areas. The view must be focused
- * for VS Code's move commands to pick it up, so we focus its container first.
- */
-async function moveSidebarView(
-    target: 'secondary' | 'primary',
-    outputChannel: vscode.OutputChannel,
-): Promise<void> {
-    try {
-        await vscode.commands.executeCommand('workbench.view.extension.pi-agent');
-        // Give the view a moment to receive focus before it is moved.
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        await vscode.commands.executeCommand(
-            target === 'secondary'
-                ? 'workbench.action.moveViewToSecondarySideBar'
-                : 'workbench.action.moveViewToPrimarySideBar',
-        );
-        outputChannel.appendLine(`Pi panel moved to ${target} sidebar.`);
-    } catch (err: any) {
-        outputChannel.appendLine(`Failed to move Pi panel to ${target} sidebar: ${err?.message ?? err}`);
-    }
-}
-
 export async function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('Pi Agent');
     outputChannel.appendLine('Pi Agent extension activating...');
@@ -398,14 +375,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
             vscode.commands.registerCommand('pi-agent.generateCommitMessage', (target?: unknown) => {
                 void commitMessage.generateIntoInputBox(target);
-            }),
-
-            vscode.commands.registerCommand('pi-agent.moveToSecondarySidebar', () => {
-                void moveSidebarView('secondary', outputChannel);
-            }),
-
-            vscode.commands.registerCommand('pi-agent.moveToPrimarySidebar', () => {
-                void moveSidebarView('primary', outputChannel);
             }),
 
             vscode.commands.registerCommand('pi-agent.openSettings', () => {

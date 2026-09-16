@@ -171,7 +171,7 @@
 | API 密钥 | SecretStorage `pi-agent.apiKey.<provider>` | 有 | 同名沿用（settings-panel API_KEY_PREFIX 不变） | 保留 |
 | SDK 凭据 | SDK ModelRuntime credentials（与 Pi CLI 共享） | 有 | 同一 SDK 机制透传 | 与 CLI 一致 |
 | 审批记忆 | globalState `pi-agent.approvalRules.global` | 无（新增） | 缺失/损坏初始化为空，畸形条目滤除不崩溃 | 旧版不读该键 |
-| 面板放置标记 | globalState `pi-agent.sidebarPlacementDone` | 无（新增） | **已移除**（2026-09-16）：首次运行移动 hack 被声明式 `viewsContainers.secondarySidebar`（本机 1.112 manifest schema 稳定支持）取代，残留在用户 globalState 中的旧键无人读取、无害 | 旧版不读 |
+| 面板放置标记 | globalState `pi-agent.sidebarPlacementDone` | 无（新增） | **已移除**（2026-09-16）：首次运行移动 hack 删除；容器位置最终声明为 `viewsContainers.activitybar`（面板默认左侧，见 §2.10 e)），残留在用户 globalState 中的旧键无人读取、无害 | 旧版不读 |
 | 会话 | 工作区 .pi/ pi 原生 jsonl | 有 | 只读不改写格式 | 天然兼容 |
 | 会话锁 | globalStorage/locks/<sha1>.lock | 无（新增） | 呈现层标记，绝不写 ~/.pi/agent | 旧版不读，残留文件无害 |
 | checkpoint 快照 | 内存（不落盘） | 有 | 同 | — |
@@ -230,7 +230,9 @@ AC-FN-28 验收：已配置 Pi 的环境中，从一个可复现 bug 出发完�
 
 **c) 面板默认右侧改为声明式（用户报告"打开插件还是默认显示在左侧"，2026-09-16）**：原"首次运行自动移至次侧边栏"实现在 `activate()` 末尾先写 `sidebarPlacementDone` 标记再执行 `workbench.action.moveViewToSecondarySideBar`——标记先于结果落盘，而移动依赖"先聚焦容器再 300ms 等待"的碰运气时序，失败只写 outputChannel 日志；重装扩展不清 globalState，第一次没移成功就永不重试。修复：核实本机 1.112 稳定 manifest schema 后把 `viewsContainers` 从 `activitybar` 改声明到 `secondarySidebar`（VS Code 注册处直接支持位置 2），默认位置由清单保证、零运行时时序依赖；删除 `SIDEBAR_PLACEMENT_KEY` 与首次运行移动块，`moveToSecondarySidebar`/`moveToPrimarySidebar` 手动命令保留（用户后续自行搬动）。曾评估内部命令 `vscode.moveViews`（本机 bundle 存在，`{viewIds, destinationId}` 无需聚焦）——未文档化 API，不采用（项目坚持 100% 稳定 API）。
 
-**d) 状态栏常驻入口（2026-09-16）**：c) 的直接副作用——图标跟容器走，`secondarySidebar` 容器在活动栏没有图标，用户报告"左侧图标没看到"。稳定 API 无"图标在左 + 面板默认在右"形态（Copilot Chat 的形态由核心特例实现，扩展不可复制；容器放回 activitybar 则面板默认回左侧，拖到右侧后空容器图标同样消失）。用户确认采用状态栏入口弥补可见性：`StatusBarManager` 增加常驻 `$(comment-discussion)` 条目（priority 101，紧邻既有模型条目 100），点击执行既有 `pi-agent.focusChat`（与 Ctrl+Shift+L 同命令），会话初始化之前即可见；tooltip 走 i18n `statusBar.openPanel`，`pi-agent.displayLanguage` 变更时经 `refresh()` 更新。
+**d) 状态栏常驻入口（2026-09-16）**：c) 的直接副作用——图标跟容器走，`secondarySidebar` 容器在活动栏没有图标，用户报告"左侧图标没看到"。稳定 API 无"图标在左 + 面板默认在右"形态（Copilot Chat 的形态由核心特例实现，扩展不可复制；容器放回 activitybar 则面板默认回左侧，拖到右侧后空容器图标同样消失）。用户确认采用状态栏入口弥补可见性：`StatusBarManager` 增加常驻 `$(comment-discussion)` 条目（priority 101，紧邻既有模型条目 100），点击执行既有 `pi-agent.focusChat`（与 Ctrl+Shift+L 同命令），会话初始化之前即可见；tooltip 走 i18n `statusBar.openPanel`，`pi-agent.displayLanguage` 变更时经 `refresh()` 更新。**保留**：容器回退 activitybar（见 e)）后该条目与位置无关，作为任意位置快速打开面板的入口继续存在。
+
+**e) 面板位置最终回退为 activitybar 左侧（2026-09-16，用户决定"恢复到之前就放到左边的那版"）**：`viewsContainers` 从 `secondarySidebar` 改回 `activitybar`（id/title/icon 不变），面板默认回到主侧边栏左侧、活动栏恢复图标。同时删除 `moveSidebarView()` 与 `pi-agent.moveToSecondarySidebar`/`moveToPrimarySidebar` 两个手动命令——对本机 1.112 workbench bundle 的取证证实其依赖的 `workbench.action.moveViewToSecondarySideBar`/`moveViewToPrimarySideBar` **在 bundle 中不存在**（全文字面量 grep 为空），两个命令自始至终是必然失败的无操作（这正是旧版"首次运行自动移右"从未生效的根因：executeCommand reject 被 catch 写日志，而标记早已落盘）。1.112 真实存在的移动命令：`workbench.action.moveView`/`moveFocusedView`（交互式快选，不可脚本化传参）、`movePanelToSidePanel`/`movePanelToSecondarySideBar`/`moveSidePanelToPanel`/`moveSecondarySideBarToPanel`/`moveSideBarRight`/`moveSideBarLeft`（面板级）；无 `moveViewToPrimarySideBar`。另证实核心对扩展贡献的视图容器硬编码 `hideIfEmpty: true`（registerCustomViewContainer），视图被移走后容器即被活动栏隐藏——即使移动成功，"图标在左 + 面板在右"也无法共存；内部命令 `vscode.moveViews` 虽存在但未文档化，继续不采用（坚持 100% 稳定 API）。
 
 ## 4. 安全与边界
 

@@ -9,7 +9,7 @@ The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetapho
 ## What works
 
 - Sidebar chat with streamed text, thinking blocks, and expandable tool calls.
-- Status bar entry that opens the panel from anywhere (the panel itself lives in the secondary sidebar, right side by default).
+- Status bar entry that opens the panel from anywhere, alongside the activity bar icon.
 - Multiple independent Pi sessions in tabs.
 - Pi-native model selection and thinking levels.
 - Pi-native `steer`, `followUp`, queue events, session persistence, skills, and context compaction.
@@ -45,7 +45,7 @@ Pi remains the backend. VS Code supplies presentation, approvals, editor state, 
 
 ## Getting started
 
-1. Open the Pi icon in the secondary sidebar (right side by default) to start chatting.
+1. Open the Pi icon in the activity bar (left side) to start chatting.
 2. Sign in with `/login` in the chat input, or store a provider API key from the extension's settings panel.
 3. Pick a model from the model picker and prompt away. Existing Pi configuration (`~/.pi/agent`), skills, and sessions are picked up automatically.
 

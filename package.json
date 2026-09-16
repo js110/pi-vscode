@@ -33,7 +33,7 @@
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
-      "secondarySidebar": [
+      "activitybar": [
         {
           "id": "pi-agent",
           "title": "Pi Agent",
@@ -78,14 +78,6 @@
       {
         "command": "pi-agent.openSettings",
         "title": "Pi: Open Settings"
-      },
-      {
-        "command": "pi-agent.moveToSecondarySidebar",
-        "title": "Pi: Move Panel to Secondary Sidebar (Right)"
-      },
-      {
-        "command": "pi-agent.moveToPrimarySidebar",
-        "title": "Pi: Move Panel to Primary Sidebar (Left)"
       },
       {
         "command": "pi-agent.sendToPi",
