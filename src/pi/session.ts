@@ -13,6 +13,7 @@ import { loadPiSdk, getSdkSource, hasFunction, type PiSdk } from './compat';
 import { mapSkills } from './skills';
 import { getModelRuntime, disposeModelRuntime } from './auth';
 import { getModelRegistry, getAvailableModels, findModel, findConfiguredModel, disposeModelRegistry } from './models';
+import { TtlCache } from '../shared/ttl-cache';
 
 export type ToolApprovalHandler = (toolCallId: string, toolName: string, args: any) => Promise<boolean>;
 
@@ -26,6 +27,7 @@ export class PiSessionManager {
     private _bridgeExtensionPath: string | undefined;
     private _secrets: vscode.SecretStorage | undefined;
     private _toolApprovalHandler: ToolApprovalHandler | undefined;
+    private _sessionsCache = new TtlCache<SessionInfo[]>(5_000);
     readonly events = new EventRouter();
 
     constructor(
@@ -212,19 +214,27 @@ export class PiSessionManager {
         this._unsubscribe = session.subscribe(this.events.asSessionListener());
         this._applyDefaultSettings(session);
         this._installToolApprovalHook(session);
+        this._sessionsCache.invalidate();
     }
 
     async getSessions(): Promise<SessionInfo[]> {
         const { SessionManager: SM } = await loadPiSdk();
         const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
         const sessionDir = vscode.workspace.getConfiguration('pi-agent').get<string>('sessionStoragePath', '') || undefined;
+        const key = JSON.stringify([cwd, sessionDir ?? '']);
+        const cached = this._sessionsCache.get(key);
+        if (cached) {
+            return cached.map((s) => ({ ...s }));
+        }
         const sessions = await SM.list(cwd, sessionDir);
-        return sessions.map((s: any) => ({
+        const mapped = sessions.map((s: any) => ({
             id: s.id ?? s.sessionId ?? '',
             name: s.name ?? s.sessionName,
             path: s.path ?? s.filePath ?? '',
             lastModified: s.modified instanceof Date ? s.modified.getTime() : undefined,
         }));
+        this._sessionsCache.set(key, mapped);
+        return mapped.map((s) => ({ ...s }));
     }
 
     async loadSession(sessionPath: string): Promise<void> {
@@ -240,12 +250,14 @@ export class PiSessionManager {
         this._session = session;
         this._unsubscribe = session.subscribe(this.events.asSessionListener());
         this._installToolApprovalHook(session);
+        this._sessionsCache.invalidate();
     }
 
     setSessionName(name: string): void {
         const s = this._session;
         if (!s || typeof s.setSessionName !== 'function') return;
         s.setSessionName(name);
+        this._sessionsCache.invalidate();
     }
 
     getCurrentSessionPath(): string | undefined {
@@ -491,7 +503,7 @@ export class PiSessionManager {
         }
     }
 
-    serializeState(): SerializedAgentState {
+    serializeState(includeMessages = true): SerializedAgentState {
         const s = this._session;
         if (!s) {
             return {
@@ -502,7 +514,7 @@ export class PiSessionManager {
         }
         const model = s.model;
         return {
-            messages: (s as any).messages?.map(safeSerialize) ?? [],
+            ...(includeMessages ? { messages: (s as any).messages?.map(safeSerialize) ?? [] } : {}),
             model: model ? { provider: getProviderId(model), id: model.id, name: model.name } : undefined,
             thinkingLevel: s.thinkingLevel,
             isStreaming: s.isStreaming,

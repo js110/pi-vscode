@@ -4,6 +4,7 @@ import { buildTasksListHtml, buildOccupancyBannerHtml } from './render/tasks';
 import { isDangerousTool } from '../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
+import { matchesModelFilter } from '../shared/model-filter';
 import { t, setLang } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
@@ -61,6 +62,8 @@ const state: {
     tasks: TaskInfo[];
     occupancy: SessionOccupancy | null;
     tasksPanelOpen: boolean;
+    /** assetId → dataUrl, fed by stateSync.images (T16 image separation). */
+    imageCache: Record<string, string>;
 } = {
     messages: [],
     isStreaming: false,
@@ -91,6 +94,7 @@ const state: {
     tasks: [],
     occupancy: null,
     tasksPanelOpen: false,
+    imageCache: {},
 };
 
 let sessionSearchQuery = '';
@@ -108,6 +112,7 @@ function handleMessage(msg: ServerMessage): void {
             vscode.postMessage({ type: 'getSkills' });
             break;
         case 'stateSync':
+            if (msg.images) Object.assign(state.imageCache, msg.images);
             applyStateSync(msg.state);
             break;
         case 'agentEvent':
@@ -260,7 +265,8 @@ function handleConfirmResult(action: string, confirmed: boolean, payload?: any):
 
 function applyStateSync(s: SerializedAgentState): void {
     const prevTab = state.activeTabId;
-    state.messages = s.messages ?? [];
+    // Unchanged message lists are omitted from the frame (T16); keep ours.
+    state.messages = s.messages ?? state.messages;
     state.isStreaming = s.isStreaming;
     state.model = s.model;
     state.thinkingLevel = s.thinkingLevel;
@@ -2133,10 +2139,10 @@ function showModelPicker(): void {
     searchInput.focus();
 
     searchInput.addEventListener('input', () => {
-        const q = searchInput.value.toLowerCase();
+        const q = searchInput.value;
         list.querySelectorAll('.model-item').forEach((item) => {
             const name = (item as HTMLElement).dataset.name ?? '';
-            (item as HTMLElement).style.display = name.includes(q) ? '' : 'none';
+            (item as HTMLElement).style.display = matchesModelFilter(name, q) ? '' : 'none';
         });
         list.querySelectorAll('.model-section-header').forEach((hdr) => {
             (hdr as HTMLElement).style.display = q ? 'none' : '';
@@ -2740,17 +2746,15 @@ function updateImageChips(): void {
     });
 }
 
-/** Image attachments on a persisted user message (pi ImageContent items). */
+/** Image attachments on a persisted user message. The host ships base64
+ *  payloads once via stateSync.images; messages carry assetId references. */
 function extractUserImages(msg: any): string[] {
     if (!Array.isArray(msg.content)) return [];
     const sources: string[] = [];
     for (const c of msg.content) {
-        if ((c.type !== 'image' && c.type !== 'image_url') || c.data == null) continue;
-        const mime =
-            typeof c.mimeType === 'string' && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(c.mimeType)
-                ? c.mimeType
-                : 'image/png';
-        sources.push(`data:${mime};base64,${String(c.data).replace(/[^A-Za-z0-9+/=]/g, '')}`);
+        if ((c.type !== 'image' && c.type !== 'image_url') || c.assetId == null) continue;
+        const dataUrl = state.imageCache[c.assetId];
+        if (dataUrl) sources.push(dataUrl);
     }
     return sources;
 }

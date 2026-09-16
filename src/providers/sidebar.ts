@@ -14,7 +14,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     ) {
         this._extensionUri = extensionUri;
         this._tabManager = tabManager;
-        tabManager.onStateChange(() => this.post({ type: 'stateSync', state: this._tabManager.getState() }));
+        tabManager.onStateChange(() => {
+            const { state, images } = this._tabManager.getSnapshot();
+            this.post({ type: 'stateSync', state, images });
+        });
     }
 
     resolveWebviewView(
@@ -41,8 +44,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         this.post({ type: 'ready' });
         this.post({ type: 'langChanged', lang: resolveDisplayLang() });
+        // SDK loading runs off the activation path; the panel shows the empty
+        // state immediately and gets the real state once the first tab exists.
         this.post({ type: 'stateSync', state: this._tabManager.getState() });
-        void this._tabManager.postConfigSnapshot();
+        void this._tabManager.initialize().then(() => {
+            if (this._view !== webviewView) return;
+            const { state, images } = this._tabManager.getSnapshot(true);
+            this.post({ type: 'stateSync', state, images });
+            void this._tabManager.postConfigSnapshot();
+        }, (err: unknown) => {
+            if (this._view !== webviewView) return;
+            const message = err instanceof Error ? err.message : String(err);
+            this.post({ type: 'error', message: `Initialization failed: ${message}` });
+        });
     }
 
     post(message: ServerMessage): void {
@@ -69,7 +83,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         await this._tabManager.selectModel();
     }
 
-    toggleThinking(): string | undefined {
+    async toggleThinking(): Promise<string | undefined> {
         return this._tabManager.toggleThinking();
     }
 

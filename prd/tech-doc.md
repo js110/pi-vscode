@@ -105,6 +105,45 @@
 
 **协议扩展汇总**：stateSync 增 `tasks`/`occupancy` 字段；client→host 增 `taskCancel`/`sessionTakeover`；无 host→client 新消息（均走既有 stateSync 全量）。i18n 增 tasks.* 与 occupancy.*。
 
+### 2.5 性能与状态机收口（T16，2026-09-16）
+
+**现状核实（AC-FN-18 / M13.1 相关代码路径）**：
+
+- **激活路径重活**：`activate()` 同步 `await tabManager.initialize()`（extension.ts:272）——SDK 加载 + resourceLoader.reload + 会话创建全在激活关键路径；`createBridge` 仅注册事件订阅 + 起本地端口，轻。
+- **stateSync 全量重发（T7 遗留）**：每次 `_emitStateChange` → `getState()` → `serializeState()` 对全部消息 `JSON.parse(JSON.stringify())` 深拷贝；`postMessage` 结构化克隆全量传输。消息里 base64 图片（T7）随每次 stateSync 重发——粘贴过的图每帧都传一遍。
+- **会话列表**：SDK `SessionManager.list` 对每个 .jsonl 用 readline **遍历全文件**（并发 10）统计 name/messageCount——500 会话首次全扫是 O(总字节) IO；面板每次打开/改名都重复触发。
+- **模型过滤**：webview 输入 `name.includes(q)` 遍历 DOM display 切换，100+ 模型为微秒级——提纯函数 + 性能测试背书即可。
+
+**A. stateSync 消息增量（messages 未变则不发送）**：
+
+1. `SerializedAgentState.messages` 改可选（`messages?: any[]`）。host 每个 Tab 维护 `messagesDirty`（初始 true）：置位点 = 一切会改变 messages 序列化结果的地方——message_end（assistant，含 messageMeta 写入）、restoreCheckpointOnTab、redoCheckpoint、newSession/loadSession/renameSession(换路径)、suspendedMessages 变化（prompt 前 discard / restore / redo）、活跃 Tab 切换（_switchTab/_closeTab 换活跃 tab / _createTab）。
+2. `TabManager.getState()` 改 `getSnapshot(force = false): { state, images? }`：`!force && !dirty` 时 `serializeState(false)`（session.ts 增参：跳过 messages 深拷贝，返回对象不带 messages 键）——省掉 clone + postMessage 全量；发送后清 dirty。dispatch `getState` 走 force=true。
+3. webview `applyStateSync`：`state.messages = s.messages ?? state.messages`（保留现值）；`updateMessages` 逻辑不变。
+4. serializeState 的深拷贝保留（append-only 下文本消息 CPU 可接受；不引入 WeakMap 缓存——避免缓存副本被 meta/images 后处理污染）。
+
+**B. 图片资产分离（base64 走旁路缓存）**：
+
+1. `shared/message-assets.ts` 纯函数 `collectAndReplaceImages(messages, known: Map<dataUrl, assetId>, allocId)`：遍历消息 content，`type: 'image' | 'image_url'` 且有 data 的项替换为 `{ type: 'image', assetId }`，返回 `{ messages, images }`（images = 本次新增 assetId→dataUrl，仅首次）。known 保证了 assetId 稳定（同一图跨帧同 id，webview 缓存可去重）。
+2. host 每 Tab `imageAssets: Map<dataUrl, assetId>`（assetId 由 TabManager 实例级计数器分配，跨 Tab 唯一）；`getSnapshot` 内在 meta 附加之后对 `state.messages` 执行替换，新增图片随 stateSync 顶层 `images?: Record<string, string>` 发出（空则省略）。
+3. webview 维护 `state.imageCache: Record<assetId, dataUrl>`（生命周期 = webview 存续，不清理——内存占用与图片留在消息里等价）；`extractUserImages` 改查 `c.assetId → imageCache`（不再读 `c.data`，host 不再发 base64）。
+4. agentEvent 的 message_end 事件仍含 base64（safeSerialize 副本）——接受：每图仅随其 message_end 传输一次（理论下限），后续所有 stateSync 均为 assetId 引用。
+5. 消息未变（A 省略 messages）时 images 必为空（新图只随新消息出现），逻辑自洽。
+
+**C. 激活懒初始化**：
+
+1. `TabManager.initialize()` 幂等化（缓存 ready promise，重复调用立即 resolve）。extension.ts 不再 `await`（`void tabManager.initialize().catch(log)`）；SidebarProvider.resolveWebviewView 先 post 空态（`getState()` 无 Tab 分支已有兜底），再 `initialize().then(post 真态 + postConfigSnapshot)`。
+2. 所有 Tab 访问入口（dispatch/sendToPi/abort/selectModel/toggleThinking/compact/recordFileSnapshot/inline-chat 命令）开头 `await initialize()`——幂等零成本；早到的命令不再被静默丢弃。
+3. activationEvents=[] 且 contributes.views 存在：VS Code 在视图首次可见时激活——懒初始化把 SDK 加载移出激活计时（AC ≤1.5s 主路径只剩事件订阅 + 端口监听）。
+
+**D. 会话列表缓存（stale-while-ignore，TTL 5s）**：
+
+1. `shared/ttl-cache.ts` 纯类 `TtlCache<V>(ttl, { now? })`：`get(key)` 命中返回副本、过期返回 undefined；`set(key, value)`；`invalidate()`。单测覆盖。
+2. `PiSessionManager.getSessions()` 接入：key = cwd+sessionDir，命中免 SDK 全文件扫描；返回值始终做逐条浅拷贝（调用方不可污染缓存）。失效点 = `setSessionName`（改名后立即 getSessions 必须见新名）/ `newSession` / `loadSession`（列表可能新增条目）。首次 500 会话扫描依赖 SDK 并发 10，为一次性成本——面板第二次打开 ≤10ms。
+
+**E. 并发口径**：既有保护盘点（session-lock promise 队列、plan driver runId 单飞、compactionInFlight、prompt 双检 isStreaming）；新增 whenReady/initialize 幂等 promise 并发安全；补"快速连续 dispatch（prompt 流式中拒绝 / newSession-loadSession-switchTab 交错）不死锁"测试。
+
+**协议变更**：`SerializedAgentState.messages` → 可选；stateSync 增顶层 `images?: Record<string, string>`（仅新增资产）；`getSnapshot` 为 host 内部签名（不进协议）。i18n 无新增。
+
 ## 3. 协议扩展（`src/shared/protocol.ts`，向后兼容新增）
 
 | 方向 | 消息 | 用途 |

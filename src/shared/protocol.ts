@@ -101,7 +101,8 @@ export interface PlanSnapshot {
 }
 
 export interface SerializedAgentState {
-    messages: any[];
+    /** Omitted when unchanged since the last frame (T16 incremental stateSync). */
+    messages?: any[];
     model?: { provider: string; id: string; name?: string };
     thinkingLevel?: string;
     isStreaming: boolean;
@@ -260,7 +261,7 @@ export interface DropResolveResult {
 
 export type ServerMessage =
     | { type: 'ready' }
-    | { type: 'stateSync'; state: SerializedAgentState }
+    | { type: 'stateSync'; state: SerializedAgentState; images?: Record<string, string> }
     | { type: 'agentEvent'; event: any }
     | { type: 'models'; models: ModelInfo[]; current?: ModelInfo; thinkingLevel?: string; availableThinkingLevels?: string[]; supportsThinking?: boolean }
     | { type: 'modelChanged'; model: ModelInfo; thinkingLevel?: string }

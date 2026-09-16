@@ -269,7 +269,11 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         const tabManager = new TabManager(factory, hooks, globalRuleStore, lockDeps);
         tabManagerRef = tabManager;
-        await tabManager.initialize();
+        // T16: SDK loading + session creation run off the activation critical
+        // path; consumers (webview, commands) await initialize() themselves.
+        void tabManager.initialize().catch((err: any) => {
+            outputChannel.appendLine(`[pi-vscode] initialization failed: ${err?.message ?? err}`);
+        });
 
         const diffContentProvider = new DiffContentProvider();
         const statusBar = new StatusBarManager(tabManager);
@@ -349,7 +353,7 @@ export async function activate(context: vscode.ExtensionContext) {
             }),
 
             vscode.commands.registerCommand('pi-agent.toggleThinking', async () => {
-                const level = sidebarProvider.toggleThinking();
+                const level = await sidebarProvider.toggleThinking();
                 if (level) {
                     vscode.window.showInformationMessage(`Thinking level: ${level}`);
                 }

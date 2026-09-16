@@ -31,6 +31,7 @@ import {
 import { t } from '../shared/i18n';
 import { isDangerousTool } from '../shared/tool-safety';
 import { applyTaskEvent, type TaskInfo } from '../shared/tasks';
+import { collectAndReplaceImages } from '../shared/message-assets';
 import { SessionLockManager, LOCK_HEARTBEAT_MS, type SessionLockDeps } from '../pi/session-lock';
 import {
     PlanMachine,
@@ -155,11 +156,17 @@ export class TabManager {
         plan: PlanRuntime;
         tasks: TaskInfo[];
         lock: SessionLockManager | null;
+        /** True when the serialized message list must be re-shipped (T16). */
+        messagesDirty: boolean;
+        /** dataUrl payload → stable assetId, deduping image assets per tab. */
+        imageAssets: Map<string, string>;
     }>();
     private _activeTabId = '';
     private _tabSubscriptions = new Map<string, (() => void)[]>();
     private _stateListeners: (() => void)[] = [];
     private _heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+    private _initializePromise: Promise<void> | undefined;
+    private _imageAssetSeq = 0;
 
     constructor(
         private _factory: TabFactory,
@@ -188,11 +195,22 @@ export class TabManager {
         if (changed) { this._emitStateChange(); }
     }
 
-    async initialize(): Promise<void> {
-        const tab = await this._createTabState();
-        this._tabs.set(tab.id, tab);
-        this._activeTabId = tab.id;
-        this._subscribeTab(tab);
+    /** Idempotent: SDK loading and session creation run once; later calls
+     *  await the same ready promise (T16 lazy activation). A failed attempt
+     *  clears the cache so a later call can retry. */
+    initialize(): Promise<void> {
+        this._initializePromise ??= (async () => {
+            try {
+                const tab = await this._createTabState();
+                this._tabs.set(tab.id, tab);
+                this._activeTabId = tab.id;
+                this._subscribeTab(tab);
+            } catch (err) {
+                this._initializePromise = undefined;
+                throw err;
+            }
+        })();
+        return this._initializePromise;
     }
 
     get activeTab(): Tab | undefined {
@@ -223,11 +241,12 @@ export class TabManager {
     }
 
     private async _restoreCheckpointOnTab(
-        tab: Tab & { suspendedMessages: any[] },
+        tab: Tab & { suspendedMessages: any[]; messagesDirty: boolean },
         messageIndex: number,
     ): Promise<void> {
         const restored = await tab.checkpointManager.restoreCheckpoint(messageIndex);
         tab.diffManager.suspendChangesAfter(messageIndex);
+        tab.messagesDirty = true;
 
         const allMsgs = tab.session.getMessages();
         const cutoff = this._findCutoffIndex(allMsgs, messageIndex);
@@ -260,20 +279,66 @@ export class TabManager {
         this._hooks.post({ type: 'configState', config });
     }
 
-    getState(): SerializedAgentState {
+    /** Full state plus any first-seen image assets (T16: messages ship only
+     *  when they changed; image data travels once via `images`). */
+    getSnapshot(force = false): { state: SerializedAgentState; images?: Record<string, string> } {
+        return this._buildSnapshot(force, 'send');
+    }
+
+    /** Read-only state view: never consumes the dirty flag, never allocates
+     *  image assetIds, and omits messages unless forced. */
+    getState(force = false): SerializedAgentState {
+        return this._buildSnapshot(force, 'read').state;
+    }
+
+    private _buildSnapshot(
+        force: boolean,
+        mode: 'send' | 'read',
+    ): { state: SerializedAgentState; images?: Record<string, string> } {
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) {
-            return { messages: [], isStreaming: false, tools: [] };
+            return { state: { messages: [], isStreaming: false, tools: [] } };
         }
 
-        const state = tab.session.serializeState();
+        const needMessages = mode === 'send' ? force || tab.messagesDirty : force;
+        const state = tab.session.serializeState(needMessages);
         state.isStreaming = tab.isStreaming;
-        if (tab.suspendedMessages.length > 0) {
-            state.messages = [
-                ...state.messages,
-                ...tab.suspendedMessages.map((m: any) => safeSerialize(m)),
-            ];
+
+        let images: Record<string, string> | undefined;
+        if (needMessages) {
+            if (mode === 'send') {
+                tab.messagesDirty = false;
+            }
+            if (tab.suspendedMessages.length > 0) {
+                state.messages = [
+                    ...(state.messages ?? []),
+                    ...tab.suspendedMessages.map((m: any) => safeSerialize(m)),
+                ];
+            }
+
+            let assistantOrdinal = 0;
+            for (let i = 0; i < (state.messages?.length ?? 0); i++) {
+                if (state.messages![i].role === 'assistant') {
+                    const meta = tab.messageMeta.get(assistantOrdinal);
+                    if (meta) {
+                        state.messages![i]._thinkingDurationSec = meta.thinkingDurationSec;
+                        state.messages![i]._messageEndTime = meta.messageEndTime;
+                    }
+                    assistantOrdinal++;
+                }
+            }
+
+            if (mode === 'send') {
+                const assets = collectAndReplaceImages(
+                    state.messages ?? [],
+                    tab.imageAssets,
+                    () => `img-${++this._imageAssetSeq}`,
+                );
+                state.messages = assets.messages;
+                images = assets.images;
+            }
         }
+
         state.fileChanges = tab.diffManager.fileChanges;
         state.rollbackPoint = tab.checkpointManager.rollbackPoint;
         state.tabs = this._getTabInfos();
@@ -295,19 +360,7 @@ export class TabManager {
         if (tab.lock && tab.lock.occupancy !== 'none') {
             state.occupancy = tab.lock.occupancy;
         }
-
-        let assistantOrdinal = 0;
-        for (let i = 0; i < state.messages.length; i++) {
-            if (state.messages[i].role === 'assistant') {
-                const meta = tab.messageMeta.get(assistantOrdinal);
-                if (meta) {
-                    state.messages[i]._thinkingDurationSec = meta.thinkingDurationSec;
-                    state.messages[i]._messageEndTime = meta.messageEndTime;
-                }
-                assistantOrdinal++;
-            }
-        }
-        return state;
+        return { state, images };
     }
 
     private _getTabInfos(): TabInfo[] {
@@ -363,6 +416,8 @@ export class TabManager {
             },
             tasks: [],
             lock: this._lockDeps ? new SessionLockManager(this._lockDeps) : null,
+            messagesDirty: true,
+            imageAssets: new Map<string, string>(),
         };
     }
 
@@ -485,27 +540,32 @@ export class TabManager {
             }
         }
 
-        if (event.type === 'message_end' && event.message?.role === 'assistant') {
-            const msgs = tab.session.getMessages();
-            let assistantOrdinal = 0;
-            let lastOrdinal = -1;
-            for (let i = 0; i < msgs.length; i++) {
-                if (msgs[i].role === 'assistant') {
-                    lastOrdinal = assistantOrdinal;
-                    assistantOrdinal++;
+        if (event.type === 'message_end') {
+            // User turns end with message_end too — the new bubble must ship
+            // immediately, not only when the assistant replies.
+            tab.messagesDirty = true;
+            if (event.message?.role === 'assistant') {
+                const msgs = tab.session.getMessages();
+                let assistantOrdinal = 0;
+                let lastOrdinal = -1;
+                for (let i = 0; i < msgs.length; i++) {
+                    if (msgs[i].role === 'assistant') {
+                        lastOrdinal = assistantOrdinal;
+                        assistantOrdinal++;
+                    }
                 }
-            }
-            if (lastOrdinal >= 0) {
-                tab.messageMeta.set(lastOrdinal, {
-                    thinkingDurationSec: tab.streamingThinkingDuration,
-                    messageEndTime: Date.now(),
-                });
-            }
-            tab.streamingThinkingDuration = 0;
-            if (tab.plan.machine.snapshot().phase === 'planning') {
-                const titles = parsePlanBlock(this._assistantText(event.message));
-                if (titles.length > 0) {
-                    tab.plan.capturedSteps = titles;
+                if (lastOrdinal >= 0) {
+                    tab.messageMeta.set(lastOrdinal, {
+                        thinkingDurationSec: tab.streamingThinkingDuration,
+                        messageEndTime: Date.now(),
+                    });
+                }
+                tab.streamingThinkingDuration = 0;
+                if (tab.plan.machine.snapshot().phase === 'planning') {
+                    const titles = parsePlanBlock(this._assistantText(event.message));
+                    if (titles.length > 0) {
+                        tab.plan.capturedSteps = titles;
+                    }
                 }
             }
         }
@@ -621,6 +681,7 @@ export class TabManager {
     }
 
     async dispatch(msg: ClientMessage): Promise<void> {
+        await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) return;
 
@@ -682,6 +743,7 @@ export class TabManager {
                     tab.checkpointManager.discardSuspended();
                     tab.diffManager.discardSuspended();
                     tab.suspendedMessages = [];
+                    tab.messagesDirty = true;
                 }
                 tab.turnCounter++;
                 const turnIdx = tab.turnCounter;
@@ -773,6 +835,7 @@ export class TabManager {
                 this._resetStreaming(tab);
                 tab.messageMeta.clear();
                 tab.suspendedMessages = [];
+                tab.messagesDirty = true;
                 tab.queuedMessages = [];
                 tab.compactionStage = 'none';
                 tab.compactionPrompt = null;
@@ -789,6 +852,7 @@ export class TabManager {
                 tab.diffManager.clearAll();
                 tab.checkpointManager.clearAll();
                 tab.suspendedMessages = [];
+                tab.messagesDirty = true;
                 tab.queuedMessages = [];
                 tab.compactionStage = 'none';
                 tab.compactionPrompt = null;
@@ -812,6 +876,7 @@ export class TabManager {
                     tab.diffManager.clearAll();
                     tab.checkpointManager.clearAll();
                     tab.suspendedMessages = [];
+                    tab.messagesDirty = true;
                     tab.queuedMessages = [];
                     this._resetStreaming(tab);
                     tab.messageMeta.clear();
@@ -874,6 +939,9 @@ export class TabManager {
                     await tab.session.compact();
                     tab.compactionInFlight = false;
                     tab.compactionPrompt = null;
+                    // Compaction replaces the message list wholesale via
+                    // compaction_end — no message_end fires, so re-ship.
+                    tab.messagesDirty = true;
                     // stateSync first: the banner must clear before the result
                     // lands, or the live buttons linger for one tick.
                     this._emitStateChange();
@@ -991,9 +1059,11 @@ export class TabManager {
                     this._emitStateChange();
                 }
                 break;
-            case 'getState':
-                this._hooks.post({ type: 'stateSync', state: this.getState() });
+            case 'getState': {
+                const { state, images } = this.getSnapshot(true);
+                this._hooks.post({ type: 'stateSync', state, images });
                 break;
+            }
             case 'getSkills': {
                 const skills = tab.session.getSkills();
                 const commands = tab.session.getCommands();
@@ -1047,6 +1117,7 @@ export class TabManager {
                     tab.session.setMessages([...current, ...tab.suspendedMessages]);
                     tab.suspendedMessages = [];
                 }
+                tab.messagesDirty = true;
 
                 if (redone.length > 0) {
                     this._hooks.showMessage(`Re-applied ${redone.length} file(s).`);
@@ -1317,6 +1388,7 @@ export class TabManager {
 
         if (wasActive) {
             this._activeTabId = this._tabs.keys().next().value!;
+            this._tabs.get(this._activeTabId)!.messagesDirty = true;
         }
 
         this._emitStateChange();
@@ -1329,6 +1401,7 @@ export class TabManager {
 
         const tab = this._tabs.get(tabId)!;
         tab.hasNotification = false;
+        tab.messagesDirty = true;
         this._hooks.setContext('pi-agent.isStreaming', tab.isStreaming);
 
         this._emitStateChange();
@@ -1352,18 +1425,21 @@ export class TabManager {
     }
 
     async abort(): Promise<void> {
+        await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (tab) await tab.session.abort();
     }
 
     async selectModel(): Promise<void> {
+        await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) return;
         await tab.session.showModelPicker();
         this._emitStateChange();
     }
 
-    toggleThinking(): string | undefined {
+    async toggleThinking(): Promise<string | undefined> {
+        await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) return undefined;
         const level = tab.session.cycleThinkingLevel();
@@ -1372,14 +1448,17 @@ export class TabManager {
     }
 
     async compact(): Promise<void> {
+        await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) return;
         await tab.session.compact();
+        tab.messagesDirty = true;
         this._emitStateChange();
     }
 
     /** Host entry (editor context menu): prompt, or FollowUp queue while streaming. */
     async sendToPi(text: string): Promise<void> {
+        await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) return;
         if (tab.isStreaming) {
@@ -1405,5 +1484,8 @@ export class TabManager {
         }
         this._tabs.clear();
         this._stateListeners = [];
+        // Allow a fresh webview resolve to initialize again (M4: otherwise the
+        // cached promise resolves against the now-empty tab set forever).
+        this._initializePromise = undefined;
     }
 }

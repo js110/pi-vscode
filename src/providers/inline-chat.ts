@@ -73,7 +73,9 @@ export class InlineChatManager implements vscode.Disposable {
             return;
         }
         const tm = this._deps.getTabManager();
-        if (!tm?.activeTab) return;
+        if (!tm) return;
+        await tm.initialize();
+        if (!tm.activeTab) return;
         if (tm.isStreaming) {
             this._deps.showMessage(t('inline.busy'));
             return;
