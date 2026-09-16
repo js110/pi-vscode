@@ -35,7 +35,7 @@ vi.mock('vscode', () => {
         StatusBarAlignment: { Left: 1, Right: 2 },
         ConfigurationTarget: { Global: 1 },
         ViewColumn: { One: 1 },
-        env: {},
+        env: { language: 'en' },
         version: '0.0.0',
     };
 });

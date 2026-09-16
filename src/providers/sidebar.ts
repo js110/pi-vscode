@@ -40,9 +40,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             this._handleMessage(msg);
         });
 
-        webviewView.onDidDispose(() => {
-            this._tabManager.dispose();
-        });
+        // VS Code destroys the webview whenever the view is hidden, but the
+        // TabManager (and its live sessions) must survive hide/show cycles —
+        // it is disposed with the extension via context.subscriptions.
 
         this.post({ type: 'ready' });
         this.post({ type: 'langChanged', lang: resolveDisplayLang() });
