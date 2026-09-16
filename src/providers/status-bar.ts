@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import type { TabManager } from './tab';
 import { formatTokensCompact } from '../shared/webview-text';
+import { t } from '../shared/i18n';
 
 export class StatusBarManager implements vscode.Disposable {
     private _item: vscode.StatusBarItem;
+    private _openItem: vscode.StatusBarItem;
     private _tabManager: TabManager;
     private _unsubscribe: (() => void) | undefined;
 
@@ -14,7 +16,20 @@ export class StatusBarManager implements vscode.Disposable {
         this._update();
         this._item.show();
 
+        // The secondary-sidebar container has no activity-bar icon, so this
+        // entry is the always-visible way to open the panel.
+        this._openItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
+        this._openItem.text = '$(comment-discussion)';
+        this._openItem.command = 'pi-agent.focusChat';
+        this._openItem.tooltip = t('statusBar.openPanel');
+        this._openItem.show();
+
         this._unsubscribe = tabManager.onStateChange(() => this._update());
+    }
+
+    /** Re-apply language-dependent copy after `pi-agent.displayLanguage` changes. */
+    refresh(): void {
+        this._openItem.tooltip = t('statusBar.openPanel');
     }
 
     private _update(): void {
@@ -68,5 +83,6 @@ export class StatusBarManager implements vscode.Disposable {
     dispose(): void {
         this._unsubscribe?.();
         this._item.dispose();
+        this._openItem.dispose();
     }
 }

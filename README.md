@@ -9,6 +9,7 @@ The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetapho
 ## What works
 
 - Sidebar chat with streamed text, thinking blocks, and expandable tool calls.
+- Status bar entry that opens the panel from anywhere (the panel itself lives in the secondary sidebar, right side by default).
 - Multiple independent Pi sessions in tabs.
 - Pi-native model selection and thinking levels.
 - Pi-native `steer`, `followUp`, queue events, session persistence, skills, and context compaction.

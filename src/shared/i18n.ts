@@ -209,6 +209,9 @@ const EN = {
     'command.thinkingChanged': 'Thinking level: {level}',
     'common.yes': 'Yes',
     'init.failed': 'Pi Agent failed to initialize: {message}',
+
+    // Status bar open-panel entry (the secondary-sidebar container has no activity-bar icon)
+    'statusBar.openPanel': 'Open Pi Agent panel',
     // Background tasks panel (C11)
     'tasks.panel': 'Background tasks',
     'tasks.empty': 'No background tasks. Subagent tasks will appear here once the Pi SDK provides them.',
@@ -483,6 +486,9 @@ const ZH: Record<TextKey, string> = {
     'command.thinkingChanged': '思考级别：{level}',
     'common.yes': '是',
     'init.failed': 'Pi Agent 初始化失败：{message}',
+
+    // 状态栏打开面板入口（次侧边栏容器没有活动栏图标）
+    'statusBar.openPanel': '打开 Pi Agent 面板',
     // 后台任务面板（C11）
     'tasks.panel': '后台任务',
     'tasks.empty': '暂无后台任务。Pi SDK 提供子代理能力后，任务会自动显示在这里。',

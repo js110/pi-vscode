@@ -430,6 +430,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     setLang(lang);
                     sidebarProvider.post({ type: 'langChanged', lang });
                     SettingsPanel.notifyLanguage(lang);
+                    statusBar.refresh();
                 }
             }),
         );
