@@ -17,6 +17,13 @@ The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetapho
 - Session history, loading, naming, context usage, and custom session directories.
 - Credentials from the normal Pi config (`~/.pi/agent`) plus optional VS Code SecretStorage overrides.
 - IDE bridge tools for selections, diagnostics, open editors, symbols, definitions, type definitions, implementations, declarations, hover information, references, workspace symbols, Code Actions, formatting, saving, WorkspaceEdit, and notifications.
+- Editor integration: send the current selection to the active tab from the context menu, `@`-mention files and symbols with fuzzy completion, drag and drop files into the prompt, and attach images for vision-capable models.
+- Plan mode that restricts Pi to read-only tools, renders the plan as a card, and tracks its TODO list to completion.
+- Inline chat from a quick-input prompt, with per-turn change highlighting and an accept/discard review flow in the status bar.
+- Commit message generation from the working-tree diff, written straight into the SCM input box.
+- Terminal awareness: quote recent terminal output (captured via shell integration) directly into the prompt.
+- Background task panel with live per-tab activity, occupancy banners, a single-writer session lock, and tool cancellation.
+- English and 中文 UI — `pi-agent.displayLanguage` follows VS Code by default (`auto`), and can be pinned to either language.
 
 ## Architecture
 
@@ -35,6 +42,12 @@ VS Code IDE bridge (127.0.0.1 + random token)
 ```
 
 Pi remains the backend. VS Code supplies presentation, approvals, editor state, language-service actions, and review UI.
+
+## Getting started
+
+1. Open the Pi icon in the activity bar to start chatting in the sidebar.
+2. Sign in with `/login` in the chat input, or store a provider API key from the extension's settings panel.
+3. Pick a model from the model picker and prompt away. Existing Pi configuration (`~/.pi/agent`), skills, and sessions are picked up automatically.
 
 ## Requirements
 
@@ -74,7 +87,7 @@ code --new-window --extensionDevelopmentPath="$PWD" "$PWD"
 npm run package
 ```
 
-The generated VSIX excludes the downloaded research repositories, the earlier RPC prototype, sources, tests, and local test profiles.
+The generated VSIX excludes sources, tests, planning documents (`prd/`), design prototypes (`ui/`, `docs/`), dev scripts, local scratch space (`.cache/`), and the local test profiles.
 
 ## Source research
 

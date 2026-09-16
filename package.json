@@ -21,6 +21,14 @@
     "AI",
     "Chat"
   ],
+  "keywords": [
+    "pi",
+    "ai",
+    "agent",
+    "coding",
+    "chat",
+    "assistant"
+  ],
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {

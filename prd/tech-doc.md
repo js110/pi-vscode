@@ -178,6 +178,15 @@
 
 守卫测试（test/unit/migration.test.ts）：上游 8 个设置键必须仍存在于 package.json（防未来重命名）；`parseGlobalRules`（自 extension.ts 内联提取至 pi/approval-memory.ts 纯函数）对 undefined/null/非数组/畸形条目的行为——初始化为空、逐条校验（tool 非空字符串 + createdAt 数字）、绝不过滤出合法规则也绝不抛错。迁移无需用户提示（无格式转换）。
 
+### 2.8 Marketplace 发布资产（T19，2026-09-16）
+
+- **图标（AC-FN-29）**：marketplace 彩色图标 `media/pi-icon-full.png` 128×128（vsce 要求 ≥128，合规）；视图/活动栏图标 `media/pi-icon.svg` 24×24 `stroke="currentColor"`——VS Code 用 currentColor 自动适配主题色，即灰阶规范图标的正确实现形态，无需再生成 36×36 位图。media/icons/ 14 个 UI 图标与磁盘一一核对后打包。
+- **categories 勘误**：预研曾记录 `"AI"` 非 Marketplace 有效枚举；查证官方文档，`AI` 与 `Chat` 均为 2023-11 起的官方 category（extension manifest schema 枚举含二者），故**保留 `["AI", "Chat"]` 不改**。
+- **keywords 补充**：`pi / ai / agent / coding / chat / assistant`。
+- **.vscodeignore 收口**（此前 prd//docs//ui//scripts//.cache/ 等开发资产会全量打入 vsix）：新增排除 `.cache/**`、`prd/**`、`docs/**`、`ui/**`、`scripts/**`、`proposal.md`、`ROADMAP.md`、`ac.md`、`CONTEXT.md`、`package-lock.json`、`tsconfig.webview.json`；`*.map` 改 `**/*.map`（原 glob 不跨目录，22.47 MB sourcemap 曾漏排进包）。保留 `RESEARCH.md`/`THIRD_PARTY_NOTICES.md`/`screenshot.png`（README 引用，`--no-rewrite-relative-links` 下链接必须可达）、`bridge/`（运行时 additionalExtensionPaths）、`media/`、`out/`。打包体积 7.15 MB → 2.55 MB（30 files）。
+- **README 发布向扩写**：What works 补齐 T8–T18 已实现功能（右键发送选区/文件、@-mention、拖拽文件、图片附件、Plan 模式、inline chat、commit message 生成、终端引用、后台任务面板与占用横幅、双语 UI）；新增 Getting started 三步；Package 段的排除说明与实际 .vscodeignore 对齐。
+- **已知非阻塞项**：vsce 警告 `out/extension.js` 11.9 MB（SDK 全量 bundle；远低于 Marketplace 限额，minify/裁剪留待后续优化）。`publisher` 仍为占位 `"local"`——正式发布需注册 Marketplace publisher 后改名（账号所有权属用户决定）；`npm run package` 本地打包验证通过。打包脚本暂带 `--allow-missing-repository`（历史遗留 flag）：repository 字段实际已配置且公网可达，正式提审前应跑一次不带该 flag 的打包确认 vsce 仓库校验独立通过。
+
 
 
 | 方向 | 消息 | 用途 |
