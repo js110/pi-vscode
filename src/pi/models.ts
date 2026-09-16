@@ -32,6 +32,24 @@ export function findModel(
     return registry.find(provider, modelId);
 }
 
+/**
+ * Resolve the VS Code-side default model (pi-agent.defaultModel/apiProvider)
+ * the same way new sessions do: search *available* models (credentials
+ * verified) and treat an empty provider as "any provider".
+ */
+export function findConfiguredModel(
+    registry: ModelRegistry,
+    provider: string,
+    modelId: string,
+): ReturnType<ModelRegistry['find']> {
+    if (!modelId) return undefined;
+    const match = getAvailableModels(registry).find(
+        (m) => m.id === modelId && (!provider || m.provider === provider),
+    );
+    if (!match) return undefined;
+    return findModel(registry, match.provider, match.id);
+}
+
 export function disposeModelRegistry() {
     cached = undefined;
 }

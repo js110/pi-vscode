@@ -177,6 +177,15 @@ const EN = {
     'mention.groupSymbols': 'Symbols',
     'mention.dropInvalid': 'Some dropped files cannot be referenced (must be files inside the workspace).',
 
+    // Commit message generation
+    'commit.generatingPlaceholder': 'Generating commit message…',
+    'commit.inProgress': 'A commit message is already being generated.',
+    'commit.noGit': 'The Git extension is not available.',
+    'commit.noRepository': 'No Git repository found in this workspace.',
+    'commit.noChanges': 'There are no staged or unstaged changes to describe.',
+    'commit.noModel': 'No model available. Check your Pi configuration.',
+    'commit.failed': 'Commit message generation failed:',
+
     // Terminal quote
     'terminal.quote': 'Quote terminal output',
     'terminal.noTerminal': 'No integrated terminal found.',
@@ -433,6 +442,15 @@ const ZH: Record<TextKey, string> = {
     'mention.groupFiles': '文件',
     'mention.groupSymbols': '符号',
     'mention.dropInvalid': '部分拖入的文件无法引用（需为工作区内的文件）。',
+
+    // Commit message generation
+    'commit.generatingPlaceholder': '正在生成 commit message…',
+    'commit.inProgress': '正在生成 commit message，请稍候。',
+    'commit.noGit': 'Git 扩展不可用。',
+    'commit.noRepository': '工作区中未找到 Git 仓库。',
+    'commit.noChanges': '没有暂存或未暂存的改动可以描述。',
+    'commit.noModel': '无可用模型，请检查 Pi 配置。',
+    'commit.failed': '生成 commit message 失败：',
 
     // Terminal quote
     'terminal.quote': '引用终端输出',

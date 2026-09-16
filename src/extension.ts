@@ -12,7 +12,9 @@ import { ApplyManager } from './providers/apply';
 import { TerminalCapture } from './providers/terminal-capture';
 import type { TerminalQuoteResult } from './shared/terminal-quote';
 import { InlineChatManager } from './providers/inline-chat';
+import { CommitMessageManager, type CommitGitApi } from './providers/commit-message';
 import { getModelRuntime } from './pi/auth';
+import { getModelRegistry, findConfiguredModel } from './pi/models';
 import { setLang, t } from './shared/i18n';
 import { fuzzyFilterFiles, MAX_MENTION_RESULTS } from './shared/mention';
 import {
@@ -281,6 +283,34 @@ export async function activate(context: vscode.ExtensionContext) {
         const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager);
         providerRef = sidebarProvider;
 
+        const commitMessage = new CommitMessageManager({
+            getGitApi: (): CommitGitApi | undefined => {
+                const git = vscode.extensions.getExtension<{ getAPI?: (version: 1) => unknown }>('vscode.git');
+                if (!git?.isActive) return undefined;
+                return (git.exports?.getAPI?.(1) as CommitGitApi | undefined) ?? undefined;
+            },
+            // The active tab's model follows what the user picked in the UI.
+            getSessionModel: async () => tabManagerRef?.activeTab?.session.session?.model,
+            getConfiguredModel: async () => {
+                const cfg = vscode.workspace.getConfiguration('pi-agent');
+                const provider = cfg.get<string>('apiProvider', '');
+                const modelId = cfg.get<string>('defaultModel', '');
+                if (!modelId) return undefined;
+                // Same availability-checked resolution new sessions use.
+                const registry = await getModelRegistry();
+                return findConfiguredModel(registry, provider, modelId);
+            },
+            getFallbackModel: async () => {
+                const runtime = await getModelRuntime();
+                return runtime.getAvailableSnapshot()[0];
+            },
+            complete: async (model, context, options) => {
+                const runtime = await getModelRuntime();
+                return runtime.completeSimple(model as any, context as any, options as any);
+            },
+            showMessage: (message) => void vscode.window.showErrorMessage(message),
+        });
+
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('pi-agent.chat', sidebarProvider),
             vscode.workspace.registerTextDocumentContentProvider('pi-diff', diffContentProvider),
@@ -367,6 +397,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
             vscode.commands.registerCommand('pi-agent.focusChat', () => {
                 vscode.commands.executeCommand('pi-agent.chat.focus');
+            }),
+
+            vscode.commands.registerCommand('pi-agent.generateCommitMessage', (target?: unknown) => {
+                void commitMessage.generateIntoInputBox(target);
             }),
 
             vscode.commands.registerCommand('pi-agent.moveToSecondarySidebar', () => {

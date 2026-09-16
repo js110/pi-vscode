@@ -12,7 +12,7 @@ import { EventRouter } from './events';
 import { loadPiSdk, getSdkSource, hasFunction, type PiSdk } from './compat';
 import { mapSkills } from './skills';
 import { getModelRuntime, disposeModelRuntime } from './auth';
-import { getModelRegistry, getAvailableModels, findModel, disposeModelRegistry } from './models';
+import { getModelRegistry, getAvailableModels, findModel, findConfiguredModel, disposeModelRegistry } from './models';
 
 export type ToolApprovalHandler = (toolCallId: string, toolName: string, args: any) => Promise<boolean>;
 
@@ -91,17 +91,11 @@ export class PiSessionManager {
         const defaultProvider = config.get<string>('apiProvider', '');
         const defaultModel = config.get<string>('defaultModel', '');
         if (defaultModel && this._modelRegistry) {
-            const available = getAvailableModels(this._modelRegistry);
-            const match = available.find(m =>
-                m.id === defaultModel && (!defaultProvider || m.provider === defaultProvider)
-            );
-            if (match) {
-                const model = findModel(this._modelRegistry, match.provider, match.id);
-                if (model) {
-                    session.setModel(model).catch((err: any) => {
-                        this._outputChannel.appendLine(`Failed to set default model: ${err.message}`);
-                    });
-                }
+            const model = findConfiguredModel(this._modelRegistry, defaultProvider, defaultModel);
+            if (model) {
+                session.setModel(model).catch((err: any) => {
+                    this._outputChannel.appendLine(`Failed to set default model: ${err.message}`);
+                });
             }
         }
     }

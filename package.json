@@ -94,6 +94,11 @@
       {
         "command": "pi-agent.inlineDiscard",
         "title": "Pi: Inline Edit: Discard Changes"
+      },
+      {
+        "command": "pi-agent.generateCommitMessage",
+        "title": "Pi: Generate Commit Message",
+        "icon": "$(sparkle)"
       }
     ],
     "keybindings": [
@@ -152,6 +157,13 @@
           "group": "9_pi-agent"
         }
       ],
+      "scm/inputBox": [
+        {
+          "command": "pi-agent.generateCommitMessage",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
         {
           "command": "pi-agent.sendToPi",
@@ -164,6 +176,10 @@
         {
           "command": "pi-agent.inlineDiscard",
           "when": "pi-agent.inlinePending"
+        },
+        {
+          "command": "pi-agent.generateCommitMessage",
+          "when": "gitOpenRepositoryCount != 0"
         }
       ]
     },
