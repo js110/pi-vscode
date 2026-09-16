@@ -176,6 +176,12 @@ const EN = {
     'mention.groupFiles': 'Files',
     'mention.groupSymbols': 'Symbols',
     'mention.dropInvalid': 'Some dropped files cannot be referenced (must be files inside the workspace).',
+
+    // Terminal quote
+    'terminal.quote': 'Quote terminal output',
+    'terminal.noTerminal': 'No integrated terminal found.',
+    'terminal.noShellIntegration': 'Shell integration is not active in this terminal, so command output cannot be read.',
+    'terminal.noOutput': 'No completed terminal command output captured yet.',
     'plan.mode': 'Plan',
     'plan.modeTitle': 'Plan mode: analyze read-only, review the plan, then execute',
     'plan.planning': 'Planning — analyzing the task with read-only tools…',
@@ -427,6 +433,12 @@ const ZH: Record<TextKey, string> = {
     'mention.groupFiles': '文件',
     'mention.groupSymbols': '符号',
     'mention.dropInvalid': '部分拖入的文件无法引用（需为工作区内的文件）。',
+
+    // Terminal quote
+    'terminal.quote': '引用终端输出',
+    'terminal.noTerminal': '未找到集成终端。',
+    'terminal.noShellIntegration': '当前终端未启用 shell integration，无法读取命令输出。',
+    'terminal.noOutput': '尚未捕获到已完成的终端命令输出。',
     'plan.mode': '计划',
     'plan.modeTitle': '计划模式：只读分析 → 审阅计划 → 批准执行',
     'plan.planning': '规划中 — 正在以只读工具分析任务…',

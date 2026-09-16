@@ -26,7 +26,7 @@
 | C7 | 编辑器交互组 | contributes + webview | 右键菜单"发送到 Pi"（选区+路径+行号 → 当前 Tab / 流式中入队 / 无 Tab 新建）；@-mention 补全浮层（文件 findFiles + workspaceSymbols，无索引降级仅文件）；拖拽文件转引用（同 @ 注入路径） |
 | C8 | Plan 模式 | `src/providers/plan.ts`（新）+ session | 规划中 = SDK readOnly 工具集白名单，写类调用直接拒绝；计划卡（可微调/重规划）→ 批准 = 计划内非危险工具放行凭据（留痕来源=Plan 批准）→ 按步执行 + TODO 实时勾选；Esc → 已完成步骤保留、未执行取消；失败暂停态（步骤失败/危险工具弹卡/写冲突/限流/401）可续跑/调整重批/放弃；状态机 8.5 |
 | C9 | TODO 卡片 | protocol + webview | 计划步骤实时状态（待执行/执行中/已完成/失败/已取消）；压缩保活 |
-| C10 | 终端集成 + commit 生成 | bridge 复用 + SCM contributes | AI 读取终端输出（reportTerminalSession 已有）+ webview"引用终端选区"；SCM 输入框旁按钮 → diff 生成 message 只填入不提交 |
+| C10 | 终端集成 + commit 生成 | `providers/terminal-capture.ts`（新）+ SCM contributes | AI 读取终端输出 = shell integration 捕获（方案见 §2.2；reportTerminalSession 仅 session 关联）+ webview"引用终端"按钮；SCM 输入框旁按钮 → diff 生成 message 只填入不提交 |
 | C11 | 后台任务面板 | protocol + webview | SDK 子代理事件呈现（运行中/完成/失败/可取消），不本地建模；后台失败发通知 |
 | C12 | UI 改版 + i18n 集中层 | `webview/styles/main.css` 重写 + `src/shared/webview-text.ts` 升级 | 按 ui/ 原型移植：tokens（--proto-* 对齐 --vscode-*）、Header/Tab 条/消息流/输入区/Footer 骨架、审批卡/提示条/Changed Files/计划卡组件化；文案集中层唯一出口，中/英双语 + 语言设置（VS Code 侧，不回写 Pi） |
 | C13 | Inline Chat | 编辑器内浮层（Q1 spike 已定：自绘方案，见 §2.1） | 选区呼出行内输入 → 行内 diff 预览（未落盘）→ 接受（纳入 Tab checkpoint）/放弃（中间工具写入按本轮 checkpoint 回滚）；轮次归属活跃 Tab；先 spike 后实做（PRD 风险预案：批内最后集成） |
@@ -46,12 +46,27 @@
   5. 冲突（AC-FN-12）：呼出时缓冲 dirty 先要求保存；轮内/评审期手改 → 冲突提示 + pending 置灰，放弃时 modal 确认不静默覆盖。
   6. 生成中断：abort 后 `agent_settled` → 有变更则进 pending 评审态（置灰可查看），接受/放弃仍可用。
 
+### 2.2 C10 终端集成设计（T13，2026-09-15）
+
+**勘误 + API 核实（@types/vscode 1.116.0 稳定 d.ts）**：C10 原文"reportTerminalSession 已有"不准确——bridge 的 `reportTerminalSession` 仅把 pi CLI 终端与其 sessionFile 关联（terminalId↔sessionFile，供面板跳转），**不读终端输出**。稳定 API 面核实：
+
+- 可用（stable）：`window.activeTerminal`、`onDidChangeActiveTerminal`、`onDidStart/EndTerminalShellExecution`、`TerminalShellIntegration.executeCommand`、`TerminalShellExecution.read()`（AsyncIterable，仅含 read 调用后写入的数据）、`Terminal.state`。
+- 不可用（proposed）：`Terminal.selection`（terminalSelection）、`onDidWriteTerminalData`（terminalDataWriteEvent，读既有 scrollback 唯一途径）、`onDidChangeTerminalSelection`。→ **无法程序化读取用户选区/历史 scrollback**。
+
+**方案（100% 稳定 API，shell integration 捕获路径）**：
+
+1. **捕获**：`providers/terminal-capture.ts` 新增 `TerminalCapture`——订阅 `onDidStartTerminalShellExecution`（立即 `execution.read()` 起异步累积，带字符上限防失控）+ `onDidEndTerminalShellExecution`（终结为 {command, output, terminalName}，按 Terminal 对象键存最近一次；跨终端再存全局最近）+ `onDidCloseTerminal`（清除该终端条目与在飞 run，防泄漏）。命令被中断导致 end 不触发时该次捕获弃用。
+2. **纯模块**：`shared/terminal-quote.ts`——`stripAnsi`（CSI/OSC/控制序列，含 `\r` 归一）、`truncateTerminalOutput`（上限 8000 字符，保尾部并标注省略，错误通常在末尾）、`formatTerminalQuote`（复用 `fenceFor` 自动加长围栏，体内容 `$ command` + output）。
+3. **引用入口**：webview 输入区 footer 新增"引用终端"按钮 → client→host `terminalQuote`（requestId 查询模式，同 mention/drop）→ tab.ts case 经 hooks `quoteTerminal()` → host 回 `terminalQuoted`{requestId, result}；`{ok:true, entry}` → 插入 composer 光标处（纯文本围栏块，不入 mentions）；`{ok:false, reason: 'noTerminal'|'noShellIntegration'|'noOutput'}` → 错误提示。
+4. **用户引用路径**：PRD 9.8 原文"用户也可复制终端内容粘贴进对话"——选区/scrollback 读取是 proposed API，用户复制后手动粘贴即为该路径（无需代码）；AC-FN-23 的触发"用户引用终端内容**或** AI 读取终端输出"由捕获路径完整满足。
+5. AC-FN-23 口径：集成终端有输出（shell integration 捕获到命令输出）→ 引用 → 终端输出作为上下文进入对话。
+
 ## 3. 协议扩展（`src/shared/protocol.ts`，向后兼容新增）
 
 | 方向 | 消息 | 用途 |
 |------|------|------|
-| client→host | `config.refresh` / `approval.remember` / `approval.revoke` / `apply.preview` / `apply.confirm` / `plan.approve` / `plan.adjust` / `plan.abort` / `mention.query` / `terminal.quote` / `commit.generate` / `queue.confirm` / `queue.clear` | 对应 C1–C11 操作 |
-| host→client | `config.state` / `approval.trace` / `apply.previewResult` / `apply.done` / `plan.state` / `todo.update` / `compaction.prompt` / `compaction.result` / `mention.results` / `queue.state` / `lang.changed` | 状态与结果推送 |
+| client→host | `config.refresh` / `approval.remember` / `approval.revoke` / `apply.preview` / `apply.confirm` / `plan.approve` / `plan.adjust` / `plan.abort` / `mention.query` / `terminalQuote` / `commit.generate` / `queue.confirm` / `queue.clear` | 对应 C1–C11 操作（消息名按代码惯例 camelCase，`terminalQuote` 即原计划 `terminal.quote`） |
+| host→client | `config.state` / `approval.trace` / `apply.previewResult` / `apply.done` / `plan.state` / `todo.update` / `compaction.prompt` / `compaction.result` / `mention.results` / `terminalQuoted` / `queue.state` / `lang.changed` | 状态与结果推送 |
 
 ## 4. 安全与边界
 

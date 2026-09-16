@@ -1,3 +1,7 @@
+import type { TerminalQuoteResult } from './terminal-quote';
+
+export type { TerminalQuoteResult, TerminalOutputEntry, TerminalQuoteFailureReason } from './terminal-quote';
+
 export interface ContextUsageInfo {
     tokens: number | null;
     contextWindow: number;
@@ -208,6 +212,7 @@ export type ClientMessage =
     | { type: 'compactionDismiss' }
     | { type: 'mentionQuery'; query: string; requestId: number }
     | { type: 'dropFiles'; uris: string[]; requestId: number }
+    | { type: 'terminalQuote'; requestId: number }
     | { type: 'planStart' }
     | { type: 'planCancel' }
     | { type: 'planApprove' }
@@ -265,6 +270,7 @@ export type ServerMessage =
     | { type: 'compactionResult'; ok: boolean }
     | { type: 'mentionResults'; requestId: number; files: string[]; symbols: MentionSymbolItem[] }
     | { type: 'dropResolved'; requestId: number; results: DropResolveResult[] }
+    | { type: 'terminalQuoted'; requestId: number; result: TerminalQuoteResult }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages

@@ -143,6 +143,7 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         resolveMentionPath: vi.fn(async () => null),
         readTextFile: vi.fn(async () => null),
         resolveDroppedFiles: vi.fn(async () => []),
+        quoteTerminal: vi.fn(async () => ({ ok: false as const, reason: 'noTerminal' as const })),
         ...overrides,
     };
 }

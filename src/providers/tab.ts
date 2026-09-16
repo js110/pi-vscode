@@ -10,6 +10,7 @@ import type {
     ServerMessage,
     SerializedAgentState,
     TabInfo,
+    TerminalQuoteResult,
 } from '../shared/protocol';
 import { PLAN_DANGEROUS_REASON } from '../shared/protocol';
 import { DiffManager } from './diff';
@@ -93,6 +94,7 @@ export interface TabManagerHooks {
     resolveMentionPath(path: string): Promise<string | null>;
     readTextFile(fsPath: string): Promise<string | null>;
     resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>;
+    quoteTerminal(): Promise<TerminalQuoteResult>;
 }
 
 interface PendingApproval {
@@ -824,6 +826,11 @@ export class TabManager {
             case 'dropFiles': {
                 const results = await this._hooks.resolveDroppedFiles(msg.uris);
                 this._hooks.post({ type: 'dropResolved', requestId: msg.requestId, results });
+                break;
+            }
+            case 'terminalQuote': {
+                const result = await this._hooks.quoteTerminal();
+                this._hooks.post({ type: 'terminalQuoted', requestId: msg.requestId, result });
                 break;
             }
             case 'planStart': {

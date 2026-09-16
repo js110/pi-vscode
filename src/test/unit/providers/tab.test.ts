@@ -4,7 +4,7 @@ import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
 import { refreshPiConfig } from '../../../pi/config';
-import type { DropResolveResult, PiConfigSnapshot, SerializedAgentState } from '../../../shared/protocol';
+import type { DropResolveResult, PiConfigSnapshot, SerializedAgentState, TerminalQuoteResult } from '../../../shared/protocol';
 
 vi.mock('../../../pi/config', () => ({
     ensureConfigDiscovered: vi.fn(async () => CONFIG_SNAPSHOT),
@@ -98,6 +98,7 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         resolveMentionPath: vi.fn(async () => null),
         readTextFile: vi.fn(async () => null),
         resolveDroppedFiles: vi.fn(async () => []),
+        quoteTerminal: vi.fn(async (): Promise<TerminalQuoteResult> => ({ ok: false, reason: 'noTerminal' })),
         ...overrides,
     };
 }
@@ -627,6 +628,32 @@ describe('TabManager', () => {
                 { status: 'image' },
                 { status: 'invalid' },
             ],
+        });
+        expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('answers terminalQuote through the capture hook without a state change', async () => {
+        const hooks = makeHooks({
+            quoteTerminal: vi.fn(async (): Promise<TerminalQuoteResult> => ({
+                ok: true,
+                entry: { command: 'npm test', output: 'all green\n', terminalName: 'bash' },
+            })),
+        });
+        const manager = new TabManager({ create: vi.fn(async () => makeTab()) }, hooks);
+        await manager.initialize();
+
+        const listener = vi.fn();
+        manager.onStateChange(listener);
+        await manager.dispatch({ type: 'terminalQuote', requestId: 12 });
+
+        expect(hooks.quoteTerminal).toHaveBeenCalledWith();
+        expect(hooks.post).toHaveBeenCalledWith({
+            type: 'terminalQuoted',
+            requestId: 12,
+            result: {
+                ok: true,
+                entry: { command: 'npm test', output: 'all green\n', terminalName: 'bash' },
+            },
         });
         expect(listener).not.toHaveBeenCalled();
     });

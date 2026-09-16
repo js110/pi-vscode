@@ -6,6 +6,7 @@ import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { t, setLang } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
+import { formatTerminalQuote } from '../shared/terminal-quote';
 import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon, renderDiffLines } from '../shared/webview-text';
 import { el, escHtml } from './dom';
 import { renderMarkdown, buildWelcome, buildThinkingBlock, thinkingLabel, buildDiffCard, buildToolCard, buildModelItem, buildApprovalBadge, resetCodeBlockIds } from './render/messages';
@@ -219,6 +220,15 @@ function handleMessage(msg: ServerMessage): void {
                     }
                 }
                 if (invalid > 0) showError(t('mention.dropInvalid'));
+            }
+            break;
+        case 'terminalQuoted':
+            if (msg.requestId !== terminalQuotePendingRequestId) break;
+            terminalQuotePendingRequestId = -1;
+            if (msg.result.ok) {
+                insertTerminalQuoteAtCursor(formatTerminalQuote(msg.result.entry));
+            } else {
+                showError(t(`terminal.${msg.result.reason}`));
             }
             break;
         case 'error':
@@ -669,6 +679,8 @@ function updateInputArea(): void {
         ? `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.2l-5.3 5.3a3.4 3.4 0 0 1-4.8-4.8l5.4-5.4a2.3 2.3 0 0 1 3.2 3.2L6.6 10.9a1.15 1.15 0 0 1-1.6-1.6l4.9-4.9"/></svg></button>`
         : '';
 
+    const quoteTerminalBtnHtml = `<button id="btn-quote-terminal" class="attach-btn" title="${escHtml(t('terminal.quote'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h11v8.5h-11z"/><path d="M4.5 5.5L6.5 7.5L4.5 9.5M7.5 9.5h4"/></svg></button>`;
+
     const planPhase = state.plan?.phase ?? 'off';
     const planToggleable = planPhase === 'off' || planPhase === 'planning' || planPhase === 'awaitingApproval';
     const planBtnHtml = `<button id="btn-plan" class="plan-btn${planPhase !== 'off' ? ' active' : ''}"${planToggleable ? '' : ' disabled'} title="${escHtml(t('plan.modeTitle'))}">${escHtml(t('plan.mode'))}</button>`;
@@ -681,6 +693,7 @@ function updateInputArea(): void {
         ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}
         ${steerBtnHtml}
         ${attachBtnHtml}
+        ${quoteTerminalBtnHtml}
         <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.queueSend') : t('input.send'))}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     `;
 
@@ -717,6 +730,12 @@ function updateInputArea(): void {
     attachBtn?.addEventListener('click', () => {
         const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
         fileInput?.click();
+    });
+
+    const quoteTerminalBtn = document.getElementById('btn-quote-terminal');
+    quoteTerminalBtn?.addEventListener('click', () => {
+        terminalQuotePendingRequestId = ++mentionQuerySeq;
+        vscode.postMessage({ type: 'terminalQuote', requestId: terminalQuotePendingRequestId });
     });
 
     const planBtn = document.getElementById('btn-plan');
@@ -2808,6 +2827,7 @@ let mentionAnchor = -1;
 let mentionQuerySeq = 0;
 let mentionPendingRequestId = -1;
 let dropPendingRequestId = -1;
+let terminalQuotePendingRequestId = -1;
 let mentionDebounce: ReturnType<typeof setTimeout> | undefined;
 
 /** The active `@query` fragment ending at the caret, or null. */
@@ -2932,6 +2952,21 @@ function insertMentionTokenAtCursor(token: string): void {
     const newPos = start + replacement.length;
     input.setSelectionRange(newPos, newPos);
     if (!state.mentions.includes(token)) state.mentions.push(token);
+    input.focus();
+}
+
+/** Insert quoted terminal output at the caret (AC-FN-23): plain text
+ *  (pre-fenced), deliberately not registered as an @-mention token. */
+function insertTerminalQuoteAtCursor(text: string): void {
+    const input = document.getElementById('input') as HTMLTextAreaElement | null;
+    if (!input) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    const needsLeadingNewline = start > 0 && input.value[start - 1] !== '\n';
+    const replacement = `${needsLeadingNewline ? '\n' : ''}${text.trimEnd()}\n`;
+    input.value = input.value.slice(0, start) + replacement + input.value.slice(end);
+    const newPos = start + replacement.length;
+    input.setSelectionRange(newPos, newPos);
     input.focus();
 }
 

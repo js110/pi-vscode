@@ -9,6 +9,8 @@ import { resolveDisplayLang } from './providers/lang';
 import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
 import { ApplyManager } from './providers/apply';
+import { TerminalCapture } from './providers/terminal-capture';
+import type { TerminalQuoteResult } from './shared/terminal-quote';
 import { InlineChatManager } from './providers/inline-chat';
 import { getModelRuntime } from './pi/auth';
 import { setLang, t } from './shared/i18n';
@@ -199,6 +201,8 @@ export async function activate(context: vscode.ExtensionContext) {
             tabManagerRef?.recordFileSnapshot(tabId, filePath, content);
         });
 
+        const terminalCapture = new TerminalCapture();
+
         const hooks: TabManagerHooks = {
             post: (msg) => providerRef?.post(msg),
             setContext: (key, value) => { void vscode.commands.executeCommand('setContext', key, value); },
@@ -232,6 +236,18 @@ export async function activate(context: vscode.ExtensionContext) {
             resolveMentionPath: (path) => resolveMentionPath(path),
             readTextFile: (fsPath) => readMentionFile(fsPath),
             resolveDroppedFiles: (uris) => resolveDroppedFiles(uris),
+            quoteTerminal: async (): Promise<TerminalQuoteResult> => {
+                const terminal = vscode.window.activeTerminal;
+                if (terminal) {
+                    const entry = terminalCapture.getLatest(terminal);
+                    if (entry) return { ok: true, entry };
+                    return terminal.shellIntegration
+                        ? { ok: false, reason: 'noOutput' }
+                        : { ok: false, reason: 'noShellIntegration' };
+                }
+                const anyEntry = terminalCapture.getLatest();
+                return anyEntry ? { ok: true, entry: anyEntry } : { ok: false, reason: 'noTerminal' };
+            },
         };
 
         const factory: TabFactory = {
@@ -270,6 +286,7 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.workspace.registerTextDocumentContentProvider('pi-diff', diffContentProvider),
             statusBar,
             inlineChat,
+            terminalCapture,
 
             vscode.commands.registerCommand('pi-agent.inlineChat', () => {
                 void inlineChat.start();
