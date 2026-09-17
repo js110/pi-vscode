@@ -23,6 +23,30 @@ export function resolveFilePath(filePath: string): string {
   return pathApi.resolve(root, filePath);
 }
 
+/**
+ * Guard for write-side bridge methods (save/format/applyEdit): the resolved
+ * path must live under one of the open workspace folders. Reads may stay
+ * permissive, but mutation should not escape the workspace boundary.
+ */
+export function assertWritePathInWorkspace(filePath: string): string {
+  const resolved = resolveFilePath(filePath);
+  const roots = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+  if (roots.length === 0) {
+    throw new Error(`No workspace is open — refusing write to ${resolved}`);
+  }
+  const contains = (root: string) => {
+    const rootNorm = root.replace(/\\/g, "/").replace(/\/+$/, "");
+    const norm = resolved.replace(/\\/g, "/").replace(/\/+$/, "");
+    const rootKey = win32.isAbsolute(root) ? rootNorm.toUpperCase() : rootNorm;
+    const normKey = win32.isAbsolute(resolved) ? norm.toUpperCase() : norm;
+    return normKey === rootKey || normKey.startsWith(rootKey + "/");
+  };
+  if (!roots.some(contains)) {
+    throw new Error(`Write outside the workspace is not allowed: ${resolved}`);
+  }
+  return resolved;
+}
+
 export function isAbsolutePath(filePath: string): boolean {
   return posix.isAbsolute(filePath) || win32.isAbsolute(filePath);
 }

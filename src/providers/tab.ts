@@ -122,6 +122,8 @@ type TabState = Tab & {
     messagesDirty: boolean;
     /** dataUrl payload → stable assetId, deduping image assets per tab. */
     imageAssets: Map<string, string>;
+    /** assetId → dataUrl, used to re-ship full image set on webview rebuild. */
+    imageData: Map<string, string>;
 };
 
 export class TabManager {
@@ -195,6 +197,12 @@ export class TabManager {
     /** Whether a specific tab currently has an in-flight agent turn. */
     isTabStreaming(tabId: string): boolean {
         return this._tabs.get(tabId)?.isStreaming ?? false;
+    }
+
+    /** Whether the active tab is locked by another window/tab. */
+    isReadOnlyLocked(): boolean {
+        const tab = this._tabs.get(this._activeTabId);
+        return tab?.lock ? tab.lock.occupancy !== 'none' : false;
     }
 
     /** Roll back every turn after `messageIndex` on a specific tab
@@ -300,7 +308,13 @@ export class TabManager {
                     () => `img-${++this._imageAssetSeq}`,
                 );
                 state.messages = assets.messages;
-                images = assets.images;
+                // Persist newly minted assets so webview rebuilds get the full set.
+                if (assets.images) {
+                    for (const [id, dataUrl] of Object.entries(assets.images)) {
+                        tab.imageData.set(id, dataUrl);
+                    }
+                }
+                images = force ? Object.fromEntries(tab.imageData) : assets.images;
             }
         }
 
@@ -370,6 +384,7 @@ export class TabManager {
             lock: this._lockDeps ? new SessionLockManager(this._lockDeps) : null,
             messagesDirty: true,
             imageAssets: new Map<string, string>(),
+            imageData: new Map<string, string>(),
         };
     }
 
@@ -783,6 +798,8 @@ export class TabManager {
                 tab.suspendedMessages = [];
                 tab.messagesDirty = true;
                 tab.queuedMessages = [];
+                tab.imageAssets.clear();
+                tab.imageData.clear();
                 tab.compactionStage = 'none';
                 tab.compactionPrompt = null;
                 tab.name = 'New Agent';
@@ -798,6 +815,8 @@ export class TabManager {
                 tab.suspendedMessages = [];
                 tab.messagesDirty = true;
                 tab.queuedMessages = [];
+                tab.imageAssets.clear();
+                tab.imageData.clear();
                 tab.compactionStage = 'none';
                 tab.compactionPrompt = null;
                 this._resetStreaming(tab);
@@ -954,7 +973,7 @@ export class TabManager {
                 tab.messagesDirty = true;
 
                 if (redone.length > 0) {
-                    this._hooks.showMessage(`Re-applied ${redone.length} file(s).`);
+                    this._hooks.showMessage(t('checkpoint.restored', { n: redone.length }));
                 }
                 this._emitStateChange();
                 break;

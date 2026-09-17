@@ -67,6 +67,9 @@ export function isLockStale(
     alive: (pid: number) => boolean,
 ): boolean {
     if (!alive(lock.pid)) { return true; }
+    // A heartbeat stamped in the future means the lock is corrupt/moved clocks —
+    // treat it as abandoned rather than letting it pin the slot forever.
+    if (lock.heartbeatAt > nowMs + LOCK_STALE_MS) { return true; }
     return nowMs - lock.heartbeatAt > LOCK_STALE_MS;
 }
 
@@ -239,7 +242,27 @@ export function createNodeLockDeps(lockDir: string): SessionLockDeps {
         },
         writeFile: async (p, content, opts) => {
             await fs.promises.mkdir(path.dirname(p), { recursive: true });
-            await fs.promises.writeFile(p, content, { encoding: 'utf8', flag: opts?.exclusive ? 'wx' : 'w' });
+            // Write to a temp file first, then link/rename into place: readers
+            // never observe a partially-written lock, and exclusive claims stay
+            // atomic (link() fails with EEXIST if the target already exists).
+            const tmp = `${p}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+            await fs.promises.writeFile(tmp, content, { encoding: 'utf8' });
+            try {
+                if (opts?.exclusive) {
+                    try {
+                        await fs.promises.link(tmp, p);
+                    } catch (err: any) {
+                        // Filesystems without hard links (FAT/exFAT): fall back
+                        // to an exclusive create preserving EEXIST semantics.
+                        if (err?.code === 'EEXIST') throw err;
+                        await fs.promises.writeFile(p, content, { encoding: 'utf8', flag: 'wx' });
+                    }
+                } else {
+                    await fs.promises.rename(tmp, p);
+                }
+            } finally {
+                await fs.promises.unlink(tmp).catch(() => { /* already moved */ });
+            }
         },
         deleteFile: async (p) => {
             try {

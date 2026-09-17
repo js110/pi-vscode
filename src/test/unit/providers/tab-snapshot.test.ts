@@ -253,7 +253,9 @@ describe('image asset separation', () => {
             type: 'message_end',
             message: { role: 'assistant', content: 'ok' },
         });
-        const second = manager.getSnapshot(true);
+        // Incremental re-send (the onStateChange path) ships only first-seen
+        // data; an already-known asset must not ride along again.
+        const second = manager.getSnapshot();
 
         expect(second.state.messages![0].content[0]).toEqual({ type: 'image', assetId });
         expect(second.images).toBeUndefined();
@@ -272,8 +274,26 @@ describe('image asset separation', () => {
             message: { role: 'assistant', content: 'x' },
         });
 
-        const { images } = manager.getSnapshot(true);
+        const { images } = manager.getSnapshot();
         expect(Object.values(images ?? {})).toEqual([`data:image/jpeg;base64,${JPEG}`]);
+    });
+
+    it('force reships the full known image set (webview rebuild)', async () => {
+        const { manager } = makeManager();
+        await manager.initialize();
+        const fake = fakeOf(manager);
+        fake.messages.push({ role: 'user', content: [{ type: 'image', data: PNG, mimeType: 'image/png' }] });
+        manager.getSnapshot(true);
+        fake.messages.push({ role: 'user', content: [{ type: 'image', data: JPEG, mimeType: 'image/jpeg' }] });
+        manager.getSnapshot();
+
+        // A rebuilt webview has an empty imageCache; force must reship every
+        // asset minted so far, not just the latest.
+        const { images } = manager.getSnapshot(true);
+        expect(Object.values(images ?? {})).toEqual([
+            `data:image/png;base64,${PNG}`,
+            `data:image/jpeg;base64,${JPEG}`,
+        ]);
     });
 });
 

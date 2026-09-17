@@ -81,6 +81,10 @@ export class InlineChatManager implements vscode.Disposable {
             this._deps.showMessage(t('inline.busy'));
             return;
         }
+        if (tm.isReadOnlyLocked()) {
+            this._deps.showMessage(t('occupancy.readOnlyBlocked'));
+            return;
+        }
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
 
@@ -217,10 +221,10 @@ export class InlineChatManager implements vscode.Disposable {
         this._round = round;
         this._updateStatusItems();
 
-        // dispatch() bumps the turn counter synchronously before its first
-        // await, so the round's first turn index is readable immediately.
+        // dispatch() is async and yields before turnCounter++; capture the
+        // *next* turn index so discard() restores to the correct boundary.
         const dispatching = tm.dispatch({ type: 'prompt', text: prompt, bypassSlashCommands: true });
-        round.firstTurnIdx = tm.getTurnCounter(tab.id) ?? -1;
+        round.firstTurnIdx = (tm.getTurnCounter(tab.id) ?? 0) + 1;
 
         try {
             await dispatching;

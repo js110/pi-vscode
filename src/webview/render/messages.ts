@@ -51,7 +51,17 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string | undefi
 };
 
 renderer.codespan = function ({ text }: { text: string }) {
-    return `<code>${text}</code>`;
+    return `<code>${escHtml(text)}</code>`;
+};
+
+renderer.html = function ({ text }: { text: string }) {
+    return escHtml(text);
+};
+
+renderer.link = function (this: any, { href, title, tokens }: { href: string; title?: string | null; tokens: unknown[] }) {
+    const text = this.parser?.parseInline(tokens) ?? '';
+    if (/^javascript:/i.test(href)) return text;
+    return `<a href="${escAttr(href)}"${title ? ` title="${escAttr(title)}"` : ''}>${text}</a>`;
 };
 
 marked.setOptions({

@@ -6,7 +6,7 @@
  */
 
 const IMAGE_EXTENSIONS = new Set([
-    'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif',
+    'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp',
 ]);
 
 /** Split a `text/uri-list` payload into URIs (blank lines and `#` comments removed). */

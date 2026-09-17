@@ -23,10 +23,12 @@ function messageOf(err: unknown): string {
 }
 
 const PATTERNS: readonly [ErrorKind, RegExp][] = [
-    // Word-bounded: server-side cancellations ("CANCELLED", "stream
-    // cancelled after error") must NOT look like user aborts, or every
-    // application point would swallow them silently.
-    ['aborted', /\b(abort\w*|interrupted?)\b/i],
+    // User-initiated cancellation only: "aborted"/"interrupted" (and the
+    // AbortError name path in classifyError) are ours. Server-side strings —
+    // "CANCELLED", "stream cancelled after error", "connection aborted" (this
+    // last guarded by the negative lookbehind) — must fall through to other
+    // categories, or every application point would swallow them silently.
+    ['aborted', /\b(?<!connection\s)(?:abort(?:ed|ing)?|interrupt(?:ed|ing)?)\b/i],
     ['auth', /\b40[13]\b|unauthorized|forbidden|invalid[ _-]?api[ _-]?key|api[ _-]?key|credential|authenticat/i],
     ['rateLimit', /\b429\b|rate[ _-]?limit|too many requests|quota/i],
     ['network', /network|fetch[ _-]?failed|econn|enotfound|etimedout|eai_again|timed?[ _-]?out|socket|dns|proxy|offline/i],

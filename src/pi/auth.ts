@@ -1,7 +1,7 @@
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { loadPiSdk } from './compat';
 
-let cached: ModelRuntime | undefined;
+let cachedPromise: Promise<ModelRuntime> | undefined;
 
 /**
  * Pi's ModelRuntime owns provider catalogs and credentials in current SDK
@@ -9,14 +9,13 @@ let cached: ModelRuntime | undefined;
  * ~/.pi/agent authentication and model configuration.
  */
 export async function getModelRuntime(): Promise<ModelRuntime> {
-    if (cached) {
-        return cached;
-    }
-    const { ModelRuntime: Runtime } = await loadPiSdk();
-    cached = await Runtime.create();
-    return cached;
+    cachedPromise ??= (async () => {
+        const { ModelRuntime: Runtime } = await loadPiSdk();
+        return Runtime.create();
+    })();
+    return cachedPromise;
 }
 
 export function disposeModelRuntime(): void {
-    cached = undefined;
+    cachedPromise = undefined;
 }

@@ -16,6 +16,9 @@ interface PendingEdit {
 
 type FileChangeListener = (change: FileChangeInfo) => void;
 
+/** Upper bound for retained change/original entries; oldest are evicted. */
+const MAX_FILE_CHANGES = 500;
+
 export class DiffManager implements vscode.Disposable {
     private _session: PiSessionManager;
     private _checkpoint: CheckpointManager;
@@ -141,7 +144,24 @@ export class DiffManager implements vscode.Disposable {
         };
 
         this._fileChanges.push(change);
+        this._pruneCaches();
         this._emitFileChange(change);
+    }
+
+    /** Evict oldest change records, dropping originals that are no longer referenced. */
+    private _pruneCaches(): void {
+        const overflow = this._fileChanges.length - MAX_FILE_CHANGES;
+        if (overflow <= 0) return;
+        const removed = this._fileChanges.splice(0, overflow);
+        const referenced = new Set(
+            this._fileChanges.map(c => this._resolveFilePath(c.filePath))
+        );
+        for (const change of removed) {
+            const absPath = this._resolveFilePath(change.filePath);
+            if (!referenced.has(absPath)) {
+                this._originalContents.delete(absPath);
+            }
+        }
     }
 
     async openDiff(filePath: string, toolCallId: string): Promise<void> {
@@ -261,9 +281,18 @@ export class DiffManager implements vscode.Disposable {
 export class DiffContentProvider implements vscode.TextDocumentContentProvider {
     static instance: DiffContentProvider | undefined;
     private _contents = new Map<string, string>();
+    private _disposables: vscode.Disposable[] = [];
 
     constructor() {
         DiffContentProvider.instance = this;
+        // Virtual pi-diff documents are only meaningful while the diff editor
+        // holds them open; drop the cached copy as soon as it closes so the
+        // map does not grow unbounded across a session.
+        this._disposables.push(
+            vscode.workspace.onDidCloseTextDocument((document) => {
+                this._contents.delete(document.uri.toString());
+            }),
+        );
     }
 
     provideTextDocumentContent(uri: vscode.Uri): string {
@@ -272,5 +301,14 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
 
     setContent(uri: vscode.Uri, content: string): void {
         this._contents.set(uri.toString(), content);
+    }
+
+    dispose(): void {
+        DiffContentProvider.instance = undefined;
+        for (const disposable of this._disposables) {
+            disposable.dispose();
+        }
+        this._disposables = [];
+        this._contents.clear();
     }
 }

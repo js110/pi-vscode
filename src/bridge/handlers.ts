@@ -15,6 +15,7 @@ import {
 } from "./serialize";
 import type { BridgeDiagnosticSummary, BridgeEditorInfo, BridgeState } from "./types";
 import {
+  assertWritePathInWorkspace,
   createRange,
   getFileUri,
   getWorkspaceFolders,
@@ -235,7 +236,7 @@ function checkDocumentDirty(params: Record<string, unknown>) {
 }
 
 async function saveDocument(params: Record<string, unknown>) {
-  const uri = getFileUri(readRequiredString(params.filePath, "filePath"));
+  const uri = getFileUri(assertWritePathInWorkspace(readRequiredString(params.filePath, "filePath")));
   const document =
     vscode.workspace.textDocuments.find((entry) => entry.uri.toString() === uri.toString()) ??
     (await vscode.workspace.openTextDocument(uri));
@@ -407,6 +408,9 @@ async function executeCodeAction(params: Record<string, unknown>, state: BridgeS
 
 async function applyWorkspaceEdit(params: Record<string, unknown>) {
   const edits = readWorkspaceEditEntries(params.edits);
+  for (const edit of edits) {
+    assertWritePathInWorkspace(edit.filePath);
+  }
   const workspaceEdit = new vscode.WorkspaceEdit();
   for (const edit of edits) {
     workspaceEdit.replace(getFileUri(edit.filePath), createRange(edit.range), edit.newText);
@@ -418,7 +422,7 @@ async function applyWorkspaceEdit(params: Record<string, unknown>) {
 }
 
 async function formatDocument(params: Record<string, unknown>) {
-  const uri = getFileUri(readRequiredString(params.filePath, "filePath"));
+  const uri = getFileUri(assertWritePathInWorkspace(readRequiredString(params.filePath, "filePath")));
   const options = (await getFormattingOptions(uri)) ?? {};
   const result =
     (await vscode.commands.executeCommand<vscode.TextEdit[]>(
@@ -431,7 +435,7 @@ async function formatDocument(params: Record<string, unknown>) {
 }
 
 async function formatRange(params: Record<string, unknown>) {
-  const uri = getFileUri(readRequiredString(params.filePath, "filePath"));
+  const uri = getFileUri(assertWritePathInWorkspace(readRequiredString(params.filePath, "filePath")));
   const selection = readSelection(params.selection);
   const range = selection
     ? new vscode.Range(selection.start, selection.end)

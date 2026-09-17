@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { SettingsClientMessage, SettingsServerMessage, SettingsData, Lang } from '../shared/protocol';
 import { API_KEY_PREFIX } from '../shared/protocol';
 import type { GlobalRuleStore } from '../pi/approval-memory';
-import { discoverSkills } from '../pi/skills';
+import { discoverSkills, resolveAgentDir } from '../pi/skills';
 import { resolveDisplayLang } from './lang';
 import { humanizeErrorMessage } from '../shared/error-copy';
 
@@ -156,7 +156,7 @@ export class SettingsPanel {
     private async _sendSkills(): Promise<void> {
         try {
             const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
-            const skills = await discoverSkills(cwd);
+            const skills = await discoverSkills(cwd, await resolveAgentDir());
             this._post({ type: 'skills', skills });
         } catch {
             this._post({ type: 'skills', skills: [] });

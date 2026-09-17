@@ -128,7 +128,7 @@ async function loadBundledSdk(reason: string): Promise<{ sdk: PiSdk; source: PiS
 async function findSystemSdkDir(): Promise<string | undefined> {
     // 1. Explicit override for power users / testing.
     const override = process.env.PI_VSCODE_SDK_PATH;
-    if (override && isSdkDir(override)) {
+    if (override && readPkgVersion(override)) {
         return override;
     }
 

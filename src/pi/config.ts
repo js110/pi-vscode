@@ -9,13 +9,10 @@
  */
 
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import type { ConfigIssue, ConfigStatus, ModelInfo, PiConfigSnapshot, SkillInfo } from '../shared/protocol';
-import { loadPiSdk } from './compat';
 import { disposeModelRegistry, getAvailableModels, getModelRegistry } from './models';
 import { disposeModelRuntime } from './auth';
-import { discoverSkills } from './skills';
+import { discoverSkills, resolveAgentDir } from './skills';
 
 export interface DiscoveryInputs {
     agentDir: string;
@@ -65,17 +62,7 @@ export interface ConfigDiscoveryDeps {
 
 export function defaultConfigDeps(): ConfigDiscoveryDeps {
     return {
-        agentDir: async () => {
-            try {
-                const sdk = await loadPiSdk();
-                if (typeof sdk.getAgentDir === 'function') {
-                    return String(sdk.getAgentDir());
-                }
-            } catch {
-                /* fall through to the conventional location */
-            }
-            return path.join(os.homedir(), '.pi', 'agent');
-        },
+        agentDir: resolveAgentDir,
         dirExists: (dir) => {
             try {
                 return fs.existsSync(dir);

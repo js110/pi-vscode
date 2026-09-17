@@ -131,6 +131,14 @@ function handleMessage(msg: ServerMessage): void {
                 showModelPicker();
             }
             break;
+        case 'modelChanged':
+            // Follow-up/steer model switches arrive without a full 'models'
+            // snapshot; keep the footer consumer (composer picker label,
+            // approval card) in sync with the running turn.
+            state.model = msg.model;
+            if (msg.thinkingLevel) state.thinkingLevel = msg.thinkingLevel;
+            updateFooterModel();
+            break;
         case 'sessions':
             renderSessionList(msg.sessions, msg.currentSessionId);
             break;

@@ -90,11 +90,16 @@ describe('relativeToWorkspace', () => {
 describe('isImagePath', () => {
     it('detects image extensions case-insensitively', () => {
         expect(isImagePath('a/photo.PNG')).toBe(true);
-        expect(isImagePath('logo.Svg')).toBe(true);
+        expect(isImagePath('a/img.JpEg')).toBe(true);
     });
 
     it('rejects non-image and extension-less paths', () => {
         expect(isImagePath('src/a.ts')).toBe(false);
         expect(isImagePath('README')).toBe(false);
+        // svg/ico/avif are classified as @mentions, not image attachments
+        // (the agent's image input path does not accept them).
+        expect(isImagePath('logo.Svg')).toBe(false);
+        expect(isImagePath('favicon.Ico')).toBe(false);
+        expect(isImagePath('photo.Avif')).toBe(false);
     });
 });
