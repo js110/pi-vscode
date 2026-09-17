@@ -1,7 +1,3 @@
-import type { TaskInfo } from './tasks';
-
-export type { TaskInfo } from './tasks';
-
 /** Single-writer session occupancy marker (PRD 9.8, presentation layer only). */
 export type SessionOccupancy = 'none' | 'occupiedByOther' | 'releasedByOther' | 'lostLock';
 
@@ -96,7 +92,6 @@ export interface SerializedAgentState {
     queuedMessages?: string[];
     compactionPrompt?: number | null;
     supportsImages?: boolean;
-    tasks?: TaskInfo[];
     occupancy?: SessionOccupancy;
 }
 
@@ -191,7 +186,6 @@ export type ClientMessage =
     | { type: 'compactionDismiss' }
     | { type: 'mentionQuery'; query: string; requestId: number }
     | { type: 'dropFiles'; uris: string[]; requestId: number }
-    | { type: 'taskCancel'; taskId: string }
     | { type: 'sessionTakeover' }
     | { type: 'dismissSelection' };
 

@@ -29,7 +29,6 @@ import {
 import { t, thinkingLevelLabel } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import { extractLastAssistantText, parseBuiltinSlashCommand } from '../shared/slash-commands';
-import { applyTaskEvent, type TaskInfo } from '../shared/tasks';
 import { collectAndReplaceImages } from '../shared/message-assets';
 import { SessionLockManager, LOCK_HEARTBEAT_MS, type SessionLockDeps } from '../pi/session-lock';
 
@@ -118,7 +117,6 @@ type TabState = Tab & {
     compactionStage: CompactionStage;
     compactionPrompt: number | null;
     compactionInFlight: boolean;
-    tasks: TaskInfo[];
     lock: SessionLockManager | null;
     /** True when the serialized message list must be re-shipped (T16). */
     messagesDirty: boolean;
@@ -320,9 +318,6 @@ export class TabManager {
         }
         state.compactionPrompt = tab.compactionPrompt;
         state.supportsImages = tab.session.supportsImages();
-        if (tab.tasks.length > 0) {
-            state.tasks = tab.tasks;
-        }
         if (tab.lock && tab.lock.occupancy !== 'none') {
             state.occupancy = tab.lock.occupancy;
         }
@@ -372,7 +367,6 @@ export class TabManager {
             compactionStage: 'none' as const,
             compactionPrompt: null,
             compactionInFlight: false,
-            tasks: [],
             lock: this._lockDeps ? new SessionLockManager(this._lockDeps) : null,
             messagesDirty: true,
             imageAssets: new Map<string, string>(),
@@ -554,15 +548,8 @@ export class TabManager {
             tab.queuedMessages = [...(event.followUp ?? [])];
         }
 
-        if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
-            const next = applyTaskEvent(tab.tasks, { ...event, now: Date.now() });
-            if (next !== tab.tasks) {
-                tab.tasks = next;
-                if (isActive) { this._emitStateChange(); }
-            }
-            if (!isActive && event.type === 'tool_execution_end' && event.isError) {
-                tab.hasNotification = true;
-            }
+        if (!isActive && event.type === 'tool_execution_end' && event.isError) {
+            tab.hasNotification = true;
         }
 
         // A brand-new session's file only exists after its first persisted
@@ -788,7 +775,6 @@ export class TabManager {
                 if (tab.lock) {
                     await tab.lock.release();
                 }
-                tab.tasks = [];
                 tab.diffManager.clearAll();
                 tab.checkpointManager.clearAll();
                 tab.turnCounter = 0;
@@ -807,7 +793,6 @@ export class TabManager {
                 if (tab.lock) {
                     await tab.lock.adopt(msg.sessionPath);
                 }
-                tab.tasks = [];
                 tab.diffManager.clearAll();
                 tab.checkpointManager.clearAll();
                 tab.suspendedMessages = [];
@@ -830,7 +815,6 @@ export class TabManager {
                     if (tab.lock) {
                         await tab.lock.adopt(targetPath);
                     }
-                    tab.tasks = [];
                     tab.diffManager.clearAll();
                     tab.checkpointManager.clearAll();
                     tab.suspendedMessages = [];
@@ -997,13 +981,6 @@ export class TabManager {
             case 'openSettings':
                 this._hooks.openSettings();
                 break;
-            case 'taskCancel': {
-                const task = tab.tasks.find((task) => task.id === msg.taskId);
-                if (task?.status === 'running' && typeof tab.session.abortBash === 'function') {
-                    tab.session.abortBash();
-                }
-                break;
-            }
             case 'sessionTakeover':
                 if (tab.lock) {
                     await tab.lock.takeover();

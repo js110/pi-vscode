@@ -2,7 +2,7 @@
   "name": "pi-vscode",
   "displayName": "Pi for VS Code",
   "description": "A first-class VS Code interface powered by the native Pi coding agent SDK.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {

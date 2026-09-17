@@ -222,13 +222,6 @@ const EN = {
 
     // Status bar open-panel entry (the secondary-sidebar container has no activity-bar icon)
     'statusBar.openPanel': 'Open Pi Agent panel',
-    // Background tasks panel (C11)
-    'tasks.panel': 'Background tasks',
-    'tasks.empty': 'No background tasks. Subagent tasks will appear here once the Pi SDK provides them.',
-    'tasks.running': 'Running',
-    'tasks.done': 'Done',
-    'tasks.failed': 'Failed',
-    'tasks.cancel': 'Cancel task (aborts the running shell)',
     'occupancy.occupied': 'This session is open in another VS Code window. It is read-only here.',
     'occupancy.released': 'The other window released this session. You can resume editing.',
     'occupancy.lostLock': 'This session was taken over by another window. It is read-only here.',
@@ -509,13 +502,6 @@ const ZH: Record<TextKey, string> = {
 
     // 状态栏打开面板入口（次侧边栏容器没有活动栏图标）
     'statusBar.openPanel': '打开 Pi Agent 面板',
-    // 后台任务面板（C11）
-    'tasks.panel': '后台任务',
-    'tasks.empty': '暂无后台任务。Pi SDK 提供子代理能力后，任务会自动显示在这里。',
-    'tasks.running': '运行中',
-    'tasks.done': '完成',
-    'tasks.failed': '失败',
-    'tasks.cancel': '取消任务（中止当前 shell）',
     'occupancy.occupied': '该会话已在其他 VS Code 窗口打开，此处为只读。',
     'occupancy.released': '其他窗口已释放该会话，可以恢复编辑。',
     'occupancy.lostLock': '该会话已被其他窗口接管，此处为只读。',

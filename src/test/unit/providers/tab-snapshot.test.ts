@@ -56,7 +56,6 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
         getFollowUpMessages: () => [],
         replaceFollowUpMessages: vi.fn(async () => {}),
         abort: vi.fn(async () => {}),
-        abortBash: vi.fn(),
         showModelPicker: vi.fn(async () => {}),
         cycleThinkingLevel: () => 'off',
         compact: vi.fn(async () => {}),
