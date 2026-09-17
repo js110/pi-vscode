@@ -163,6 +163,7 @@ const EN = {
     'compact.dismiss': 'Not now',
     'compact.compacting': 'Compacting context…',
     'compact.failed': 'Compaction failed — context kept. You can retry with /compact.',
+    'compact.nothingToCompact': 'Nothing to compact yet — the session is too small or was recently compacted, so recent history stays as-is.',
     'compact.done': 'Context compacted.',
 
     // Built-in slash commands
@@ -450,6 +451,7 @@ const ZH: Record<TextKey, string> = {
     'compact.dismiss': '暂不',
     'compact.compacting': '正在压缩上下文…',
     'compact.failed': '压缩失败——已保留原上下文，可稍后用 /compact 重试。',
+    'compact.nothingToCompact': '暂无可压缩的内容——会话还太小（或最近已压缩过），最近历史将原样保留。',
     'compact.done': '上下文压缩完成。',
 
     // Built-in slash commands

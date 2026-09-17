@@ -4,6 +4,7 @@ import { isDangerousTool } from '../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { matchesModelFilter } from '../shared/model-filter';
+import { rankSlashMenuItems } from '../shared/slash-commands';
 import { t, setLang } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
@@ -206,7 +207,7 @@ function handleMessage(msg: ServerMessage): void {
         case 'compactionResult':
             state.compactionBusy = false;
             if (!msg.ok) {
-                showError(t('compact.failed'));
+                showError(msg.message ?? t('compact.failed'));
             }
             updateCompactionBanner();
             break;
@@ -2666,10 +2667,7 @@ function updateSlashMenu(input: HTMLTextAreaElement): void {
     }
 
     const query = slashMatch[1].slice(1).toLowerCase();
-    slashMenuItems = allItems.filter(item =>
-        item.name.toLowerCase().includes(query) ||
-        item.description.toLowerCase().includes(query)
-    );
+    slashMenuItems = rankSlashMenuItems(allItems, query);
 
     if (slashMenuItems.length === 0) {
         hideSlashMenu();

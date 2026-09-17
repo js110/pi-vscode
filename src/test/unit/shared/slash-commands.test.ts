@@ -5,7 +5,52 @@ import {
     BUILTIN_COMMANDS,
     parseBuiltinSlashCommand,
     extractLastAssistantText,
+    rankSlashMenuItems,
 } from '../../../shared/slash-commands';
+
+describe('rankSlashMenuItems', () => {
+    const items = [
+        {
+            name: 'handoff',
+            label: '/skill:handoff',
+            description: 'Compact the current conversation into a handoff document for another agent.',
+        },
+        { name: 'compact', label: '/compact', description: 'Manually compact the session context' },
+        { name: 'clear', label: '/clear', description: 'Clear the conversation' },
+    ];
+
+    it('ranks a name prefix match above a description match', () => {
+        expect(rankSlashMenuItems(items, 'compa').map((item) => item.name)).toEqual(['compact', 'handoff']);
+    });
+
+    it('keeps registration order for an empty query', () => {
+        expect(rankSlashMenuItems(items, '').map((item) => item.name)).toEqual([
+            'handoff',
+            'compact',
+            'clear',
+        ]);
+    });
+
+    it('matches a /skill: prefixed query via the label', () => {
+        expect(rankSlashMenuItems(items, 'skill:hand').map((item) => item.name)).toEqual(['handoff']);
+    });
+
+    it('drops items with no match', () => {
+        expect(rankSlashMenuItems(items, 'nomatch')).toEqual([]);
+    });
+
+    it('prefers a name substring over a description match', () => {
+        const list = [
+            { name: 'plan-x', description: 'learn things' },
+            { name: 'clear', description: '' },
+        ];
+        expect(rankSlashMenuItems(list, 'lear').map((item) => item.name)).toEqual(['clear', 'plan-x']);
+    });
+
+    it('is case-insensitive', () => {
+        expect(rankSlashMenuItems(items, 'COMPACT').map((item) => item.name)).toEqual(['compact', 'handoff']);
+    });
+});
 
 describe('parseBuiltinSlashCommand', () => {
     it('matches a bare command name', () => {

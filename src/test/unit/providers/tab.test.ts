@@ -4,6 +4,7 @@ import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
 import { refreshPiConfig } from '../../../pi/config';
+import { t } from '../../../shared/i18n';
 import type { DropResolveResult, PiConfigSnapshot, SerializedAgentState } from '../../../shared/protocol';
 
 vi.mock('../../../pi/config', () => ({
@@ -296,7 +297,9 @@ describe('TabManager', () => {
         vi.mocked(hooks.post).mockClear();
 
         await expect(manager.dispatch({ type: 'compactionAccept' })).resolves.toBeUndefined();
-        expect(hooks.post).toHaveBeenCalledWith({ type: 'compactionResult', ok: false });
+        expect(hooks.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'compactionResult', ok: false, message: expect.stringContaining('boom') }),
+        );
         expect(manager.getState().compactionPrompt).toBeNull();
 
         // The failed threshold compact still escalates at 90%.
@@ -943,5 +946,33 @@ describe('TabManager built-in slash command dispatch', () => {
             (call) => (call[0] as any).type === 'sessions',
         );
         expect(sent).toBeUndefined();
+    });
+
+    it('reports nothing-to-compact distinctly when the session is too small', async () => {
+        const { hooks, manager } = await setup({
+            compact: vi.fn(async () => {
+                throw new Error('Nothing to compact (session too small)');
+            }),
+        });
+        await manager.dispatch({ type: 'prompt', text: '/compact' });
+        const result = vi.mocked(hooks.post).mock.calls.find(
+            (call) => (call[0] as any).type === 'compactionResult',
+        );
+        expect((result?.[0] as any)?.ok).toBe(false);
+        expect((result?.[0] as any)?.message).toBe(t('compact.nothingToCompact'));
+    });
+
+    it('includes the underlying detail for real compaction failures', async () => {
+        const { hooks, manager } = await setup({
+            compact: vi.fn(async () => {
+                throw new Error('provider 500: boom');
+            }),
+        });
+        await manager.dispatch({ type: 'prompt', text: '/compact' });
+        const result = vi.mocked(hooks.post).mock.calls.find(
+            (call) => (call[0] as any).type === 'compactionResult',
+        );
+        expect((result?.[0] as any)?.ok).toBe(false);
+        expect(((result?.[0] as any)?.message as string)).toContain('boom');
     });
 });

@@ -84,3 +84,35 @@ export function extractLastAssistantText(messages: any[]): string | null {
     }
     return null;
 }
+
+export interface SlashMenuItemLike {
+    name: string;
+    label?: string;
+    description?: string;
+}
+
+/**
+ * Rank slash menu items for a typed query. Name matches beat description
+ * matches (typing "/compa" means the compact command, not a skill whose
+ * description happens to contain "compact"); ties keep the input order.
+ * Non-matching items are dropped. An empty query keeps everything in order.
+ */
+export function rankSlashMenuItems<T extends SlashMenuItemLike>(items: readonly T[], query: string): T[] {
+    const q = query.toLowerCase();
+    const scored = items
+        .map((item, index) => ({ item, index, score: _scoreSlashItem(item, q) }))
+        .filter((entry) => entry.score < 3);
+    scored.sort((a, b) => a.score - b.score || a.index - b.index);
+    return scored.map((entry) => entry.item);
+}
+
+/** 0 = name/label prefix, 1 = name/label substring, 2 = description, 3 = no match. */
+function _scoreSlashItem(item: SlashMenuItemLike, q: string): number {
+    if (!q) return 0;
+    const name = item.name.toLowerCase();
+    const label = (item.label ?? `/${item.name}`).toLowerCase().replace(/^\//, '');
+    if (name.startsWith(q) || label.startsWith(q)) return 0;
+    if (name.includes(q) || label.includes(q)) return 1;
+    if (item.description?.toLowerCase().includes(q)) return 2;
+    return 3;
+}

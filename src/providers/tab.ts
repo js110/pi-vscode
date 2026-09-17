@@ -1173,12 +1173,20 @@ export class TabManager {
             this._emitStateChange();
             this._hooks.post({ type: 'compactionResult', ok: true });
             this._hooks.showMessage(t('compact.done'));
-        } catch {
+        } catch (err) {
             // Keep the stage: a failed compact still gets the 90% re-prompt.
             tab.compactionInFlight = false;
             tab.compactionPrompt = null;
             this._emitStateChange();
-            this._hooks.post({ type: 'compactionResult', ok: false });
+            // "Nothing to compact" is the SDK's normal small-session response
+            // (keepRecentTokens defaults to 20k), not a failure — the generic
+            // failed copy would mislead.
+            const detail = err instanceof Error ? err.message : String(err);
+            console.error('[pi-vscode] compaction failed:', detail);
+            const message = /Nothing to compact|session too small|Already compacted/.test(detail)
+                ? t('compact.nothingToCompact')
+                : `${t('compact.failed')} ${humanizeErrorMessage(err) ?? detail}`.trim();
+            this._hooks.post({ type: 'compactionResult', ok: false, message });
         }
     }
 
