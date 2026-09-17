@@ -312,7 +312,11 @@ function applyStateSync(s: SerializedAgentState): void {
 
     if (tabSwitched || !skeletonBuilt) {
         render();
-        historyReplacePending = null;
+        // Only a frame that actually carries the history can satisfy a
+        // pending replace — a message-less tab frame (T16 omits unchanged
+        // messages) must not consume it, or the full frame behind it lands
+        // unscrolled at the top.
+        if (s.messages !== undefined) historyReplacePending = null;
         userHasScrolled = false;
         scrollToBottom(true);
         updateScrollButton();
@@ -405,7 +409,6 @@ function handleStreamingDelta(ae: any): void {
             state.streamingThinking = '';
             state.thinkingStartTime = Date.now();
             state.streamingThinkingDuration = 0;
-            thinkingFollows = true;
             break;
         case 'thinking_delta':
             state.streamingThinking += ae.delta ?? '';
@@ -1380,24 +1383,6 @@ function renderStreamingContent(): void {
             if (labelEl) labelEl.textContent = thinkingLabel(state.isThinking, state.streamingThinkingDuration);
             if (state.isThinking) {
                 thinkingEl.classList.add('active');
-                const box = contentEl as HTMLElement | null;
-                if (box) {
-                    // Let the user read ahead inside the box: scrolling up
-                    // cedes the follow, returning near the bottom resumes it.
-                    if (!box.dataset.followBound) {
-                        box.dataset.followBound = '1';
-                        // A fresh box (tab switch back mid-turn, skeleton
-                        // rebuild) starts pinned at the top; resume following.
-                        thinkingFollows = true;
-                        box.addEventListener('scroll', () => {
-                            thinkingFollows =
-                                box.scrollHeight - box.scrollTop - box.clientHeight < 50;
-                        });
-                    }
-                    if (thinkingFollows) {
-                        box.scrollTop = box.scrollHeight;
-                    }
-                }
             } else {
                 thinkingEl.classList.remove('active');
             }
@@ -3009,9 +2994,6 @@ function buildMessageFooter(msg: any, index: number): HTMLElement | null {
 
 let userHasScrolled = false;
 let isProgrammaticScroll = false;
-// The streaming thinking box is its own capped (max-height) scroller nested
-// in #messages; while reasoning streams it must follow its own bottom.
-let thinkingFollows = true;
 
 function scrollToBottom(force = false): void {
     if (userHasScrolled && !force) return;
@@ -3076,3 +3058,12 @@ function bindScrollListener(): void {
 
 // ── Init ──
 render();
+// The host pushes the full snapshot when it resolves the view, but those
+// posts race the document reload whenever VS Code re-creates the webview
+// (hide/show) and can be lost entirely — leaving a welcome screen with no
+// conversation until the next state change. The webview knows when its own
+// script is live, so it asks for the snapshot itself; marking it as a
+// history replace lands the restoring frame on the newest message.
+historyReplacePending = { from: state.sessionId, rewrite: true };
+vscode.postMessage({ type: 'getState' });
+vscode.postMessage({ type: 'getSkills' });
