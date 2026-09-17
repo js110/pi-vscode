@@ -246,14 +246,24 @@ function handleConfirmResult(action: string, confirmed: boolean, payload?: any):
     switch (action) {
         case 'restoreCheckpoint':
             if (payload?.messageIndex !== undefined) {
+                historyReplacePending = { from: state.sessionId, rewrite: true };
                 vscode.postMessage({ type: 'restoreCheckpoint', messageIndex: payload.messageIndex });
             }
             break;
         case 'redoCheckpoint':
+            historyReplacePending = { from: state.sessionId, rewrite: true };
             vscode.postMessage({ type: 'redoCheckpoint' });
             break;
     }
 }
+
+// Set when the webview initiates something that replaces the whole message
+// history (load/restore/redo): the resolving stateSync must land the view on
+// the newest message. "load" resolves on a different session id only — a
+// same-id frame may be an interim streaming frame, and scrolling it would
+// yank the user; checkpoint rewrites never change the session, so they
+// resolve on the first messages frame.
+let historyReplacePending: { from: string | undefined; rewrite: boolean } | null = null;
 
 function applyStateSync(s: SerializedAgentState): void {
     const prevTab = state.activeTabId;
@@ -302,6 +312,7 @@ function applyStateSync(s: SerializedAgentState): void {
 
     if (tabSwitched || !skeletonBuilt) {
         render();
+        historyReplacePending = null;
         userHasScrolled = false;
         scrollToBottom(true);
         updateScrollButton();
@@ -309,6 +320,15 @@ function applyStateSync(s: SerializedAgentState): void {
         updateTabs();
         updateStreamingUI();
         updateMessages();
+        if (historyReplacePending && s.messages !== undefined) {
+            const { from, rewrite } = historyReplacePending;
+            if (rewrite || s.sessionId !== from) {
+                historyReplacePending = null;
+                userHasScrolled = false;
+                scrollToBottom(true);
+                updateScrollButton();
+            }
+        }
         updateInputArea();
         updateChangedFiles();
         updateQueuedMessageBanner();
@@ -385,6 +405,7 @@ function handleStreamingDelta(ae: any): void {
             state.streamingThinking = '';
             state.thinkingStartTime = Date.now();
             state.streamingThinkingDuration = 0;
+            thinkingFollows = true;
             break;
         case 'thinking_delta':
             state.streamingThinking += ae.delta ?? '';
@@ -1359,6 +1380,24 @@ function renderStreamingContent(): void {
             if (labelEl) labelEl.textContent = thinkingLabel(state.isThinking, state.streamingThinkingDuration);
             if (state.isThinking) {
                 thinkingEl.classList.add('active');
+                const box = contentEl as HTMLElement | null;
+                if (box) {
+                    // Let the user read ahead inside the box: scrolling up
+                    // cedes the follow, returning near the bottom resumes it.
+                    if (!box.dataset.followBound) {
+                        box.dataset.followBound = '1';
+                        // A fresh box (tab switch back mid-turn, skeleton
+                        // rebuild) starts pinned at the top; resume following.
+                        thinkingFollows = true;
+                        box.addEventListener('scroll', () => {
+                            thinkingFollows =
+                                box.scrollHeight - box.scrollTop - box.clientHeight < 50;
+                        });
+                    }
+                    if (thinkingFollows) {
+                        box.scrollTop = box.scrollHeight;
+                    }
+                }
             } else {
                 thinkingEl.classList.remove('active');
             }
@@ -2073,6 +2112,7 @@ function renderSessionList(sessions: any[], currentId?: string): void {
             if (renameBtn && (renameBtn.contains(ev.target as Node) || ev.target === renameBtn)) return;
             const sessionPath = (item as HTMLElement).dataset.path;
             if (sessionPath) {
+                historyReplacePending = { from: state.sessionId, rewrite: false };
                 vscode.postMessage({ type: 'loadSession', sessionPath });
             }
         });
@@ -2969,13 +3009,18 @@ function buildMessageFooter(msg: any, index: number): HTMLElement | null {
 
 let userHasScrolled = false;
 let isProgrammaticScroll = false;
+// The streaming thinking box is its own capped (max-height) scroller nested
+// in #messages; while reasoning streams it must follow its own bottom.
+let thinkingFollows = true;
 
 function scrollToBottom(force = false): void {
     if (userHasScrolled && !force) return;
     const messages = document.getElementById('messages');
     if (messages) {
         isProgrammaticScroll = true;
-        messages.scrollTop = messages.scrollHeight;
+        // Forced jumps (open/load/switch) land instantly — the container's
+        // CSS smooth animation across a long history reads as "stuck at top".
+        messages.scrollTo({ top: messages.scrollHeight, behavior: force ? 'instant' : 'auto' });
     }
 }
 
