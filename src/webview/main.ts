@@ -105,8 +105,9 @@ window.addEventListener('message', (event) => {
 function handleMessage(msg: ServerMessage): void {
     switch (msg.type) {
         case 'ready':
-            vscode.postMessage({ type: 'getState' });
-            vscode.postMessage({ type: 'getSkills' });
+            // Liveness signal only — the getState/getSkills handshake runs at
+            // script init (bottom of file), so re-issuing it here would just
+            // double the full-snapshot cost on every panel open.
             break;
         case 'stateSync':
             if (msg.images) Object.assign(state.imageCache, msg.images);
@@ -236,6 +237,10 @@ function handleMessage(msg: ServerMessage): void {
             }
             break;
         case 'error':
+            // A failed dispatch (e.g. corrupt session file) may mean the frame
+            // a pending replace-marker waits for never arrives; drop it so a
+            // later unrelated frame can't yank the view to the bottom.
+            historyReplacePending = null;
             showError(msg.message);
             break;
     }
@@ -258,11 +263,11 @@ function handleConfirmResult(action: string, confirmed: boolean, payload?: any):
 }
 
 // Set when the webview initiates something that replaces the whole message
-// history (load/restore/redo): the resolving stateSync must land the view on
-// the newest message. "load" resolves on a different session id only — a
-// same-id frame may be an interim streaming frame, and scrolling it would
-// yank the user; checkpoint rewrites never change the session, so they
-// resolve on the first messages frame.
+// history (load/restore/redo/startup getState): the resolving stateSync must
+// land the view on the newest message. "load" resolves on a different session
+// id only — a same-id frame may be an interim streaming frame, and scrolling
+// it would yank the user; checkpoint rewrites and the startup getState never
+// change the session, so they resolve on the first messages frame.
 let historyReplacePending: { from: string | undefined; rewrite: boolean } | null = null;
 
 function applyStateSync(s: SerializedAgentState): void {
@@ -313,9 +318,10 @@ function applyStateSync(s: SerializedAgentState): void {
     if (tabSwitched || !skeletonBuilt) {
         render();
         // Only a frame that actually carries the history can satisfy a
-        // pending replace — a message-less tab frame (T16 omits unchanged
-        // messages) must not consume it, or the full frame behind it lands
-        // unscrolled at the top.
+        // pending replace — a message-less tab frame (resolve-time read-mode
+        // snapshots and T16-omitted unchanged messages both produce one) must
+        // not consume it, or the full frame behind it lands unscrolled at the
+        // top.
         if (s.messages !== undefined) historyReplacePending = null;
         userHasScrolled = false;
         scrollToBottom(true);

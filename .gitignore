@@ -8,3 +8,5 @@ node_modules/
 legacy-rpc-prototype/
 .design-qa/
 design-qa.md
+.cache
+.github
