@@ -130,6 +130,7 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         showMessage: vi.fn(),
         confirmDialog: vi.fn(async () => false),
         openSettings: vi.fn(),
+        writeClipboard: vi.fn(async () => {}),
         getCwd: vi.fn(() => h.workRoot),
         applyPreview: vi.fn(async () => ({
             previewId: 'ap-1', targetPath: '/work/a.ts', isNew: false,

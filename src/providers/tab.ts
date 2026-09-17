@@ -26,8 +26,9 @@ import {
     MENTION_CONTEXT_WINDOW_LINES,
     type MentionContextEntry,
 } from '../shared/mention';
-import { t } from '../shared/i18n';
+import { t, thinkingLevelLabel } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
+import { extractLastAssistantText, parseBuiltinSlashCommand } from '../shared/slash-commands';
 import { applyTaskEvent, type TaskInfo } from '../shared/tasks';
 import { collectAndReplaceImages } from '../shared/message-assets';
 import { SessionLockManager, LOCK_HEARTBEAT_MS, type SessionLockDeps } from '../pi/session-lock';
@@ -51,6 +52,7 @@ export interface TabManagerHooks {
     showMessage(message: string): void;
     confirmDialog(message: string): Promise<boolean>;
     openSettings(): void;
+    writeClipboard(text: string): Promise<void>;
     getCwd(): string;
     applyPreview(code: string, lang: string, tabId: string): Promise<ApplyPreviewInfo | null>;
     applyConfirm(previewId: string): Promise<{ ok: boolean; message?: string }>;
@@ -97,32 +99,35 @@ function safeSerialize(obj: any): any {
     }
 }
 
+/** Internal per-tab runtime state riding on the public Tab record. */
+type TabState = Tab & {
+    turnCounter: number;
+    suspendedMessages: any[];
+    streamingText: string;
+    streamingThinking: string;
+    isThinking: boolean;
+    thinkingStartTime: number;
+    streamingThinkingDuration: number;
+    agentStartTime: number;
+    messageMeta: Map<number, MessageMeta>;
+    hasNotification: boolean;
+    pendingApprovals: Map<string, PendingApproval>;
+    approvalMemory: ApprovalMemory;
+    queuedMessages: string[];
+    isStreaming: boolean;
+    compactionStage: CompactionStage;
+    compactionPrompt: number | null;
+    compactionInFlight: boolean;
+    tasks: TaskInfo[];
+    lock: SessionLockManager | null;
+    /** True when the serialized message list must be re-shipped (T16). */
+    messagesDirty: boolean;
+    /** dataUrl payload → stable assetId, deduping image assets per tab. */
+    imageAssets: Map<string, string>;
+};
+
 export class TabManager {
-    private _tabs = new Map<string, Tab & {
-        turnCounter: number;
-        suspendedMessages: any[];
-        streamingText: string;
-        streamingThinking: string;
-        isThinking: boolean;
-        thinkingStartTime: number;
-        streamingThinkingDuration: number;
-        agentStartTime: number;
-        messageMeta: Map<number, MessageMeta>;
-        hasNotification: boolean;
-        pendingApprovals: Map<string, PendingApproval>;
-        approvalMemory: ApprovalMemory;
-        queuedMessages: string[];
-        isStreaming: boolean;
-        compactionStage: CompactionStage;
-        compactionPrompt: number | null;
-        compactionInFlight: boolean;
-        tasks: TaskInfo[];
-        lock: SessionLockManager | null;
-        /** True when the serialized message list must be re-shipped (T16). */
-        messagesDirty: boolean;
-        /** dataUrl payload → stable assetId, deduping image assets per tab. */
-        imageAssets: Map<string, string>;
-    }>();
+    private _tabs = new Map<string, TabState>();
     private _activeTabId = '';
     private _tabSubscriptions = new Map<string, (() => void)[]>();
     private _stateListeners: (() => void)[] = [];
@@ -633,6 +638,12 @@ export class TabManager {
 
         switch (msg.type) {
             case 'prompt': {
+                if (
+                    !msg.bypassSlashCommands
+                    && (await this._maybeExecuteBuiltinCommand(tab, msg.text))
+                ) {
+                    break;
+                }
                 if (tab.isStreaming) {
                     console.log('[Pi] prompt rejected: tab is streaming');
                     throw new Error('Agent is still processing. Please wait or queue your message.');
@@ -703,14 +714,32 @@ export class TabManager {
                 break;
             }
             case 'steer':
+                // Same interception as queueMessage: a builtin typed while
+                // streaming must not reach the model as plain text.
+                if (await this._maybeExecuteBuiltinCommand(tab, msg.text)) {
+                    break;
+                }
                 await tab.session.steer(msg.text);
                 break;
             case 'queueMessage':
+                // A builtin slash command queued while streaming would reach
+                // the model as plain text later — execute (or reject) it now.
+                if (await this._maybeExecuteBuiltinCommand(tab, msg.text)) {
+                    break;
+                }
                 await tab.session.followUp(msg.text);
                 tab.queuedMessages = tab.session.getFollowUpMessages();
                 this._emitStateChange();
                 break;
-            case 'editQueuedMessage':
+            case 'editQueuedMessage': {
+                // A queue item lives in the SDK's followUp queue and drains
+                // past the host — refuse edits that would smuggle a builtin
+                // command to the model as plain text.
+                const editedCommand = parseBuiltinSlashCommand(msg.text);
+                if (editedCommand) {
+                    this._hooks.showMessage(t('slash.blockedStreaming', { name: editedCommand.name }));
+                    break;
+                }
                 if (
                     msg.index >= 0 &&
                     msg.index < tab.queuedMessages.length &&
@@ -721,6 +750,7 @@ export class TabManager {
                 }
                 this._emitStateChange();
                 break;
+            }
             case 'removeQueuedMessage':
                 if (msg.index >= 0 && msg.index < tab.queuedMessages.length) {
                     tab.queuedMessages.splice(msg.index, 1);
@@ -861,26 +891,7 @@ export class TabManager {
                 this._hooks.applyCancel(msg.previewId);
                 break;
             case 'compactionAccept': {
-                if (tab.compactionInFlight) break;
-                tab.compactionInFlight = true;
-                try {
-                    await tab.session.compact();
-                    tab.compactionInFlight = false;
-                    tab.compactionPrompt = null;
-                    // Compaction replaces the message list wholesale via
-                    // compaction_end — no message_end fires, so re-ship.
-                    tab.messagesDirty = true;
-                    // stateSync first: the banner must clear before the result
-                    // lands, or the live buttons linger for one tick.
-                    this._emitStateChange();
-                    this._hooks.post({ type: 'compactionResult', ok: true });
-                } catch {
-                    // Keep the stage: a failed compact still gets the 90% re-prompt.
-                    tab.compactionInFlight = false;
-                    tab.compactionPrompt = null;
-                    this._emitStateChange();
-                    this._hooks.post({ type: 'compactionResult', ok: false });
-                }
+                await this._runManualCompaction(tab);
                 break;
             }
             case 'compactionDismiss':
@@ -1144,6 +1155,158 @@ export class TabManager {
         await tab.session.compact();
         tab.messagesDirty = true;
         this._emitStateChange();
+    }
+
+    /** SDK-native compaction (T6 banner accept + manual /compact share it). */
+    private async _runManualCompaction(tab: TabState, customInstructions?: string): Promise<void> {
+        if (tab.compactionInFlight) return;
+        tab.compactionInFlight = true;
+        try {
+            await tab.session.compact(customInstructions);
+            tab.compactionInFlight = false;
+            tab.compactionPrompt = null;
+            // Compaction replaces the message list wholesale via
+            // compaction_end — no message_end fires, so re-ship.
+            tab.messagesDirty = true;
+            // stateSync first: the banner must clear before the result
+            // lands, or the live buttons linger for one tick.
+            this._emitStateChange();
+            this._hooks.post({ type: 'compactionResult', ok: true });
+            this._hooks.showMessage(t('compact.done'));
+        } catch {
+            // Keep the stage: a failed compact still gets the 90% re-prompt.
+            tab.compactionInFlight = false;
+            tab.compactionPrompt = null;
+            this._emitStateChange();
+            this._hooks.post({ type: 'compactionResult', ok: false });
+        }
+    }
+
+    /** State-changing commands honor the single-writer lock (AC-OP-03). */
+    private _isReadOnlyLocked(tab: TabState): boolean {
+        return tab.lock !== null && tab.lock.occupancy !== 'none';
+    }
+
+    /**
+     * Execute a built-in slash command (the SDK prompt() only dispatches
+     * extension commands and expands skill/template commands — builtins are
+     * the shell's job). Returns true when the input was a builtin and has
+     * been handled; false leaves the text on the normal prompt/queue path.
+     */
+    private async _maybeExecuteBuiltinCommand(tab: TabState, text: string): Promise<boolean> {
+        const parsed = parseBuiltinSlashCommand(text);
+        if (!parsed) return false;
+        const { name, args } = parsed;
+        switch (name) {
+            case 'compact':
+                if (tab.isStreaming) {
+                    this._hooks.showMessage(t('slash.blockedStreaming', { name }));
+                    return true;
+                }
+                if (this._isReadOnlyLocked(tab)) {
+                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    return true;
+                }
+                if (tab.compactionInFlight) {
+                    this._hooks.showMessage(t('compact.compacting'));
+                    return true;
+                }
+                await this._runManualCompaction(tab, args || undefined);
+                return true;
+            case 'new':
+                if (tab.isStreaming) {
+                    this._hooks.showMessage(t('slash.blockedStreaming', { name }));
+                    return true;
+                }
+                if (this._isReadOnlyLocked(tab)) {
+                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    return true;
+                }
+                await this.newSession();
+                return true;
+            case 'model':
+                await this.selectModel();
+                return true;
+            case 'thinking': {
+                const requested = args.toLowerCase();
+                if (requested && tab.session.getAvailableThinkingLevels().includes(requested)) {
+                    tab.session.setThinkingLevel(requested);
+                    this._emitStateChange();
+                    this._hooks.showMessage(
+                        t('command.thinkingChanged', { level: thinkingLevelLabel(requested) }),
+                    );
+                    return true;
+                }
+                const level = tab.session.cycleThinkingLevel();
+                this._emitStateChange();
+                if (level !== undefined) {
+                    this._hooks.showMessage(
+                        t('command.thinkingChanged', { level: thinkingLevelLabel(level) }),
+                    );
+                }
+                return true;
+            }
+            case 'name':
+                if (this._isReadOnlyLocked(tab)) {
+                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    return true;
+                }
+                if (!args) {
+                    this._hooks.showMessage(t('slash.nameUsage'));
+                    return true;
+                }
+                // Direct rename — dispatching 'renameSession' would also post
+                // the session list and pop the sessions panel open.
+                tab.session.setSessionName(args);
+                this._updateTabName(tab);
+                this._emitStateChange();
+                return true;
+            case 'resume':
+                await this.dispatch({ type: 'getSessions' });
+                return true;
+            case 'settings':
+                this._hooks.openSettings();
+                return true;
+            case 'login':
+                this._hooks.openSettings();
+                this._hooks.showMessage(t('slash.loginHint'));
+                return true;
+            case 'copy': {
+                const lastReply = extractLastAssistantText(tab.session.getMessages());
+                if (!lastReply) {
+                    this._hooks.showMessage(t('slash.copyEmpty'));
+                    return true;
+                }
+                await this._hooks.writeClipboard(lastReply);
+                this._hooks.showMessage(t('slash.copied'));
+                return true;
+            }
+            case 'session':
+                this._hooks.showMessage(this._buildSessionInfo(tab));
+                return true;
+            default:
+                this._hooks.showMessage(t('slash.unsupported', { name }));
+                return true;
+        }
+    }
+
+    private _buildSessionInfo(tab: Tab): string {
+        const session = tab.session;
+        const model = session.getCurrentModel();
+        const modelLabel = model ? (model.name ?? model.id) : '—';
+        const usage = session.getContextUsage();
+        const usageLabel =
+            usage?.percent != null
+                ? `${Math.round(usage.percent)}%`
+                : usage?.tokens != null
+                  ? `${usage.tokens}`
+                  : '—';
+        return t('slash.sessionInfo', {
+            name: session.getSessionName() ?? tab.name,
+            model: modelLabel,
+            usage: usageLabel,
+            path: session.getCurrentSessionPath() ?? '—',
+        });
     }
 
     /** Host entry (editor context menu): prompt, or FollowUp queue while streaming. */

@@ -189,6 +189,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 ).then((answer): boolean => answer === yes);
             },
             openSettings: () => void vscode.commands.executeCommand('pi-agent.openSettings'),
+            writeClipboard: async (text) => {
+                await vscode.env.clipboard.writeText(text);
+            },
             getCwd: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
             applyPreview: (code, lang, tabId) => applyManager.buildPreview(code, lang, tabId),
             applyConfirm: (previewId) => applyManager.confirm(previewId),

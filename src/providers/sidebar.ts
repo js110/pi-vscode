@@ -5,6 +5,7 @@ import { SelectionContextTracker } from './selection-context';
 import { resolveDisplayLang } from './lang';
 import { t } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
+import { parseBuiltinSlashCommand } from '../shared/slash-commands';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
@@ -80,13 +81,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
             // Copilot-style auto-attach: a plain text prompt rides the active
             // selection (one-shot). Explicit @-mentions opt out — they already
-            // carry their own file context.
+            // carry their own file context. Built-in slash commands opt out
+            // too: prepending a selection would break the host's slash
+            // interception and burn the chip on a command message.
             const mentions = msg.type === 'prompt' ? msg.mentions : undefined;
             let wrapped: string | null = null;
             let priorSelection: SelectionContextInfo | null = null;
             if (
                 (msg.type === 'prompt' || msg.type === 'queueMessage')
                 && !mentions
+                && !parseBuiltinSlashCommand(msg.text)
                 && this._selectionTracker
             ) {
                 priorSelection = this._selectionTracker.current;

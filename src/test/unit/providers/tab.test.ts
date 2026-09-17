@@ -80,6 +80,7 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         showMessage: vi.fn(),
         confirmDialog: vi.fn(async () => false),
         openSettings: vi.fn(),
+        writeClipboard: vi.fn(async () => {}),
         getCwd: vi.fn(() => '/work'),
         applyPreview: vi.fn(async () => ({
             previewId: 'ap-1',
@@ -741,5 +742,206 @@ describe('TabManager', () => {
         release();
         await expect(dispatching).rejects.toThrow(/still processing/i);
         expect(tab.session.prompt).not.toHaveBeenCalled();
+    });
+});
+
+describe('TabManager built-in slash command dispatch', () => {
+    async function setup(overrides: Partial<Tab['session']> = {}, hookOverrides: Partial<TabManagerHooks> = {}) {
+        const tab = makeTab(overrides);
+        const hooks = makeHooks(hookOverrides);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+        return { tab, hooks, manager };
+    }
+
+    it('runs SDK compaction for /compact instead of prompting', async () => {
+        const { tab, hooks, manager } = await setup();
+        await manager.dispatch({ type: 'prompt', text: '/compact' });
+        expect(tab.session.compact).toHaveBeenCalledWith(undefined);
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+        const result = vi.mocked(hooks.post).mock.calls.find(
+            (call) => (call[0] as any).type === 'compactionResult',
+        );
+        expect((result?.[0] as any)?.ok).toBe(true);
+    });
+
+    it('passes /compact arguments as custom instructions', async () => {
+        const { tab, manager } = await setup();
+        await manager.dispatch({ type: 'prompt', text: '/compact   keep the plan and todos' });
+        expect(tab.session.compact).toHaveBeenCalledWith('keep the plan and todos');
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+    });
+
+    it('rejects /compact while streaming without compacting or prompting', async () => {
+        const { tab, hooks, manager } = await setup();
+        (manager.activeTab as any).isStreaming = true;
+        await manager.dispatch({ type: 'prompt', text: '/compact' });
+        expect(tab.session.compact).not.toHaveBeenCalled();
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+        expect(hooks.showMessage).toHaveBeenCalled();
+    });
+
+    it('starts a new session for /new', async () => {
+        const { tab, manager } = await setup();
+        await manager.dispatch({ type: 'prompt', text: '/new' });
+        expect(tab.session.newSession).toHaveBeenCalled();
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+    });
+
+    it('opens the model picker for /model', async () => {
+        const { tab, manager } = await setup();
+        await manager.dispatch({ type: 'prompt', text: '/model' });
+        expect(tab.session.showModelPicker).toHaveBeenCalled();
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+    });
+
+    it('renames the session for /name <args> and reports usage without args', async () => {
+        const { tab, manager } = await setup({
+            setSessionName: vi.fn(),
+            getCurrentSessionPath: vi.fn(() => undefined),
+            getSessions: vi.fn(async () => []),
+        });
+        await manager.dispatch({ type: 'prompt', text: '/name My Session' });
+        expect(tab.session.setSessionName).toHaveBeenCalledWith('My Session');
+        await manager.dispatch({ type: 'prompt', text: '/name' });
+        expect(tab.session.setSessionName).toHaveBeenCalledTimes(1);
+    });
+
+    it('posts the sessions list for /resume', async () => {
+        const { hooks, manager } = await setup({
+            getSessions: vi.fn(async () => []),
+        });
+        await manager.dispatch({ type: 'prompt', text: '/resume' });
+        const sent = vi.mocked(hooks.post).mock.calls.find(
+            (call) => (call[0] as any).type === 'sessions',
+        );
+        expect(sent).toBeDefined();
+    });
+
+    it('opens settings for /settings and /login', async () => {
+        const { hooks, manager } = await setup();
+        await manager.dispatch({ type: 'prompt', text: '/settings' });
+        expect(hooks.openSettings).toHaveBeenCalledTimes(1);
+        await manager.dispatch({ type: 'prompt', text: '/login' });
+        expect(hooks.openSettings).toHaveBeenCalledTimes(2);
+        expect(hooks.showMessage).toHaveBeenCalled();
+    });
+
+    it('copies the last assistant reply for /copy', async () => {
+        const { hooks, manager } = await setup({
+            getMessages: vi.fn(() => [
+                { role: 'assistant', content: [{ type: 'text', text: 'the answer' }] },
+            ]),
+        });
+        await manager.dispatch({ type: 'prompt', text: '/copy' });
+        expect(hooks.writeClipboard).toHaveBeenCalledWith('the answer');
+        expect(hooks.showMessage).toHaveBeenCalled();
+    });
+
+    it('reports an empty clipboard source for /copy without replies', async () => {
+        const { hooks, manager } = await setup();
+        await manager.dispatch({ type: 'prompt', text: '/copy' });
+        expect(hooks.writeClipboard).not.toHaveBeenCalled();
+        expect(hooks.showMessage).toHaveBeenCalled();
+    });
+
+    it('reports unsupported builtins instead of prompting', async () => {
+        const { tab, hooks, manager } = await setup();
+        await manager.dispatch({ type: 'prompt', text: '/tree' });
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+        expect(hooks.showMessage).toHaveBeenCalledWith(
+            expect.stringContaining('/tree'),
+        );
+    });
+
+    it('falls through to the normal prompt for unknown slash commands', async () => {
+        const { tab, manager } = await setup();
+        await manager.dispatch({ type: 'prompt', text: '/nope' });
+        expect(tab.session.prompt).toHaveBeenCalled();
+    });
+
+    it('executes a queued builtin immediately instead of queueing it as text', async () => {
+        const { tab, manager } = await setup();
+        (manager.activeTab as any).isStreaming = true;
+        await manager.dispatch({ type: 'queueMessage', text: '/model' });
+        expect(tab.session.showModelPicker).toHaveBeenCalled();
+        expect(tab.session.followUp).not.toHaveBeenCalled();
+    });
+
+    it('still queues plain text while streaming', async () => {
+        const { tab, manager } = await setup();
+        (manager.activeTab as any).isStreaming = true;
+        await manager.dispatch({ type: 'queueMessage', text: 'hello' });
+        expect(tab.session.followUp).toHaveBeenCalledWith('hello');
+    });
+
+    it('rejects /compact and /new queued while streaming', async () => {
+        const { tab, hooks, manager } = await setup();
+        (manager.activeTab as any).isStreaming = true;
+        await manager.dispatch({ type: 'queueMessage', text: '/compact' });
+        await manager.dispatch({ type: 'queueMessage', text: '/new' });
+        expect(tab.session.compact).not.toHaveBeenCalled();
+        expect(tab.session.newSession).not.toHaveBeenCalled();
+        expect(tab.session.followUp).not.toHaveBeenCalled();
+        expect(hooks.showMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects /compact on a read-only locked tab', async () => {
+        const { tab, hooks, manager } = await setup();
+        (manager.activeTab as any).lock = { occupancy: 'read-only' };
+        await manager.dispatch({ type: 'prompt', text: '/compact' });
+        expect(tab.session.compact).not.toHaveBeenCalled();
+        expect(hooks.showMessage).toHaveBeenCalled();
+    });
+
+    it('rejects /compact while another compaction is in flight', async () => {
+        const { tab, hooks, manager } = await setup();
+        (manager.activeTab as any).compactionInFlight = true;
+        await manager.dispatch({ type: 'prompt', text: '/compact' });
+        expect(tab.session.compact).not.toHaveBeenCalled();
+        expect(hooks.showMessage).toHaveBeenCalled();
+    });
+
+    it('rejects /compact via steer but executes /model', async () => {
+        const { tab, manager } = await setup({ steer: vi.fn(async () => {}) });
+        (manager.activeTab as any).isStreaming = true;
+        await manager.dispatch({ type: 'steer', text: '/compact' });
+        expect(tab.session.compact).not.toHaveBeenCalled();
+        expect(tab.session.steer).not.toHaveBeenCalled();
+        await manager.dispatch({ type: 'steer', text: '/model' });
+        expect(tab.session.showModelPicker).toHaveBeenCalled();
+        expect(tab.session.steer).not.toHaveBeenCalled();
+    });
+
+    it('refuses editing a queue item into a builtin command', async () => {
+        const { tab, hooks, manager } = await setup();
+        (manager.activeTab as any).queuedMessages = ['hello'];
+        await manager.dispatch({ type: 'editQueuedMessage', index: 0, text: '/new' });
+        expect(tab.session.replaceFollowUpMessages).not.toHaveBeenCalled();
+        expect(hooks.showMessage).toHaveBeenCalled();
+    });
+
+    it('applies an explicit thinking level with an argument', async () => {
+        const { tab, manager } = await setup({
+            setThinkingLevel: vi.fn(),
+            getAvailableThinkingLevels: vi.fn(() => ['off', 'medium', 'high']),
+            cycleThinkingLevel: vi.fn(() => 'off'),
+        });
+        await manager.dispatch({ type: 'prompt', text: '/thinking high' });
+        expect(tab.session.setThinkingLevel).toHaveBeenCalledWith('high');
+        expect(tab.session.cycleThinkingLevel).not.toHaveBeenCalled();
+    });
+
+    it('renames via /name without opening the sessions panel', async () => {
+        const { hooks, manager } = await setup({
+            setSessionName: vi.fn(),
+            getCurrentSessionPath: vi.fn(() => undefined),
+            getSessions: vi.fn(async () => []),
+        });
+        await manager.dispatch({ type: 'prompt', text: '/name Renamed' });
+        const sent = vi.mocked(hooks.post).mock.calls.find(
+            (call) => (call[0] as any).type === 'sessions',
+        );
+        expect(sent).toBeUndefined();
     });
 });

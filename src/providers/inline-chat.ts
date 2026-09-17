@@ -219,7 +219,7 @@ export class InlineChatManager implements vscode.Disposable {
 
         // dispatch() bumps the turn counter synchronously before its first
         // await, so the round's first turn index is readable immediately.
-        const dispatching = tm.dispatch({ type: 'prompt', text: prompt });
+        const dispatching = tm.dispatch({ type: 'prompt', text: prompt, bypassSlashCommands: true });
         round.firstTurnIdx = tm.getTurnCounter(tab.id) ?? -1;
 
         try {

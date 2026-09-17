@@ -165,6 +165,15 @@ const EN = {
     'compact.failed': 'Compaction failed — context kept. You can retry with /compact.',
     'compact.done': 'Context compacted.',
 
+    // Built-in slash commands
+    'slash.unsupported': '"/{name}" is not available in the Pi panel yet.',
+    'slash.blockedStreaming': '"/{name}" cannot run while a turn is in progress — wait for it to finish.',
+    'slash.nameUsage': 'Usage: /name <new name>',
+    'slash.copied': 'Last reply copied to the clipboard.',
+    'slash.copyEmpty': 'No assistant reply to copy yet.',
+    'slash.loginHint': 'Configure a provider API key in the settings panel.',
+    'slash.sessionInfo': 'Session: {name}\nModel: {model}\nContext: {usage}\nFile: {path}',
+
     // Image input
     'image.attach': 'Attach image',
     'image.unsupported': 'The current model does not support image input',
@@ -442,6 +451,15 @@ const ZH: Record<TextKey, string> = {
     'compact.compacting': '正在压缩上下文…',
     'compact.failed': '压缩失败——已保留原上下文，可稍后用 /compact 重试。',
     'compact.done': '上下文压缩完成。',
+
+    // Built-in slash commands
+    'slash.unsupported': '“/{name}”在 Pi 面板中暂不可用。',
+    'slash.blockedStreaming': '“/{name}”不能在生成进行中执行，请等当前轮次完成。',
+    'slash.nameUsage': '用法：/name <新名称>',
+    'slash.copied': '已将最后一条回复复制到剪贴板。',
+    'slash.copyEmpty': '还没有可复制的回复。',
+    'slash.loginHint': '请在设置面板配置 provider API 密钥。',
+    'slash.sessionInfo': '会话：{name}\n模型：{model}\n上下文：{usage}\n文件：{path}',
 
     // Image input
     'image.attach': '添加图片',

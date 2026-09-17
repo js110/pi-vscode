@@ -153,7 +153,7 @@ export interface PiConfigSnapshot {
 
 // Webview -> Extension messages
 export type ClientMessage =
-    | { type: 'prompt'; text: string; images?: string[]; mentions?: string[] }
+    | { type: 'prompt'; text: string; images?: string[]; mentions?: string[]; bypassSlashCommands?: boolean }
     | { type: 'steer'; text: string }
     | { type: 'followUp'; text: string }
     | { type: 'abort' }

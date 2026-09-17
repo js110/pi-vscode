@@ -78,6 +78,7 @@ function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
         showMessage: vi.fn(),
         confirmDialog: vi.fn(async () => false),
         openSettings: vi.fn(),
+        writeClipboard: vi.fn(async () => {}),
         getCwd: vi.fn(() => '/work'),
         applyPreview: vi.fn(async () => null),
         applyConfirm: vi.fn(async () => ({ ok: true })),

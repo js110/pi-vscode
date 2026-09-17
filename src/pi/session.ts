@@ -15,6 +15,7 @@ import { mapSkills } from './skills';
 import { getModelRuntime, disposeModelRuntime } from './auth';
 import { getModelRegistry, getAvailableModels, findModel, findConfiguredModel, disposeModelRegistry } from './models';
 import { TtlCache } from '../shared/ttl-cache';
+import { BUILTIN_COMMANDS, isBuiltinSlashCommandName } from '../shared/slash-commands';
 import { t } from '../shared/i18n';
 
 export type ToolApprovalHandler = (toolCallId: string, toolName: string, args: any) => Promise<boolean>;
@@ -422,33 +423,20 @@ export class PiSessionManager {
     getCommands(): CommandInfo[] {
         if (!this._session) return [];
         const commands: CommandInfo[] = [];
-        // Built-in commands — SDK doesn't re-export BUILTIN_SLASH_COMMANDS
-        // through its public API, so we mirror the list here.
-        // Keep in sync with pi-coding-agent/dist/core/slash-commands.js.
-        const builtins: CommandInfo[] = [
-            { name: 'settings', description: 'Open settings menu', source: 'builtin' },
-            { name: 'model', description: 'Select model', source: 'builtin' },
-            { name: 'tree', description: 'Navigate session tree', source: 'builtin' },
-            { name: 'thinking', description: 'Set thinking level', source: 'builtin' },
-            { name: 'export', description: 'Export session', source: 'builtin' },
-            { name: 'copy', description: 'Copy last message to clipboard', source: 'builtin' },
-            { name: 'name', description: 'Set session display name', source: 'builtin' },
-            { name: 'session', description: 'Show session info and stats', source: 'builtin' },
-            { name: 'fork', description: 'Fork from a previous user message', source: 'builtin' },
-            { name: 'clone', description: 'Duplicate the current session', source: 'builtin' },
-            { name: 'login', description: 'Configure provider authentication', source: 'builtin' },
-            { name: 'logout', description: 'Remove provider authentication', source: 'builtin' },
-            { name: 'new', description: 'Start a new session', source: 'builtin' },
-            { name: 'compact', description: 'Manually compact session context', source: 'builtin' },
-            { name: 'resume', description: 'Resume a different session', source: 'builtin' },
-            { name: 'reload', description: 'Reload extensions, skills, and themes', source: 'builtin' },
-        ];
-        commands.push(...builtins);
+        // Built-in commands — the SDK doesn't re-export BUILTIN_SLASH_COMMANDS
+        // through its public API; the mirror lives in shared/slash-commands.ts
+        // (single source shared with the host-side dispatcher).
+        for (const builtin of BUILTIN_COMMANDS) {
+            commands.push({ name: builtin.name, description: builtin.description, source: 'builtin' });
+        }
         // Extension-registered commands
         const runner = (this._session as any).extensionRunner;
         if (runner && hasFunction(runner, 'getRegisteredCommands')) {
             try {
                 for (const cmd of runner.getRegisteredCommands()) {
+                    // Builtins win in the panel (the host intercepts them
+                    // before prompt()); don't advertise unreachable shadows.
+                    if (isBuiltinSlashCommandName(cmd.invocationName)) continue;
                     commands.push({
                         name: cmd.invocationName,
                         description: cmd.description ?? '',
