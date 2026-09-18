@@ -1,6 +1,7 @@
 import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo } from '../shared/protocol';
 import { buildOccupancyBannerHtml } from './render/occupancy';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
+import { normalizeImageFile } from './image-resize';
 import { matchesModelFilter } from '../shared/model-filter';
 import { rankSlashMenuItems } from '../shared/slash-commands';
 import { t, setLang } from '../shared/i18n';
@@ -2100,26 +2101,22 @@ function addImageFiles(files: File[]): void {
     }
     const gen = imageReadGeneration;
     for (const file of candidates.slice(0, Math.max(0, slots))) {
-        if (file.size > MAX_IMAGE_BYTES) {
-            showError(t('image.tooLarge'));
-            continue;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
+        void normalizeImageFile(file).then((res) => {
             if (gen !== imageReadGeneration) return;
-            const dataUrl = String(reader.result ?? '');
-            if (!dataUrl.startsWith('data:image/')) {
-                showError(t('image.invalid'));
+            if (!res.ok) {
+                showError(t(res.reason === 'tooLarge' ? 'image.tooLarge' : 'image.invalid'));
                 return;
             }
             if (state.pendingImages.length >= MAX_IMAGES_PER_PROMPT) {
                 showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }));
                 return;
             }
-            state.pendingImages.push(dataUrl);
+            if (file.size > MAX_IMAGE_BYTES) {
+                showNotice(t('image.resized', { name: file.name }));
+            }
+            state.pendingImages.push(res.dataUrl);
             updateImageChips();
-        };
-        reader.readAsDataURL(file);
+        });
     }
 }
 

@@ -178,7 +178,8 @@ const EN = {
     // Image input
     'image.attach': 'Attach files',
     'image.unsupported': 'The current model does not support image input',
-    'image.tooLarge': 'Image is too large (max 5 MB)',
+    'image.tooLarge': 'Image is too large (over 25 MB, or could not be compressed below 5 MB)',
+    'image.resized': '"{name}" was compressed automatically to fit the size limit',
     'image.tooMany': 'Too many images (max {n})',
     'image.invalid': 'Unsupported image data',
     'image.queueUnsupported': 'Images cannot be added while the agent is streaming',
@@ -464,7 +465,8 @@ const ZH: Record<TextKey, string> = {
     // Image input
     'image.attach': '添加文件',
     'image.unsupported': '当前模型不支持图片输入',
-    'image.tooLarge': '图片过大（上限 5 MB）',
+    'image.tooLarge': '图片过大（超过 25 MB，或压缩后仍超 5 MB）',
+    'image.resized': '「{name}」已自动压缩以符合大小限制',
     'image.tooMany': '图片数量超限（最多 {n} 张）',
     'image.invalid': '无法识别的图片数据',
     'image.queueUnsupported': '智能体回复期间无法添加图片',
