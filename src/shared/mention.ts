@@ -85,7 +85,7 @@ function escapeRegExp(s: string): string {
 }
 
 /** Language hint for the fenced block: the file extension, or none. */
-function langFromPath(path: string): string {
+export function langFromPath(path: string): string {
     const dot = path.lastIndexOf('.');
     const slash = path.lastIndexOf('/');
     return dot > slash ? path.slice(dot + 1).toLowerCase() : '';

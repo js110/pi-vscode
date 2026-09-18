@@ -7,6 +7,7 @@ import { t, setLang } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
 import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel } from '../shared/webview-text';
+import { looksBinary, normalizeAttachContent, MAX_ATTACH_FILE_BYTES, type AttachFileEntry } from '../shared/attach';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
 import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText } from './render/messages';
@@ -52,6 +53,7 @@ const state: {
     compactionPrompt: number | null;
     compactionBusy: boolean;
     pendingImages: string[];
+    pendingAttachments: AttachFileEntry[];
     supportsImages: boolean;
     mentions: string[];
     selection: SelectionContextInfo | null;
@@ -82,6 +84,7 @@ const state: {
     compactionPrompt: null,
     compactionBusy: false,
     pendingImages: [],
+    pendingAttachments: [],
     supportsImages: false,
     mentions: [],
     selection: null,
@@ -312,6 +315,7 @@ function applyStateSync(s: SerializedAgentState): void {
         state.applyPreviews = [];
         state.compactionBusy = false;
         state.pendingImages = [];
+        state.pendingAttachments = [];
         state.mentions = [];
         hideMentionMenu();
         dropPendingRequestId = -1;
@@ -538,10 +542,14 @@ function render(): void {
     imageChips.id = 'image-chips';
     imageChips.style.display = 'none';
     inputContainer.appendChild(imageChips);
+    const attachChips = el('div', 'attach-chips');
+    attachChips.id = 'attach-chips';
+    attachChips.style.display = 'none';
+    inputContainer.appendChild(attachChips);
     const imageFileInput = document.createElement('input');
     imageFileInput.type = 'file';
     imageFileInput.id = 'image-file-input';
-    imageFileInput.accept = 'image/*';
+    // Any file type: images ride the image pipeline, text files are inlined.
     imageFileInput.multiple = true;
     imageFileInput.style.display = 'none';
     inputContainer.appendChild(imageFileInput);
@@ -1783,7 +1791,7 @@ function bindStableEvents(): void {
     const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
     fileInput?.addEventListener('change', () => {
         if (fileInput.files && fileInput.files.length > 0) {
-            addImageFiles(Array.from(fileInput.files));
+            addAttachments(Array.from(fileInput.files));
         }
         fileInput.value = '';
     });
@@ -1798,7 +1806,7 @@ function bindStableEvents(): void {
         }
         if (files.length > 0) {
             e.preventDefault();
-            addImageFiles(files);
+            addAttachments(files);
         }
     });
 
@@ -1821,9 +1829,9 @@ function bindStableEvents(): void {
         dragDepth = 0;
         inputContainer.classList.remove('drag-over');
         const dt = (e as DragEvent).dataTransfer;
-        const files = Array.from(dt?.files ?? []).filter((f) => f.type.startsWith('image/'));
+        const files = Array.from(dt?.files ?? []);
         if (files.length > 0) {
-            addImageFiles(files);
+            addAttachments(files);
         }
         // VS Code explorer drags carry paths in text/uri-list (no File
         // objects); they ride the same injection path as @-mention.
@@ -1991,18 +1999,20 @@ function sendMessage(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (!input) return;
     const text = input.value.trim();
-    if (!text && state.pendingImages.length === 0) return;
+    if (!text && state.pendingImages.length === 0 && state.pendingAttachments.length === 0) return;
     const images = state.pendingImages.length > 0 ? [...state.pendingImages] : undefined;
+    const attachments =
+        state.pendingAttachments.length > 0 ? [...state.pendingAttachments] : undefined;
     // Only refs still present in the draft as whole tokens are real; the rest
     // were deleted by the user while editing.
     const mentions = state.mentions.filter((tok) => hasMentionToken(text, tok));
     state.mentions = [];
     hideMentionMenu();
     if (state.isStreaming) {
-        // Images can only ride a direct prompt. Streaming may have started
-        // after they were attached (e.g. auto-compaction) — refuse and keep
-        // the draft instead of silently dropping them.
-        if (images) {
+        // Images and attachments can only ride a direct prompt. Streaming may
+        // have started after they were attached (e.g. auto-compaction) —
+        // refuse and keep the draft instead of silently dropping them.
+        if (images || attachments) {
             showError(t('image.queueUnsupported'));
             return;
         }
@@ -2017,7 +2027,9 @@ function sendMessage(): void {
     input.value = '';
     input.style.height = 'auto';
     state.pendingImages = [];
+    state.pendingAttachments = [];
     updateImageChips();
+    updateAttachChips();
     userHasScrolled = false;
     updateScrollButton();
     vscode.postMessage({
@@ -2025,10 +2037,52 @@ function sendMessage(): void {
         text,
         images,
         mentions: mentions.length > 0 ? mentions : undefined,
+        attachContents: attachments,
     });
 }
 
 let imageReadGeneration = 0;
+
+/** Route picked/ dragged/ pasted files: images keep the image pipeline,
+ *  non-image files are read as text and appended to the prompt. */
+function addAttachments(files: File[]): void {
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    const others = files.filter((f) => !f.type.startsWith('image/'));
+    if (images.length > 0) {
+        addImageFiles(images);
+    }
+    if (others.length > 0) {
+        void addTextAttachments(others);
+    }
+}
+
+/** Read non-image files as text and pin them to the composer (if readable). */
+async function addTextAttachments(files: File[]): Promise<void> {
+    if (state.isStreaming) {
+        showNotice(t('attach.streamingUnsupported'));
+        return;
+    }
+    for (const file of files) {
+        if (file.size > MAX_ATTACH_FILE_BYTES) {
+            showError(t('attach.tooLarge', { name: file.name }));
+            continue;
+        }
+        try {
+            const prefix = await file.slice(0, 8192).arrayBuffer();
+            if (looksBinary(prefix)) {
+                showNotice(t('attach.binaryUnsupported', { name: file.name }));
+                continue;
+            }
+            state.pendingAttachments.push({
+                name: file.name,
+                content: normalizeAttachContent(await file.text()),
+            });
+            updateAttachChips();
+        } catch {
+            showNotice(t('attach.binaryUnsupported', { name: file.name }));
+        }
+    }
+}
 
 function addImageFiles(files: File[]): void {
     if (!state.supportsImages) {
@@ -2116,6 +2170,36 @@ function updateImageChips(): void {
             if (idx >= 0) {
                 state.pendingImages.splice(idx, 1);
                 updateImageChips();
+            }
+        });
+    });
+}
+
+function updateAttachChips(): void {
+    const container = document.getElementById('attach-chips');
+    if (!container) return;
+    if (state.pendingAttachments.length === 0) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    container.style.display = '';
+    container.innerHTML = state.pendingAttachments
+        .map(
+            (a, i) => `
+        <span class="attach-chip">
+            <span class="attach-chip-name" title="${escAttr(a.name)}">${escHtml(a.name)}</span>
+            <button class="attach-chip-remove" data-index="${i}" title="${escHtml(t('image.remove'))}">&#10005;</button>
+        </span>
+    `,
+        )
+        .join('');
+    container.querySelectorAll('.attach-chip-remove').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt((btn as HTMLElement).dataset.index ?? '-1', 10);
+            if (idx >= 0) {
+                state.pendingAttachments.splice(idx, 1);
+                updateAttachChips();
             }
         });
     });

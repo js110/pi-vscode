@@ -15,6 +15,7 @@ import { DiffManager } from './diff';
 import { CheckpointManager } from './checkpoint';
 import { decideCompactionPrompt, type CompactionStage } from '../shared/compaction';
 import { preparePromptImages, type ImagePayload } from '../shared/image-input';
+import { buildAttachContext } from '../shared/attach';
 import {
     parseMentionToken,
     hasMentionToken,
@@ -685,12 +686,17 @@ export class TabManager {
                             message: t('mention.deleted', { path: resolved.invalid.join(', ') }),
                         });
                     }
-                    // Nothing left after stripping dead refs and no images:
-                    // skip the turn entirely.
-                    if (!resolved.text.trim() && !(images && images.length > 0)) {
-                        break;
-                    }
                     text = resolved.text;
+                }
+                // Text attachments (non-image files) are appended as fenced
+                // context blocks so the model always sees their content.
+                if (msg.attachContents && msg.attachContents.length > 0) {
+                    text += buildAttachContext(msg.attachContents);
+                }
+                // Nothing left after stripping dead refs / empty attachments
+                // and no images: skip the turn entirely.
+                if (!text.trim() && !(images && images.length > 0)) {
+                    break;
                 }
                 // Mention expansion awaits fs I/O; the streaming state may have
                 // flipped during it. Re-check to avoid two concurrent turns.

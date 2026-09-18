@@ -443,6 +443,59 @@ describe('TabManager', () => {
         expect(tab.session.prompt).toHaveBeenCalledWith('plain', undefined);
     });
 
+    it('appends attached file contents to the prompt text', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({
+            type: 'prompt',
+            text: 'review this',
+            attachContents: [{ name: 'a.py', content: 'print(1)' }],
+        });
+
+        expect(tab.session.prompt).toHaveBeenCalled();
+        const [promptText, images] = (tab.session.prompt as any).mock.calls[0];
+        expect(images).toBeUndefined();
+        expect(promptText).toContain('review this');
+        expect(promptText).toContain('[Attached file: a.py]');
+        expect(promptText).toContain('print(1)');
+    });
+
+    it('does not start a turn for attachments with no usable text', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({
+            type: 'prompt',
+            text: '',
+            attachContents: [{ name: 'a.md', content: '   \n  ' }],
+        });
+
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+    });
+
+    it('still starts a turn for an attachment-only prompt', async () => {
+        const tab = makeTab();
+        const hooks = makeHooks();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        await manager.initialize();
+
+        await manager.dispatch({
+            type: 'prompt',
+            text: '',
+            attachContents: [{ name: 'a.md', content: 'body' }],
+        });
+
+        expect(tab.session.prompt).toHaveBeenCalled();
+        const [promptText] = (tab.session.prompt as any).mock.calls[0];
+        expect(promptText).toContain('[Attached file: a.md]');
+        expect(promptText).toContain('body');
+    });
+
     it('sendToPi prompts the active tab when it is not streaming', async () => {
         const tab = makeTab();
         const manager = new TabManager({ create: vi.fn(async () => tab) }, makeHooks());

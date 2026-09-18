@@ -176,13 +176,18 @@ const EN = {
     'slash.sessionInfo': 'Session: {name}\nModel: {model}\nContext: {usage}\nFile: {path}',
 
     // Image input
-    'image.attach': 'Attach image',
+    'image.attach': 'Attach files',
     'image.unsupported': 'The current model does not support image input',
     'image.tooLarge': 'Image is too large (max 5 MB)',
     'image.tooMany': 'Too many images (max {n})',
     'image.invalid': 'Unsupported image data',
     'image.queueUnsupported': 'Images cannot be added while the agent is streaming',
     'image.remove': 'Remove image',
+
+    // File attachments (non-image, text)
+    'attach.binaryUnsupported': 'Could not attach "{name}" — binary files can\'t be inlined. Drag it from the Explorer to @-mention its path instead.',
+    'attach.tooLarge': '"{name}" is too large to attach (max 5 MB)',
+    'attach.streamingUnsupported': 'Files cannot be attached while the agent is streaming',
 
     // Selection context chip (Copilot-style auto-attach)
     'selection.detach': "Don't attach the selection",
@@ -457,13 +462,18 @@ const ZH: Record<TextKey, string> = {
     'slash.sessionInfo': '会话：{name}\n模型：{model}\n上下文：{usage}\n文件：{path}',
 
     // Image input
-    'image.attach': '添加图片',
+    'image.attach': '添加文件',
     'image.unsupported': '当前模型不支持图片输入',
     'image.tooLarge': '图片过大（上限 5 MB）',
     'image.tooMany': '图片数量超限（最多 {n} 张）',
     'image.invalid': '无法识别的图片数据',
     'image.queueUnsupported': '智能体回复期间无法添加图片',
     'image.remove': '移除图片',
+
+    // File attachments (non-image, text)
+    'attach.binaryUnsupported': '无法附加「{name}」：二进制文件不能直接内联，可从文件资源管理器拖入以 @ 方式引用路径',
+    'attach.tooLarge': '「{name}」过大（最多 5 MB）',
+    'attach.streamingUnsupported': '智能体回复期间无法附加文件',
 
     // Selection context chip (Copilot-style auto-attach)
     'selection.detach': '不附加选中代码',
