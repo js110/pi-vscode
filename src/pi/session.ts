@@ -20,6 +20,13 @@ import { t } from '../shared/i18n';
 
 export type ToolApprovalHandler = (toolCallId: string, toolName: string, args: any) => Promise<boolean>;
 
+/** Outcome of a session rollback: the message index the store was cut at
+ *  (-1 when nothing was suspended) and the removed tail for a later redo. */
+export interface RollbackResult {
+    cutoff: number;
+    suspended: any[];
+}
+
 export class PiSessionManager {
     private _session: AgentSession | undefined;
     private _sessionManager: SessionManager | undefined;
@@ -418,8 +425,11 @@ export class PiSessionManager {
         const commands: CommandInfo[] = [];
         // Built-in commands — the SDK doesn't re-export BUILTIN_SLASH_COMMANDS
         // through its public API; the mirror lives in shared/slash-commands.ts
-        // (single source shared with the host-side dispatcher).
+        // (single source shared with the host-side dispatcher). Only commands
+        // the host can execute are advertised, so the menu never offers a
+        // command whose only outcome is "unsupported".
         for (const builtin of BUILTIN_COMMANDS) {
+            if (builtin.support !== 'native') continue;
             commands.push({ name: builtin.name, description: builtin.description, source: 'builtin' });
         }
         // Extension-registered commands
@@ -473,6 +483,37 @@ export class PiSessionManager {
         } catch {
             return [];
         }
+    }
+
+    /** First index in `messages` whose cumulative user-count exceeds
+     *  `rollbackPoint` (Pi counts user turns as the rollback unit). Returns
+     *  -1 when nothing lies past the point. */
+    static findCutoffIndex(messages: any[], rollbackPoint: number): number {
+        let userMsgCount = 0;
+        for (let i = 0; i < messages.length; i++) {
+            if (messages[i].role === 'user') {
+                userMsgCount++;
+                if (userMsgCount > rollbackPoint) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** Roll the session message store back to before `messageIndex`: truncates
+     *  every message past the cutoff and returns the tail so the caller can
+     *  suspend or discard it. The SDK message shape and the cutoff math stay
+     *  inside this adapter — callers only speak in user-turn indices. */
+    rollbackTo(messageIndex: number): RollbackResult {
+        const messages = this.getMessages();
+        const cutoff = PiSessionManager.findCutoffIndex(messages, messageIndex);
+        if (cutoff < 0 || cutoff >= messages.length) {
+            return { cutoff, suspended: [] };
+        }
+        const suspended = messages.slice(cutoff);
+        this.setMessages(messages.slice(0, cutoff));
+        return { cutoff, suspended };
     }
 
     setMessages(msgs: any[]): void {

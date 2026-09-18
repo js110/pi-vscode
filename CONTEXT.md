@@ -31,3 +31,14 @@ the model sharpens.
 
 - **Tool approval** — interception of a pending tool call, resolved against the
   active tab. Pending approvals live in the TabManager.
+
+- **MessageRender** — the rendering domain of the chat view, implemented in
+  `src/webview/render/messages.ts`. It builds detached DOM nodes from data (a
+  `MessageRenderState` context plus message/tool/approval inputs) with no
+  document placement, event binding, `state` access, or side effects; main.ts
+  assembles the context and owns those effects. It covers markdown rendering,
+  message trees (including rollback dimming and the redo anchor), settled and
+  live tool cards, approval and apply-preview cards, the changed-files section,
+  and the config banner. The streaming region is the deliberate exception: its
+  reconcilers mutate an already-mounted node in place (per-element WeakMap block
+  cache) instead of rebuilding, so streaming frames stay cheap.

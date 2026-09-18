@@ -10,11 +10,11 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as path from 'path';
 import { t } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import { parseChangedLineRanges } from '../shared/inline-diff';
 import { computeUnifiedDiff } from '../utils/diff';
+import { resolveWorkspacePath } from '../utils/paths';
 import { buildSelectionPrompt, selectionLineRange, isSelectionTooLarge } from './send-to-pi';
 import type { TabManager } from './tab';
 import type { FileChangeInfo } from '../shared/protocol';
@@ -358,12 +358,6 @@ export class InlineChatManager implements vscode.Disposable {
     }
 
     private _resolveFilePath(filePath: string): string {
-        if (filePath.startsWith('~/') || filePath === '~') {
-            const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
-            filePath = path.join(home, filePath.slice(2));
-        }
-        if (path.isAbsolute(filePath)) return filePath;
-        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        return root ? path.join(root, filePath) : path.resolve(filePath);
+        return resolveWorkspacePath(filePath, { expandHome: true });
     }
 }

@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import {
   captureSelection,
   captureSelectionStatus,
@@ -14,6 +14,7 @@ import {
   serializeSymbol,
 } from "./serialize";
 import type { BridgeDiagnosticSummary, BridgeEditorInfo, BridgeState } from "./types";
+import type { VscodeApis } from "./vscode-apis";
 import {
   assertWritePathInWorkspace,
   createRange,
@@ -28,77 +29,79 @@ import {
   readWorkspaceEditEntries,
 } from "./utils";
 
-export async function handleRpc(
-  method: string,
-  params: Record<string, unknown>,
-  state: BridgeState,
-): Promise<unknown> {
-  switch (method) {
-    case "getEditorState": {
-      const activeEditor = vscode.window.activeTextEditor;
-      return {
-        workspaceFolders: getWorkspaceFolders(),
-        activeEditor: activeEditor ? getEditorInfo(activeEditor) : undefined,
-        currentSelection: captureSelection(activeEditor),
-        latestSelection: state.latestSelection,
-        openEditors: getOpenEditors(),
-      };
+export function createHandler(api: VscodeApis) {
+  return async function handleRpc(
+    method: string,
+    params: Record<string, unknown>,
+    state: BridgeState,
+  ): Promise<unknown> {
+    switch (method) {
+      case "getEditorState": {
+        const activeEditor = api.getActiveEditor();
+        return {
+          workspaceFolders: getWorkspaceFolders(),
+          activeEditor: activeEditor ? getEditorInfo(activeEditor) : undefined,
+          currentSelection: captureSelection(activeEditor),
+          latestSelection: state.latestSelection,
+          openEditors: getOpenEditors(api),
+        };
+      }
+      case "getStatus":
+        return getStatus(api, state);
+      case "getCurrentSelection":
+        return captureSelection(api.getActiveEditor()) ?? state.latestSelection;
+      case "getLatestSelection":
+        return state.latestSelection;
+      case "getDiagnostics":
+        return getDiagnosticsResult(api, readOptionalString(params.filePath));
+      case "getOpenEditors":
+        return getOpenEditors(api);
+      case "getWorkspaceFolders":
+        return getWorkspaceFolders();
+      case "openFile":
+        return openFile(api, params);
+      case "checkDocumentDirty":
+        return checkDocumentDirty(api, params);
+      case "saveDocument":
+        return saveDocument(api, params);
+      case "getDocumentSymbols":
+        return getDocumentSymbols(api, params);
+      case "getDefinitions":
+        return getLocationResults(api, params, "vscode.executeDefinitionProvider", "definitions");
+      case "getTypeDefinitions":
+        return getLocationResults(api, params, "vscode.executeTypeDefinitionProvider", "typeDefinitions");
+      case "getImplementations":
+        return getLocationResults(api, params, "vscode.executeImplementationProvider", "implementations");
+      case "getDeclarations":
+        return getLocationResults(api, params, "vscode.executeDeclarationProvider", "declarations");
+      case "getHover":
+        return getHover(api, params);
+      case "getWorkspaceSymbols":
+        return getWorkspaceSymbols(api, params);
+      case "getReferences":
+        return getReferences(api, params);
+      case "getCodeActions":
+        return getCodeActions(api, params, state);
+      case "executeCodeAction":
+        return executeCodeAction(api, params, state);
+      case "applyWorkspaceEdit":
+        return applyWorkspaceEdit(api, params);
+      case "formatDocument":
+        return formatDocument(api, params);
+      case "formatRange":
+        return formatRange(api, params);
+      case "getNotifications":
+        return getNotifications(params, state);
+      case "clearNotifications":
+        return clearNotifications(state);
+      case "showNotification":
+        return showNotification(api, params);
+      case "reportTerminalSession":
+        return reportTerminalSession(params, state);
+      default:
+        throw new Error(`Unknown bridge method: ${method}`);
     }
-    case "getStatus":
-      return getStatus(state);
-    case "getCurrentSelection":
-      return captureSelection(vscode.window.activeTextEditor) ?? state.latestSelection;
-    case "getLatestSelection":
-      return state.latestSelection;
-    case "getDiagnostics":
-      return getDiagnostics(readOptionalString(params.filePath));
-    case "getOpenEditors":
-      return getOpenEditors();
-    case "getWorkspaceFolders":
-      return getWorkspaceFolders();
-    case "openFile":
-      return openFile(params);
-    case "checkDocumentDirty":
-      return checkDocumentDirty(params);
-    case "saveDocument":
-      return saveDocument(params);
-    case "getDocumentSymbols":
-      return getDocumentSymbols(params);
-    case "getDefinitions":
-      return getDefinitions(params);
-    case "getTypeDefinitions":
-      return getTypeDefinitions(params);
-    case "getImplementations":
-      return getImplementations(params);
-    case "getDeclarations":
-      return getDeclarations(params);
-    case "getHover":
-      return getHover(params);
-    case "getWorkspaceSymbols":
-      return getWorkspaceSymbols(params);
-    case "getReferences":
-      return getReferences(params);
-    case "getCodeActions":
-      return getCodeActions(params, state);
-    case "executeCodeAction":
-      return executeCodeAction(params, state);
-    case "applyWorkspaceEdit":
-      return applyWorkspaceEdit(params);
-    case "formatDocument":
-      return formatDocument(params);
-    case "formatRange":
-      return formatRange(params);
-    case "getNotifications":
-      return getNotifications(params, state);
-    case "clearNotifications":
-      return clearNotifications(state);
-    case "showNotification":
-      return showNotification(params);
-    case "reportTerminalSession":
-      return reportTerminalSession(params, state);
-    default:
-      throw new Error(`Unknown bridge method: ${method}`);
-  }
+  };
 }
 
 function reportTerminalSession(params: Record<string, unknown>, state: BridgeState) {
@@ -108,17 +111,17 @@ function reportTerminalSession(params: Record<string, unknown>, state: BridgeSta
   return { received: true };
 }
 
-function getStatus(state: BridgeState) {
-  const activeEditor = vscode.window.activeTextEditor;
+function getStatus(api: VscodeApis, state: BridgeState) {
+  const activeEditor = api.getActiveEditor();
   const fallbackSelection = state.latestSelection;
-  const fallbackUri = fallbackSelection ? vscode.Uri.parse(fallbackSelection.fileUri) : undefined;
+  const fallbackUri = fallbackSelection ? api.Uri.parse(fallbackSelection.fileUri) : undefined;
 
   return {
     workspaceFolders: getWorkspaceFolders(),
     activeEditor: activeEditor
       ? getEditorInfo(activeEditor)
       : fallbackSelection
-        ? getEditorInfoFromSelection(fallbackSelection)
+        ? getEditorInfoFromSelection(api, fallbackSelection)
         : undefined,
     selection: activeEditor
       ? captureSelectionStatus(activeEditor)
@@ -126,15 +129,15 @@ function getStatus(state: BridgeState) {
         ? getSelectionStatus(fallbackSelection)
         : undefined,
     diagnostics: activeEditor
-      ? getDiagnosticSummary(vscode.languages.getDiagnostics(activeEditor.document.uri))
+      ? getDiagnosticSummary(api, api.getDiagnostics(activeEditor.document.uri))
       : fallbackUri
-        ? getDiagnosticSummary(vscode.languages.getDiagnostics(fallbackUri))
-        : getDiagnosticSummary([]),
+        ? getDiagnosticSummary(api, api.getDiagnostics(fallbackUri))
+        : getDiagnosticSummary(api, []),
   };
 }
 
-function getEditorInfoFromSelection(selection: BridgeState["latestSelection"]): BridgeEditorInfo {
-  const openDocument = vscode.workspace.textDocuments.find(
+function getEditorInfoFromSelection(api: VscodeApis, selection: BridgeState["latestSelection"]): BridgeEditorInfo {
+  const openDocument = api.getTextDocuments().find(
     (document) => document.uri.toString() === selection?.fileUri,
   );
   return {
@@ -146,20 +149,23 @@ function getEditorInfoFromSelection(selection: BridgeState["latestSelection"]): 
   };
 }
 
-function getDiagnosticSummary(diagnostics: readonly vscode.Diagnostic[]): BridgeDiagnosticSummary {
+function getDiagnosticSummary(
+  api: VscodeApis,
+  diagnostics: readonly vscode.Diagnostic[],
+): BridgeDiagnosticSummary {
   const summary = { errors: 0, warnings: 0, infos: 0, hints: 0 };
   for (const diagnostic of diagnostics) {
     switch (diagnostic.severity) {
-      case vscode.DiagnosticSeverity.Error:
+      case api.DiagnosticSeverity.Error:
         summary.errors++;
         break;
-      case vscode.DiagnosticSeverity.Warning:
+      case api.DiagnosticSeverity.Warning:
         summary.warnings++;
         break;
-      case vscode.DiagnosticSeverity.Information:
+      case api.DiagnosticSeverity.Information:
         summary.infos++;
         break;
-      case vscode.DiagnosticSeverity.Hint:
+      case api.DiagnosticSeverity.Hint:
         summary.hints++;
         break;
     }
@@ -167,13 +173,13 @@ function getDiagnosticSummary(diagnostics: readonly vscode.Diagnostic[]): Bridge
   return summary;
 }
 
-function getOpenEditors() {
+function getOpenEditors(api: VscodeApis) {
   const seen = new Map<string, ReturnType<typeof getEditorInfo>>();
-  for (const editor of vscode.window.visibleTextEditors) {
+  for (const editor of api.getVisibleEditors()) {
     if (editor.document.uri.scheme !== "file") continue;
     seen.set(editor.document.uri.toString(), getEditorInfo(editor));
   }
-  for (const document of vscode.workspace.textDocuments) {
+  for (const document of api.getTextDocuments()) {
     if (document.uri.scheme !== "file") continue;
     if (seen.has(document.uri.toString())) continue;
     seen.set(document.uri.toString(), {
@@ -181,16 +187,16 @@ function getOpenEditors() {
       fileUri: document.uri.toString(),
       languageId: document.languageId,
       isDirty: document.isDirty,
-      isActive: vscode.window.activeTextEditor?.document.uri.toString() === document.uri.toString(),
+      isActive: api.getActiveEditor()?.document.uri.toString() === document.uri.toString(),
     });
   }
   return [...seen.values()];
 }
 
-function getDiagnostics(filePath?: string) {
+function getDiagnosticsResult(api: VscodeApis, filePath?: string) {
   const entries = filePath
-    ? [[getFileUri(filePath), vscode.languages.getDiagnostics(getFileUri(filePath))] as const]
-    : vscode.languages.getDiagnostics();
+    ? [[getFileUri(filePath), api.getDiagnostics(getFileUri(filePath))] as const]
+    : api.getDiagnostics();
 
   return entries.map(([uri, diagnostics]) => ({
     filePath: uri.fsPath,
@@ -199,19 +205,19 @@ function getDiagnostics(filePath?: string) {
   }));
 }
 
-async function openFile(params: Record<string, unknown>) {
+async function openFile(api: VscodeApis, params: Record<string, unknown>) {
   const uri = getFileUri(readRequiredString(params.filePath, "filePath"));
-  const document = await vscode.workspace.openTextDocument(uri);
-  const editor = await vscode.window.showTextDocument(document, {
+  const document = await api.openTextDocument(uri);
+  const editor = await api.showTextDocument(document, {
     preview: readOptionalBoolean(params.preview) ?? false,
     preserveFocus: readOptionalBoolean(params.preserveFocus) ?? false,
   });
 
   const selection = readSelection(params.selection);
   if (selection) {
-    const range = new vscode.Range(selection.start, selection.end);
-    editor.selection = new vscode.Selection(range.start, range.end);
-    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+    const range = new api.Range(selection.start, selection.end);
+    editor.selection = new api.Selection(range.start, range.end);
+    editor.revealRange(range, api.TextEditorRevealType.InCenter);
   }
 
   return {
@@ -222,11 +228,11 @@ async function openFile(params: Record<string, unknown>) {
   };
 }
 
-function checkDocumentDirty(params: Record<string, unknown>) {
+function checkDocumentDirty(api: VscodeApis, params: Record<string, unknown>) {
   const uri = getFileUri(readRequiredString(params.filePath, "filePath"));
-  const document = vscode.workspace.textDocuments.find(
-    (entry) => entry.uri.toString() === uri.toString(),
-  );
+  const document = api
+    .getTextDocuments()
+    .find((entry) => entry.uri.toString() === uri.toString());
   return {
     filePath: uri.fsPath,
     fileUri: uri.toString(),
@@ -235,11 +241,11 @@ function checkDocumentDirty(params: Record<string, unknown>) {
   };
 }
 
-async function saveDocument(params: Record<string, unknown>) {
+async function saveDocument(api: VscodeApis, params: Record<string, unknown>) {
   const uri = getFileUri(assertWritePathInWorkspace(readRequiredString(params.filePath, "filePath")));
   const document =
-    vscode.workspace.textDocuments.find((entry) => entry.uri.toString() === uri.toString()) ??
-    (await vscode.workspace.openTextDocument(uri));
+    api.getTextDocuments().find((entry) => entry.uri.toString() === uri.toString()) ??
+    (await api.openTextDocument(uri));
   return {
     filePath: document.uri.fsPath,
     fileUri: document.uri.toString(),
@@ -249,11 +255,12 @@ async function saveDocument(params: Record<string, unknown>) {
   };
 }
 
-async function getDocumentSymbols(params: Record<string, unknown>) {
+async function getDocumentSymbols(api: VscodeApis, params: Record<string, unknown>) {
   const uri = getFileUri(readRequiredString(params.filePath, "filePath"));
-  const result = await vscode.commands.executeCommand<
-    vscode.DocumentSymbol[] | vscode.SymbolInformation[]
-  >("vscode.executeDocumentSymbolProvider", uri);
+  const result = await api.executeCommand<vscode.DocumentSymbol[] | vscode.SymbolInformation[]>(
+    "vscode.executeDocumentSymbolProvider",
+    uri,
+  );
   return {
     filePath: uri.fsPath,
     fileUri: uri.toString(),
@@ -261,27 +268,11 @@ async function getDocumentSymbols(params: Record<string, unknown>) {
   };
 }
 
-async function getDefinitions(params: Record<string, unknown>) {
-  return getLocationResults(params, "vscode.executeDefinitionProvider", "definitions");
-}
-
-async function getTypeDefinitions(params: Record<string, unknown>) {
-  return getLocationResults(params, "vscode.executeTypeDefinitionProvider", "typeDefinitions");
-}
-
-async function getImplementations(params: Record<string, unknown>) {
-  return getLocationResults(params, "vscode.executeImplementationProvider", "implementations");
-}
-
-async function getDeclarations(params: Record<string, unknown>) {
-  return getLocationResults(params, "vscode.executeDeclarationProvider", "declarations");
-}
-
-async function getHover(params: Record<string, unknown>) {
+async function getHover(api: VscodeApis, params: Record<string, unknown>) {
   const filePath = readRequiredString(params.filePath, "filePath");
   const position = readRequiredPosition(params.position, "position");
   const uri = getFileUri(filePath);
-  const result = await vscode.commands.executeCommand<vscode.Hover[]>(
+  const result = await api.executeCommand<vscode.Hover[]>(
     "vscode.executeHoverProvider",
     uri,
     position,
@@ -294,9 +285,9 @@ async function getHover(params: Record<string, unknown>) {
   };
 }
 
-async function getWorkspaceSymbols(params: Record<string, unknown>) {
+async function getWorkspaceSymbols(api: VscodeApis, params: Record<string, unknown>) {
   const query = readRequiredString(params.query, "query");
-  const result = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+  const result = await api.executeCommand<vscode.SymbolInformation[]>(
     "vscode.executeWorkspaceSymbolProvider",
     query,
   );
@@ -306,11 +297,11 @@ async function getWorkspaceSymbols(params: Record<string, unknown>) {
   };
 }
 
-async function getReferences(params: Record<string, unknown>) {
+async function getReferences(api: VscodeApis, params: Record<string, unknown>) {
   const filePath = readRequiredString(params.filePath, "filePath");
   const position = readRequiredPosition(params.position, "position");
   const uri = getFileUri(filePath);
-  const result = await vscode.commands.executeCommand<vscode.Location[]>(
+  const result = await api.executeCommand<vscode.Location[]>(
     "vscode.executeReferenceProvider",
     uri,
     position,
@@ -324,6 +315,7 @@ async function getReferences(params: Record<string, unknown>) {
 }
 
 async function getLocationResults(
+  api: VscodeApis,
   params: Record<string, unknown>,
   command: string,
   resultKey: string,
@@ -331,7 +323,7 @@ async function getLocationResults(
   const filePath = readRequiredString(params.filePath, "filePath");
   const position = readRequiredPosition(params.position, "position");
   const uri = getFileUri(filePath);
-  const result = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
+  const result = await api.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
     command,
     uri,
     position,
@@ -344,20 +336,20 @@ async function getLocationResults(
   };
 }
 
-async function getCodeActions(params: Record<string, unknown>, state: BridgeState) {
+async function getCodeActions(api: VscodeApis, params: Record<string, unknown>, state: BridgeState) {
   const filePath = readRequiredString(params.filePath, "filePath");
   const uri = getFileUri(filePath);
   const selection = readSelection(params.selection);
   const range = selection
-    ? new vscode.Range(selection.start, selection.end)
-    : new vscode.Range(
+    ? new api.Range(selection.start, selection.end)
+    : new api.Range(
         readRequiredPosition(params.start, "start"),
         readRequiredPosition(params.end, "end"),
       );
-  const diagnostics = vscode.languages
+  const diagnostics = api
     .getDiagnostics(uri)
     .filter((diagnostic) => diagnostic.range.intersection(range));
-  const result = await vscode.commands.executeCommand<(vscode.Command | vscode.CodeAction)[]>(
+  const result = await api.executeCommand<(vscode.Command | vscode.CodeAction)[]>(
     "vscode.executeCodeActionProvider",
     uri,
     range,
@@ -373,7 +365,7 @@ async function getCodeActions(params: Record<string, unknown>, state: BridgeStat
   };
 }
 
-async function executeCodeAction(params: Record<string, unknown>, state: BridgeState) {
+async function executeCodeAction(api: VscodeApis, params: Record<string, unknown>, state: BridgeState) {
   const actionId = readRequiredString(params.actionId, "actionId");
   const cached = state.codeActions.get(actionId);
   if (!cached) throw new Error(`Unknown or expired code action id: ${actionId}`);
@@ -382,17 +374,17 @@ async function executeCodeAction(params: Record<string, unknown>, state: BridgeS
   let editApplied = false;
   let commandExecuted = false;
 
-  if (action instanceof vscode.CodeAction) {
-    if (action.edit) editApplied = await vscode.workspace.applyEdit(action.edit);
+  if (action instanceof api.CodeAction) {
+    if (action.edit) editApplied = await api.applyWorkspaceEdit(action.edit);
     if (action.command) {
-      await vscode.commands.executeCommand(
+      await api.executeCommand(
         action.command.command,
         ...(action.command.arguments ?? []),
       );
       commandExecuted = true;
     }
   } else {
-    await vscode.commands.executeCommand(action.command, ...(action.arguments ?? []));
+    await api.executeCommand(action.command, ...(action.arguments ?? []));
     commandExecuted = true;
   }
 
@@ -406,53 +398,53 @@ async function executeCodeAction(params: Record<string, unknown>, state: BridgeS
   };
 }
 
-async function applyWorkspaceEdit(params: Record<string, unknown>) {
+async function applyWorkspaceEdit(api: VscodeApis, params: Record<string, unknown>) {
   const edits = readWorkspaceEditEntries(params.edits);
   for (const edit of edits) {
     assertWritePathInWorkspace(edit.filePath);
   }
-  const workspaceEdit = new vscode.WorkspaceEdit();
+  const workspaceEdit = new api.WorkspaceEdit();
   for (const edit of edits) {
     workspaceEdit.replace(getFileUri(edit.filePath), createRange(edit.range), edit.newText);
   }
   return {
-    applied: await vscode.workspace.applyEdit(workspaceEdit),
+    applied: await api.applyWorkspaceEdit(workspaceEdit),
     edits: edits.map((edit) => ({ filePath: getFileUri(edit.filePath).fsPath, range: edit.range })),
   };
 }
 
-async function formatDocument(params: Record<string, unknown>) {
+async function formatDocument(api: VscodeApis, params: Record<string, unknown>) {
   const uri = getFileUri(assertWritePathInWorkspace(readRequiredString(params.filePath, "filePath")));
-  const options = (await getFormattingOptions(uri)) ?? {};
+  const options = (await getFormattingOptions(api, uri)) ?? {};
   const result =
-    (await vscode.commands.executeCommand<vscode.TextEdit[]>(
+    (await api.executeCommand<vscode.TextEdit[]>(
       "vscode.executeFormatDocumentProvider",
       uri,
       options,
     )) ?? [];
 
-  return applyFormattingEdits(uri, result);
+  return applyFormattingEdits(api, uri, result);
 }
 
-async function formatRange(params: Record<string, unknown>) {
+async function formatRange(api: VscodeApis, params: Record<string, unknown>) {
   const uri = getFileUri(assertWritePathInWorkspace(readRequiredString(params.filePath, "filePath")));
   const selection = readSelection(params.selection);
   const range = selection
-    ? new vscode.Range(selection.start, selection.end)
-    : new vscode.Range(
+    ? new api.Range(selection.start, selection.end)
+    : new api.Range(
         readRequiredPosition(params.start, "start"),
         readRequiredPosition(params.end, "end"),
       );
-  const options = (await getFormattingOptions(uri)) ?? {};
+  const options = (await getFormattingOptions(api, uri)) ?? {};
   const result =
-    (await vscode.commands.executeCommand<vscode.TextEdit[]>(
+    (await api.executeCommand<vscode.TextEdit[]>(
       "vscode.executeFormatRangeProvider",
       uri,
       range,
       options,
     )) ?? [];
 
-  return applyFormattingEdits(uri, result, range);
+  return applyFormattingEdits(api, uri, result, range);
 }
 
 function getNotifications(params: Record<string, unknown>, state: BridgeState) {
@@ -473,20 +465,20 @@ function clearNotifications(state: BridgeState) {
   return { cleared };
 }
 
-async function showNotification(params: Record<string, unknown>) {
+async function showNotification(api: VscodeApis, params: Record<string, unknown>) {
   const message = readRequiredString(params.message, "message");
   const type = readOptionalString(params.type) ?? "info";
   const modal = readOptionalBoolean(params.modal) ?? false;
 
   switch (type) {
     case "info":
-      await vscode.window.showInformationMessage(message, { modal });
+      await api.showInformationMessage(message, { modal });
       break;
     case "warning":
-      await vscode.window.showWarningMessage(message, { modal });
+      await api.showWarningMessage(message, { modal });
       break;
     case "error":
-      await vscode.window.showErrorMessage(message, { modal });
+      await api.showErrorMessage(message, { modal });
       break;
     default:
       throw new Error(`Invalid notification type: ${type}`);
@@ -495,23 +487,19 @@ async function showNotification(params: Record<string, unknown>) {
   return { shown: true, type, modal, message };
 }
 
-async function getFormattingOptions(uri: vscode.Uri) {
+async function getFormattingOptions(api: VscodeApis, uri: vscode.Uri) {
   const document =
-    vscode.workspace.textDocuments.find((entry) => entry.uri.toString() === uri.toString()) ??
-    (await vscode.workspace.openTextDocument(uri));
+    api.getTextDocuments().find((entry) => entry.uri.toString() === uri.toString()) ??
+    (await api.openTextDocument(uri));
 
   return {
-    insertSpaces: getEditorInsertSpaces(document),
-    tabSize: getEditorTabSize(document),
+    insertSpaces: getEditorInsertSpaces(api, document),
+    tabSize: getEditorTabSize(api, document),
   };
 }
 
-async function applyFormattingEdits(
-  uri: vscode.Uri,
-  edits: vscode.TextEdit[],
-  range?: vscode.Range,
-) {
-  const workspaceEdit = new vscode.WorkspaceEdit();
+async function applyFormattingEdits(api: VscodeApis, uri: vscode.Uri, edits: vscode.TextEdit[], range?: vscode.Range) {
+  const workspaceEdit = new api.WorkspaceEdit();
   for (const edit of edits) workspaceEdit.replace(uri, edit.range, edit.newText);
 
   return {
@@ -520,14 +508,14 @@ async function applyFormattingEdits(
     range: range ? serializeRange(range) : undefined,
     editCount: edits.length,
     edits: edits.map((edit) => ({ range: serializeRange(edit.range), newText: edit.newText })),
-    applied: edits.length > 0 ? await vscode.workspace.applyEdit(workspaceEdit) : true,
+    applied: edits.length > 0 ? await api.applyWorkspaceEdit(workspaceEdit) : true,
   };
 }
 
-function getEditorInsertSpaces(document: vscode.TextDocument) {
-  return vscode.workspace.getConfiguration("editor", document).get<boolean>("insertSpaces") ?? true;
+function getEditorInsertSpaces(api: VscodeApis, document: vscode.TextDocument) {
+  return api.getConfiguration("editor", document).get<boolean>("insertSpaces") ?? true;
 }
 
-function getEditorTabSize(document: vscode.TextDocument) {
-  return vscode.workspace.getConfiguration("editor", document).get<number>("tabSize") ?? 2;
+function getEditorTabSize(api: VscodeApis, document: vscode.TextDocument) {
+  return api.getConfiguration("editor", document).get<number>("tabSize") ?? 2;
 }

@@ -878,6 +878,13 @@ describe('TabManager built-in slash command dispatch', () => {
         expect(tab.session.followUp).toHaveBeenCalledWith('hello');
     });
 
+    it('intercepts a builtin sent through the followUp channel', async () => {
+        const { tab, manager } = await setup();
+        await manager.dispatch({ type: 'followUp', text: '/model' });
+        expect(tab.session.showModelPicker).toHaveBeenCalled();
+        expect(tab.session.followUp).not.toHaveBeenCalled();
+    });
+
     it('rejects /compact and /new queued while streaming', async () => {
         const { tab, hooks, manager } = await setup();
         (manager.activeTab as any).isStreaming = true;

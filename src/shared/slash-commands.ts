@@ -4,44 +4,70 @@
  * dispatches extension-registered commands and expands skill/prompt-template
  * commands; built-in commands are the shell's responsibility, so the panel
  * host intercepts them before calling prompt().
+ *
+ * `support` is the support matrix: `native` means the host implements the
+ * command (tab.ts intercepts and executes it); `unsupported` means it is
+ * recognised — and refused with a message — rather than leaking to the model
+ * as plain text. `getCommands()` advertises only native commands, so the slash
+ * menu can never offer a command the host cannot run. The mirror must still
+ * list every SDK builtin for the guard test in
+ * test/unit/shared/slash-commands.test.ts.
  */
+export type BuiltinSupport = 'native' | 'unsupported';
+
 export interface BuiltinCommandInfo {
     name: string;
     description: string;
+    support: BuiltinSupport;
 }
 
-export const BUILTIN_COMMANDS: readonly BuiltinCommandInfo[] = [
-    { name: 'settings', description: 'Open settings menu' },
-    { name: 'model', description: 'Select model (opens selector UI)' },
-    { name: 'tree', description: 'Navigate session tree (switch branches)' },
-    { name: 'thinking', description: 'Set thinking level' },
-    { name: 'scoped-models', description: 'Enable/disable models for Ctrl+P cycling' },
-    { name: 'export', description: 'Export session (HTML default, or specify path: .html/.jsonl)' },
-    { name: 'import', description: 'Import and resume a session from a JSONL file' },
-    { name: 'share', description: 'Share session as a secret GitHub gist' },
-    { name: 'copy', description: 'Copy last agent message to clipboard' },
-    { name: 'name', description: 'Set session display name' },
-    { name: 'session', description: 'Show session info and stats' },
-    { name: 'changelog', description: 'Show changelog entries' },
-    { name: 'hotkeys', description: 'Show all keyboard shortcuts' },
-    { name: 'fork', description: 'Create a new fork from a previous user message' },
-    { name: 'clone', description: 'Duplicate the current session at the current position' },
-    { name: 'trust', description: 'Save project trust decision for future sessions' },
-    { name: 'login', description: 'Configure provider authentication' },
-    { name: 'logout', description: 'Remove provider authentication' },
-    { name: 'new', description: 'Start a new session' },
-    { name: 'compact', description: 'Manually compact the session context' },
-    { name: 'resume', description: 'Resume a different session' },
-    { name: 'reload', description: 'Reload keybindings, extensions, skills, prompts, themes, and context files' },
-    { name: 'quit', description: 'Quit Pi' },
-];
+const BUILTIN_COMMAND_DEFS = [
+    { name: 'settings', description: 'Open settings menu', support: 'native' },
+    { name: 'model', description: 'Select model (opens selector UI)', support: 'native' },
+    { name: 'tree', description: 'Navigate session tree (switch branches)', support: 'unsupported' },
+    { name: 'thinking', description: 'Set thinking level', support: 'native' },
+    { name: 'scoped-models', description: 'Enable/disable models for Ctrl+P cycling', support: 'unsupported' },
+    { name: 'export', description: 'Export session (HTML default, or specify path: .html/.jsonl)', support: 'unsupported' },
+    { name: 'import', description: 'Import and resume a session from a JSONL file', support: 'unsupported' },
+    { name: 'share', description: 'Share session as a secret GitHub gist', support: 'unsupported' },
+    { name: 'copy', description: 'Copy last agent message to clipboard', support: 'native' },
+    { name: 'name', description: 'Set session display name', support: 'native' },
+    { name: 'session', description: 'Show session info and stats', support: 'native' },
+    { name: 'changelog', description: 'Show changelog entries', support: 'unsupported' },
+    { name: 'hotkeys', description: 'Show all keyboard shortcuts', support: 'unsupported' },
+    { name: 'fork', description: 'Create a new fork from a previous user message', support: 'unsupported' },
+    { name: 'clone', description: 'Duplicate the current session at the current position', support: 'unsupported' },
+    { name: 'trust', description: 'Save project trust decision for future sessions', support: 'unsupported' },
+    { name: 'login', description: 'Configure provider authentication', support: 'native' },
+    { name: 'logout', description: 'Remove provider authentication', support: 'unsupported' },
+    { name: 'new', description: 'Start a new session', support: 'native' },
+    { name: 'compact', description: 'Manually compact the session context', support: 'native' },
+    { name: 'resume', description: 'Resume a different session', support: 'native' },
+    { name: 'reload', description: 'Reload keybindings, extensions, skills, prompts, themes, and context files', support: 'unsupported' },
+    { name: 'quit', description: 'Quit Pi', support: 'unsupported' },
+] as const satisfies readonly BuiltinCommandInfo[];
+
+export const BUILTIN_COMMANDS: readonly BuiltinCommandInfo[] = BUILTIN_COMMAND_DEFS;
+
+type BuiltinCommandDef = (typeof BUILTIN_COMMAND_DEFS)[number];
+
+/** Names the host intercepts and fully executes. */
+export type SupportedBuiltinCommandName = Extract<BuiltinCommandDef, { support: 'native' }>['name'];
 
 const BUILTIN_COMMAND_NAMES: ReadonlySet<string> = new Set(
-    BUILTIN_COMMANDS.map((command) => command.name),
+    BUILTIN_COMMAND_DEFS.map((command) => command.name),
+);
+
+const SUPPORTED_BUILTIN_COMMAND_NAMES: ReadonlySet<string> = new Set(
+    BUILTIN_COMMAND_DEFS.filter((command) => command.support === 'native').map((command) => command.name),
 );
 
 export function isBuiltinSlashCommandName(name: string): boolean {
     return BUILTIN_COMMAND_NAMES.has(name);
+}
+
+export function isSupportedBuiltinSlashCommandName(name: string): name is SupportedBuiltinCommandName {
+    return SUPPORTED_BUILTIN_COMMAND_NAMES.has(name);
 }
 
 export interface ParsedSlashCommand {
@@ -63,6 +89,26 @@ export function parseBuiltinSlashCommand(text: string): ParsedSlashCommand | nul
     if (!BUILTIN_COMMAND_NAMES.has(name)) return null;
     return { name, args: (match[2] ?? '').trim() };
 }
+
+/**
+ * Single classification seam for every slash entry point (prompt, steer,
+ * queueMessage, followUp, editQueuedMessage): either the text is a built-in
+ * command (with its support verdict) or it passes through to the model.
+ */
+export type SlashInput =
+    | { kind: 'passthrough' }
+    | { kind: 'builtin'; name: SupportedBuiltinCommandName; args: string; supported: true }
+    | { kind: 'builtin'; name: string; args: string; supported: false };
+
+export function classifySlashInput(text: string): SlashInput {
+    const parsed = parseBuiltinSlashCommand(text);
+    if (!parsed) return { kind: 'passthrough' };
+    if (isSupportedBuiltinSlashCommandName(parsed.name)) {
+        return { kind: 'builtin', name: parsed.name, args: parsed.args, supported: true };
+    }
+    return { kind: 'builtin', name: parsed.name, args: parsed.args, supported: false };
+}
+
 
 /** Text of the last assistant message that carries text content, if any. */
 export function extractLastAssistantText(messages: any[]): string | null {

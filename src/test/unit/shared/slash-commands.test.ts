@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     BUILTIN_COMMANDS,
+    classifySlashInput,
+    isSupportedBuiltinSlashCommandName,
     parseBuiltinSlashCommand,
     extractLastAssistantText,
     rankSlashMenuItems,
@@ -99,6 +101,70 @@ describe('parseBuiltinSlashCommand', () => {
         for (const command of BUILTIN_COMMANDS) {
             expect(command.description.length).toBeGreaterThan(0);
         }
+    });
+});
+
+describe('support matrix', () => {
+    // Flipping a matrix entry to native must be intentional: this snapshot is
+    // the contract the host dispatcher (tab.ts) faithfully mirrors, and its
+    // exhaustive switch fails to compile until a handler is added.
+    const EXPECTED_NATIVE = [
+        'settings',
+        'model',
+        'thinking',
+        'copy',
+        'name',
+        'session',
+        'login',
+        'new',
+        'compact',
+        'resume',
+    ];
+
+    it('marks exactly the host-executable commands as native', () => {
+        const native = BUILTIN_COMMANDS.filter((c) => c.support === 'native').map((c) => c.name);
+        expect([...native].sort()).toEqual([...EXPECTED_NATIVE].sort());
+    });
+
+    it('resolves support by name', () => {
+        expect(isSupportedBuiltinSlashCommandName('compact')).toBe(true);
+        expect(isSupportedBuiltinSlashCommandName('tree')).toBe(false);
+        expect(isSupportedBuiltinSlashCommandName('not-a-command')).toBe(false);
+    });
+
+    it('keeps the unsupported mirror entries advertised but not native', () => {
+        const unsupported = BUILTIN_COMMANDS.filter((c) => c.support === 'unsupported').map((c) => c.name);
+        expect(unsupported).toContain('tree');
+        expect(unsupported).toContain('quit');
+        for (const name of unsupported) {
+            expect(isSupportedBuiltinSlashCommandName(name)).toBe(false);
+        }
+    });
+});
+
+describe('classifySlashInput', () => {
+    it('passes non-commands through', () => {
+        expect(classifySlashInput('hello world')).toEqual({ kind: 'passthrough' });
+        expect(classifySlashInput('/unknowncmd')).toEqual({ kind: 'passthrough' });
+        expect(classifySlashInput('/skill:handoff')).toEqual({ kind: 'passthrough' });
+    });
+
+    it('classifies a native command as supported', () => {
+        expect(classifySlashInput('/compact keep the plan')).toEqual({
+            kind: 'builtin',
+            name: 'compact',
+            args: 'keep the plan',
+            supported: true,
+        });
+    });
+
+    it('classifies an unsupported builtin without handing it to the model', () => {
+        expect(classifySlashInput('/tree')).toEqual({
+            kind: 'builtin',
+            name: 'tree',
+            args: '',
+            supported: false,
+        });
     });
 });
 

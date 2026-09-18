@@ -1,16 +1,15 @@
 import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo } from '../shared/protocol';
 import { buildOccupancyBannerHtml } from './render/occupancy';
-import { isDangerousTool } from '../shared/tool-safety';
-import { splitStreamBlocks, computeUnchangedPrefix } from '../shared/stream-blocks';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { matchesModelFilter } from '../shared/model-filter';
 import { rankSlashMenuItems } from '../shared/slash-commands';
 import { t, setLang } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
-import { escAttr, formatTimestamp, formatTokenCount, truncate, tryParseJSON, extractText, extractThinking, extractToolResultText, formatToolArgs, buildStatusHtml, getToolIcon, getToolLabel, getFileIcon, renderDiffLines } from '../shared/webview-text';
+import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel } from '../shared/webview-text';
 import { el, escHtml } from './dom';
-import { renderMarkdown, buildWelcome, buildThinkingBlock, thinkingLabel, buildDiffCard, buildToolCard, buildModelItem, buildApprovalBadge, resetCodeBlockIds } from './render/messages';
+import { showToast } from './toast';
+import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText } from './render/messages';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -163,7 +162,7 @@ function handleMessage(msg: ServerMessage): void {
                 if (oldest !== undefined) traces.delete(oldest);
             }
             traces.set(msg.toolCallId, msg.scope);
-            applyMemoryBadge(document.getElementById(`tool-${msg.toolCallId}`) as HTMLElement | null, msg.toolCallId);
+            applyMemoryBadge(document.getElementById(`tool-${msg.toolCallId}`) as HTMLElement | null, msg.toolCallId, state.approvalTraces);
             break;
         }
         case 'skills':
@@ -331,7 +330,7 @@ function applyStateSync(s: SerializedAgentState): void {
         updateScrollButton();
     } else {
         updateTabs();
-        updateStreamingUI();
+        renderStreamingContent();
         updateMessages();
         if (historyReplacePending && s.messages !== undefined) {
             const { from, rewrite } = historyReplacePending;
@@ -369,7 +368,7 @@ function handleAgentEvent(event: any): void {
             state.isThinking = false;
             userHasScrolled = false;
             updateInputArea();
-            updateStreamingUI();
+            clearStreamingRegion();
             showPreparingPlaceholder();
             break;
         case 'agent_end':
@@ -380,7 +379,7 @@ function handleAgentEvent(event: any): void {
             // Don't clear isStreaming yet — wait for agent_settled
             clearStreamingState();
             dismissSteerToast();
-            updateStreamingUI();
+            clearStreamingRegion();
             break;
         case 'auto_retry_start':
             showRetryPlaceholder(event.attempt, event.maxAttempts, event.delayMs, event.errorMessage);
@@ -393,7 +392,7 @@ function handleAgentEvent(event: any): void {
             clearStreamingState();
             dismissSteerToast();
             removeRetryPlaceholder();
-            updateStreamingUI();
+            clearStreamingRegion();
             updateInputArea();
             break;
         case 'tool_execution_start':
@@ -590,42 +589,16 @@ function updateMessages(): void {
 
     resetCodeBlockIds();
 
-    if (state.messages.length === 0 && !state.isStreaming) {
-        container.insertBefore(buildWelcome(), streamingEl);
-    } else {
-        let userMsgCount = 0;
-        const rollbackUserIdx = state.rollbackPoint;
-        let dimming = false;
-        let redoPlaced = false;
-
-        for (let i = 0; i < state.messages.length; i++) {
-            const msg = state.messages[i];
-            const role = msg.role ?? 'unknown';
-
-            if (role === 'user') {
-                userMsgCount++;
-                if (rollbackUserIdx !== null && userMsgCount > rollbackUserIdx) {
-                    dimming = true;
-                }
-            }
-
-            const msgEl = renderMessage(msg, i, role === 'user' ? userMsgCount : undefined);
-            if (dimming) {
-                msgEl.classList.add('dimmed');
-            }
-
-            container.insertBefore(msgEl, streamingEl);
-
-            if (role === 'user' && dimming && !redoPlaced && rollbackUserIdx !== null) {
-                const redoWrap = el('div', 'redo-anchor');
-                const redoBtn = el('button', 'redo-btn');
-                redoBtn.title = t('files.redoTitle');
-                redoBtn.textContent = t('files.redo');
-                redoWrap.appendChild(redoBtn);
-                container.insertBefore(redoWrap, streamingEl);
-                redoPlaced = true;
-            }
-        }
+    const nodes = buildMessageTree({
+        messages: state.messages,
+        isStreaming: state.isStreaming,
+        fileChanges: state.fileChanges,
+        imageCache: state.imageCache,
+        rollbackPoint: state.rollbackPoint,
+        approvalTraces: state.approvalTraces,
+    });
+    for (const node of nodes) {
+        container.insertBefore(node, streamingEl!);
     }
 
     bindCopyButtons();
@@ -985,7 +958,6 @@ function clearStreamingState(): void {
     state.streamingText = '';
     state.streamingThinking = '';
     state.isThinking = false;
-    streamBlocks = [];
 }
 
 function dismissSteerToast(): void {
@@ -996,55 +968,6 @@ function dismissSteerToast(): void {
 }
 
 // ── Changed Files section ──
-
-function buildChangedFilesSection(): HTMLElement {
-    const details = document.createElement('details');
-    details.className = 'changed-files-section';
-    details.id = 'changed-files-bar';
-
-    const fileMap = new Map<string, FileChangeInfo>();
-    for (const c of state.fileChanges) {
-        fileMap.set(c.filePath, c);
-    }
-    const uniqueFiles = [...fileMap.values()];
-    const count = uniqueFiles.length;
-
-    const summary = document.createElement('summary');
-    summary.className = 'changed-files-summary';
-    const undoRedoBtn = state.rollbackPoint !== null
-        ? `<button class="changed-files-link" id="btn-redo" title="${escHtml(t('files.redoTitle'))}">${escHtml(t('files.redo'))}</button>`
-        : `<button class="changed-files-link" id="btn-undo" title="${escHtml(t('files.undoTitle'))}">${escHtml(t('files.undo'))}</button>`;
-    summary.innerHTML = `
-        <span class="changed-files-arrow">&#9656;</span>
-        <span class="changed-files-count">${escHtml(t(count === 1 ? 'files.countOne' : 'files.countMany', { n: count }))}</span>
-        <span class="changed-files-spacer"></span>
-        ${undoRedoBtn}
-        <button class="changed-files-review-btn" id="btn-review-all" title="${escHtml(t('files.reviewTitle'))}">${escHtml(t('files.review'))}</button>
-    `;
-    details.appendChild(summary);
-
-    const list = el('div', 'changed-files-list');
-    for (const change of uniqueFiles) {
-        const fileName = change.filePath.split('/').pop() ?? change.filePath;
-        const item = el('div', 'changed-file-item');
-        item.dataset.filepath = change.filePath;
-        item.dataset.toolcallid = change.toolCallId;
-
-        let statsHtml = '';
-        if (change.addedLines > 0) statsHtml += `<span class="cf-stat-add">+${change.addedLines}</span>`;
-        if (change.removedLines > 0) statsHtml += `<span class="cf-stat-del">-${change.removedLines}</span>`;
-
-        item.innerHTML = `
-            <span class="cf-icon">${getFileIcon(change.filePath)}</span>
-            <span class="cf-name">${escHtml(fileName)}</span>
-            <span class="cf-stats">${statsHtml}</span>
-        `;
-        list.appendChild(item);
-    }
-    details.appendChild(list);
-
-    return details;
-}
 
 function updateChangedFiles(): void {
     const container = document.querySelector('.input-container');
@@ -1058,7 +981,7 @@ function updateChangedFiles(): void {
         return;
     }
 
-    const newSection = buildChangedFilesSection();
+    const newSection = buildChangedFilesSection(state.fileChanges, state.rollbackPoint);
     if (wasOpen) {
         (newSection as HTMLDetailsElement).open = true;
     }
@@ -1152,106 +1075,6 @@ function renderInlineFileChange(change: FileChangeInfo): void {
 
 // ── Message rendering ──
 
-function renderMessage(msg: any, index: number, turnNumber?: number): HTMLElement {
-    const role = msg.role ?? 'unknown';
-
-    if (role === 'toolResult' || role === 'tool') {
-        const toolName = msg.toolName ?? '';
-        if (toolName === 'edit' || toolName === 'write') {
-            const matchingChange = findFileChangeForToolResult(msg);
-            if (matchingChange) {
-                return buildDiffCard(matchingChange, msg);
-            }
-        }
-        return buildToolResultCard(msg, state.messages, index);
-    }
-
-    if (role === 'user') {
-        const group = el('div', 'message-group-user');
-
-        const wrapper = el('div', `message message-${role}`);
-        if (turnNumber !== undefined && !state.isStreaming) {
-            const checkpointBtn = el('button', 'checkpoint-btn');
-            checkpointBtn.title = t('checkpoint.restore');
-            checkpointBtn.dataset.turn = String(turnNumber);
-            checkpointBtn.innerHTML = '&#8634;';
-            wrapper.appendChild(checkpointBtn);
-        }
-        const text = extractText(msg);
-        if (text) {
-            const content = el('div', 'message-content');
-            content.innerHTML = renderMarkdown(text);
-            wrapper.appendChild(content);
-        }
-        for (const src of extractUserImages(msg)) {
-            const img = el('img', 'message-image') as HTMLImageElement;
-            img.src = src;
-            img.alt = '';
-            wrapper.appendChild(img);
-        }
-        group.appendChild(wrapper);
-
-        const footer = buildMessageFooter(msg, index);
-        if (footer) {
-            group.appendChild(footer);
-        }
-
-        return group;
-    }
-
-    // Assistant messages: wrap in a styled container
-    const thinking = extractThinking(msg);
-    const text = extractText(msg);
-
-    if (!thinking && !text) {
-        const empty = el('div');
-        empty.style.display = 'none';
-        return empty;
-    }
-
-    const group = el('div', 'message-group-assistant');
-
-    const wrapper = el('div', `message message-${role}`);
-
-    if (thinking) {
-        wrapper.appendChild(buildThinkingBlock(thinking, false, msg._thinkingDurationSec));
-    }
-
-    if (text) {
-        const content = el('div', 'message-content');
-        content.innerHTML = renderMarkdown(text);
-        wrapper.appendChild(content);
-    }
-
-    group.appendChild(wrapper);
-
-    const footer = buildMessageFooter(msg, index);
-    if (footer) {
-        group.appendChild(footer);
-    }
-
-    return group;
-}
-
-function extractToolCalls(msg: any): any[] {
-    if (Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0) return msg.toolCalls;
-    if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) return msg.tool_calls;
-    if (Array.isArray(msg.content)) {
-        const tcs = msg.content.filter((c: any) => c.type === 'toolCall' || c.type === 'tool_call' || c.type === 'tool_use');
-        if (tcs.length > 0) return tcs;
-    }
-    return [];
-}
-
-function findFileChangeForToolResult(msg: any): FileChangeInfo | undefined {
-    const id = msg.toolCallId ?? msg.tool_call_id;
-    if (id) {
-        const match = state.fileChanges.find(c => c.toolCallId === id);
-        if (match) return match;
-    }
-    return undefined;
-}
-
 function removePreparingPlaceholder(): void {
     document.getElementById('preparing-placeholder')?.remove();
 }
@@ -1292,51 +1115,39 @@ function removeRetryPlaceholder(): void {
     document.getElementById('retry-placeholder')?.remove();
 }
 
+// The streaming region reconciles against streaming state: frames and deltas
+// hit the same seam, so a frame can never wipe the block-diff cache or blank a
+// live assistant message. `clearStreamingRegion` remains only for the honest
+// turn boundaries (start/end/settle) where the region must be emptied.
 function renderStreamingContent(): void {
     const container = document.getElementById('streaming-message');
     if (!container) return;
 
-    if (!state.streamingText && !state.streamingThinking) return;
+    if (!state.isStreaming) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const hasContent = state.streamingText !== '' || state.streamingThinking !== '';
+    if (!hasContent) return; // keep transient tool/approval cards and placeholders
+
     removePreparingPlaceholder();
 
-    if (!container.querySelector('.message')) {
-        streamBlocks = [];
-        container.innerHTML = `
-            <div class="message message-assistant">
-                <details class="thinking-block active" open id="streaming-thinking" style="display:none">
-                    <summary class="thinking-summary">
-                        <span class="thinking-indicator"></span>
-                        <span class="thinking-label"></span>
-                        <span class="thinking-chevron">&#9656;</span>
-                    </summary>
-                    <div class="thinking-content"></div>
-                </details>
-                <div class="message-content" id="streaming-text"></div>
-            </div>
-        `;
+    if (!container.querySelector(':scope > .message')) {
+        container.innerHTML = '';
+        container.appendChild(buildStreamingSkeleton());
     }
 
-    const thinkingEl = document.getElementById('streaming-thinking') as HTMLDetailsElement | null;
-    if (thinkingEl) {
-        if (state.streamingThinking) {
-            thinkingEl.style.display = '';
-            const contentEl = thinkingEl.querySelector('.thinking-content');
-            if (contentEl) contentEl.innerHTML = renderMarkdown(state.streamingThinking);
-            const labelEl = thinkingEl.querySelector('.thinking-label');
-            if (labelEl) labelEl.textContent = thinkingLabel(state.isThinking, state.streamingThinkingDuration);
-            if (state.isThinking) {
-                thinkingEl.classList.add('active');
-            } else {
-                thinkingEl.classList.remove('active');
-            }
-        } else {
-            thinkingEl.style.display = 'none';
-        }
-    }
+    const thinkingEl = document.getElementById('streaming-thinking');
+    updateStreamingThinking(thinkingEl, {
+        thinking: state.streamingThinking,
+        isThinking: state.isThinking,
+        durationSec: state.streamingThinkingDuration,
+    });
 
     const textEl = document.getElementById('streaming-text');
     if (textEl) {
-        patchStreamingTextBlocks(textEl);
+        reconcileStreamingText(textEl, state.streamingText);
     }
 
     bindCopyButtons();
@@ -1344,138 +1155,13 @@ function renderStreamingContent(): void {
     scrollToBottom();
 }
 
-// Block-level incremental render (PRD C4): only blocks after the unchanged
-// prefix are re-parsed and re-rendered on each delta.
-let streamBlocks: string[] = [];
-
-function patchStreamingTextBlocks(textEl: HTMLElement): void {
-    const next = splitStreamBlocks(state.streamingText);
-    let from = computeUnchangedPrefix(streamBlocks, next);
-    if (textEl.children.length !== streamBlocks.length) {
-        from = 0; // DOM desynced (rebuilt skeleton) — patch everything
-    }
-
-    while (textEl.children.length > next.length) {
-        textEl.lastElementChild?.remove();
-    }
-    for (let i = from; i < next.length; i++) {
-        let blockEl = textEl.children[i] as HTMLElement | undefined;
-        if (!blockEl) {
-            blockEl = el('div', 'stream-block');
-            textEl.appendChild(blockEl);
-        }
-        blockEl.innerHTML = renderMarkdown(next[i]);
-    }
-    streamBlocks = next;
+function clearStreamingRegion(): void {
+    const container = document.getElementById('streaming-message');
+    if (!container) return;
+    container.innerHTML = '';
 }
 
 // ── Tool rendering ──
-
-function buildToolFooter(msg: any, allMessages: any[], msgIndex: number): HTMLElement | null {
-    const parts: string[] = [];
-    const ts = msg.timestamp;
-    if (ts) parts.push(formatTimestamp(ts));
-
-    const precedingAssistant = findPrecedingAssistant(allMessages, msgIndex);
-    if (precedingAssistant?.usage) {
-        const u = precedingAssistant.usage;
-        if (u.input > 0) parts.push(t('meta.tokensIn', { n: u.input.toLocaleString() }));
-        if (u.output > 0) parts.push(t('meta.tokensOut', { n: u.output.toLocaleString() }));
-    }
-
-    if (parts.length === 0) return null;
-    const footer = el('div', 'tool-footer');
-    footer.textContent = parts.join(' · ');
-    return footer;
-}
-
-function findPrecedingAssistant(messages: any[], beforeIndex: number): any | null {
-    for (let i = beforeIndex - 1; i >= 0; i--) {
-        if (messages[i].role === 'assistant') return messages[i];
-        if (messages[i].role === 'user') return null;
-    }
-    return null;
-}
-
-function buildToolResultCard(msg: any, allMessages: any[], msgIndex: number): HTMLElement {
-    const isError = msg.isError ?? false;
-    const toolName = msg.toolName ?? '';
-    const toolCallId = msg.toolCallId ?? '';
-    const nameLower = toolName.toLowerCase();
-
-    const matchingCall = findToolCallInMessages(allMessages, msgIndex, toolCallId);
-    const args = matchingCall?.arguments ?? matchingCall?.args ?? matchingCall?.input ?? {};
-    const parsedArgs = typeof args === 'string' ? tryParseJSON(args) : args;
-    const label = toolName ? getToolLabel(toolName, parsedArgs) : t('tool.result');
-    const icon = getToolIcon(toolName ?? '');
-    const isBash = nameLower === 'bash';
-    const isRead = nameLower === 'read';
-    const filePath = parsedArgs?.path ?? parsedArgs?.file_path ?? '';
-
-    const resultContent = extractText(msg);
-    const hasBody = !!(resultContent || isBash) && !isRead;
-
-    const footer = buildToolFooter(msg, allMessages, msgIndex);
-
-    if (hasBody) {
-        const wrapper = el('div', 'tool-card-wrapper');
-
-        const details = document.createElement('details');
-        details.className = 'tool-card tool-expandable';
-
-        details.innerHTML = `
-            <summary class="tool-header">
-                <span class="tool-icon">${icon}</span>
-                <span class="tool-name">${escHtml(label)}</span>
-                ${buildStatusHtml(isError ? 'error' : 'done')}
-                <span class="tool-expand-arrow">&#9656;</span>
-            </summary>
-        `;
-
-        const body = el('div', 'tool-body');
-        const result = el('pre', 'tool-result');
-        result.textContent = resultContent || t('tool.noOutput');
-        if (!resultContent) result.classList.add('empty');
-        body.appendChild(result);
-        details.appendChild(body);
-        wrapper.appendChild(details);
-
-        applyMemoryBadge(details, toolCallId);
-        if (footer) wrapper.appendChild(footer);
-        return wrapper;
-    }
-
-    const wrapper = el('div', 'tool-card-wrapper');
-
-    const card = el('div', `tool-card${isRead ? ' tool-clickable' : ''}`);
-    if (isRead && filePath) card.dataset.filepath = filePath;
-
-    card.innerHTML = `
-        <div class="tool-header">
-            <span class="tool-icon">${icon}</span>
-            <span class="tool-name">${escHtml(label)}</span>
-            ${buildStatusHtml(isError ? 'error' : 'done')}
-        </div>
-    `;
-
-    wrapper.appendChild(card);
-    applyMemoryBadge(card, toolCallId);
-    if (footer) wrapper.appendChild(footer);
-    return wrapper;
-}
-
-function findToolCallInMessages(messages: any[], beforeIndex: number, toolCallId: string): any | undefined {
-    if (!toolCallId) return undefined;
-    for (let i = beforeIndex - 1; i >= 0; i--) {
-        const m = messages[i];
-        if (m.role !== 'assistant') continue;
-        const tcs = extractToolCalls(m);
-        for (const tc of tcs) {
-            if ((tc.id ?? tc.toolCallId) === toolCallId) return tc;
-        }
-    }
-    return undefined;
-}
 
 function renderToolStart(event: any): void {
     const container = document.getElementById('streaming-message');
@@ -1493,7 +1179,7 @@ function renderToolStart(event: any): void {
             </div>
         `;
         container.appendChild(card);
-        applyMemoryBadge(card, event.toolCallId);
+        applyMemoryBadge(card, event.toolCallId, state.approvalTraces);
         scrollToBottom();
         return;
     }
@@ -1508,16 +1194,14 @@ function renderToolStart(event: any): void {
     card.dataset.toolName = event.toolName;
     if (isRead && filePath) card.dataset.filepath = filePath;
 
-    card.innerHTML = `
-        <div class="tool-header">
-            <span class="tool-icon">${getToolIcon(event.toolName)}</span>
-            <span class="tool-name">${escHtml(getToolLabel(event.toolName, parsedArgs))}</span>
-            <span class="tool-status running">${escHtml(t('tool.running'))}</span>
-        </div>
-    `;
+    card.appendChild(buildToolCardHeader(
+        event.toolName,
+        getToolLabel(event.toolName, parsedArgs),
+        `<span class="tool-status running">${escHtml(t('tool.running'))}</span>`,
+    ));
 
     container.appendChild(card);
-    applyMemoryBadge(card, event.toolCallId);
+    applyMemoryBadge(card, event.toolCallId, state.approvalTraces);
     bindToolClickable();
     scrollToBottom();
 }
@@ -1589,7 +1273,7 @@ function renderToolEnd(event: any): void {
         details.appendChild(body);
 
         card.replaceWith(details);
-        applyMemoryBadge(details, event.toolCallId);
+        applyMemoryBadge(details, event.toolCallId, state.approvalTraces);
         bindToolClickable();
     } else {
         const statusEl = card.querySelector('.tool-status');
@@ -1606,20 +1290,6 @@ function renderToolEnd(event: any): void {
 
 // ── Tool approval cards ──
 
-function applyMemoryBadge(card: HTMLElement | null, toolCallId: string): void {
-    const scope = state.approvalTraces.get(toolCallId);
-    if (!card || !scope) return;
-    const header = card.querySelector('.tool-header, .diff-file-header');
-    if (!header || header.querySelector('.memory-badge')) return;
-    const status = header.querySelector('.tool-status');
-    const badge = buildApprovalBadge(scope);
-    if (status) {
-        header.insertBefore(badge, status);
-    } else {
-        header.appendChild(badge);
-    }
-}
-
 function renderToolApprovalCard(pending: ToolCallPendingInfo): void {
     const container = document.getElementById('streaming-message');
     if (!container) return;
@@ -1633,32 +1303,7 @@ function renderToolApprovalCard(pending: ToolCallPendingInfo): void {
         state.pendingApprovals.push(pending);
     }
 
-    const card = el('div', 'tool-approval-card');
-    card.id = `approval-${pending.toolCallId}`;
-
-    const parsedArgs = typeof pending.args === 'string' ? tryParseJSON(pending.args) : pending.args;
-    const label = getToolLabel(pending.toolName, parsedArgs);
-
-    card.innerHTML = `
-        <div class="tool-header">
-            <span class="tool-icon">${getToolIcon(pending.toolName)}</span>
-            <span class="tool-name">${escHtml(label)}</span>
-            <span class="tool-status pending">${escHtml(t('approval.awaiting'))}</span>
-        </div>
-        <div class="approval-args">${escHtml(formatToolArgs(parsedArgs))}</div>
-        <div class="approval-actions">
-            <button class="approval-btn approve" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.approve'))}</button>
-            ${isDangerousTool(pending.toolName) ? '' : `
-            <span class="remember-split">
-                <button class="approval-btn remember" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.remember'))}</button>
-                <div class="remember-menu" hidden>
-                    <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="session">${escHtml(t('approval.rememberSession'))}</div>
-                    <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="global">${escHtml(t('approval.rememberGlobal'))}</div>
-                </div>
-            </span>`}
-            <button class="approval-btn reject" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.reject'))}</button>
-        </div>
-    `;
+    const card = buildToolApprovalCard(pending);
 
     container.appendChild(card);
     bindApprovalButtons();
@@ -1724,33 +1369,7 @@ function renderApplyPreviewCard(preview: ApplyPreviewInfo): void {
         state.applyPreviews.push(preview);
     }
 
-    const fileName = preview.targetPath.split(/[\\/]/).pop() ?? preview.targetPath;
-    const dirPath = preview.targetPath.split(/[\\/]/).slice(0, -1).join('/');
-
-    let statsHtml = '';
-    if (preview.addedLines > 0 || preview.removedLines > 0) {
-        statsHtml = `<span class="diff-stats">`;
-        if (preview.addedLines > 0) statsHtml += `<span class="diff-stat-add">+${preview.addedLines}</span>`;
-        if (preview.removedLines > 0) statsHtml += `<span class="diff-stat-del">-${preview.removedLines}</span>`;
-        statsHtml += `</span>`;
-    }
-
-    const card = el('div', 'tool-approval-card apply-preview-card');
-    card.id = `apply-preview-${preview.previewId}`;
-    card.innerHTML = `
-        <div class="tool-header">
-            <span class="tool-icon">${preview.isNew ? '&#10010;' : '&#9998;'}</span>
-            <span class="tool-name">${escHtml(t('apply.title', { path: fileName }))}</span>
-            ${dirPath ? `<span class="diff-file-dir">${escHtml(dirPath)}</span>` : ''}
-            ${statsHtml}
-            ${preview.isNew ? `<span class="diff-new-badge">${escHtml(t('apply.newFileBadge'))}</span>` : ''}
-        </div>
-        <div class="diff-view apply-diff-view">${preview.diff ? renderDiffLines(preview.diff) : ''}</div>
-        <div class="approval-actions">
-            <button class="approval-btn approve apply-confirm" data-previewid="${escAttr(preview.previewId)}">${escHtml(t('apply.confirm'))}</button>
-            <button class="approval-btn reject apply-cancel" data-previewid="${escAttr(preview.previewId)}">${escHtml(t('apply.cancel'))}</button>
-        </div>
-    `;
+    const card = buildApplyPreviewCard(preview);
 
     container.appendChild(card);
 
@@ -1772,12 +1391,7 @@ function removeApplyPreviewCard(previewId: string): void {
 }
 
 function showNotice(message: string): void {
-    const container = document.getElementById('messages');
-    if (!container) return;
-    const toast = el('div', 'notice-toast');
-    toast.textContent = message;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 4000);
+    showToast({ containerId: 'messages', className: 'notice-toast', message, durationMs: 4000 });
     scrollToBottom();
 }
 
@@ -1814,42 +1428,6 @@ function addToRecentModels(provider: string, id: string, name?: string): void {
     }
 }
 
-function buildConfigBanner(): HTMLElement | null {
-    const config = state.config;
-    if (!config) return null;
-
-    const banner = el('div', 'config-banner');
-    if (config.status === 'not-found') {
-        const msg = el('div', 'config-issue');
-        msg.textContent = t('config.notFound', { dir: config.agentDir });
-        banner.appendChild(msg);
-    } else {
-        const stats = el('div', 'config-stats');
-        stats.textContent = t('config.stats', {
-            providers: t(config.providers.length === 1 ? 'config.providerCountOne' : 'config.providerCountMany', { n: config.providers.length }),
-            models: t(config.models.length === 1 ? 'config.modelCountOne' : 'config.modelCountMany', { n: config.models.length }),
-            skills: t(config.skills.length === 1 ? 'config.skillCountOne' : 'config.skillCountMany', { n: config.skills.length }),
-        });
-        banner.appendChild(stats);
-        if (config.status === 'partial' || config.status === 'error') {
-            const issue = el('div', 'config-issue');
-            issue.textContent = config.errors[0]
-                ? t('config.issue', { source: config.errors[0].source, message: config.errors[0].message })
-                : t('config.issueFallback');
-            banner.appendChild(issue);
-        }
-    }
-
-    const refresh = el('button', 'config-refresh');
-    refresh.textContent = t('config.recheck');
-    refresh.addEventListener('click', (e) => {
-        e.stopPropagation();
-        vscode.postMessage({ type: 'refreshConfig' });
-    });
-    banner.appendChild(refresh);
-    return banner;
-}
-
 function showModelPicker(): void {
     const existing = document.getElementById('model-picker');
     if (existing) existing.remove();
@@ -1866,8 +1444,14 @@ function showModelPicker(): void {
     searchInput.type = 'text';
     picker.appendChild(searchInput);
 
-    const configBanner = buildConfigBanner();
-    if (configBanner) picker.appendChild(configBanner);
+    const configBanner = buildConfigBanner(state.config);
+    if (configBanner) {
+        picker.appendChild(configBanner);
+        configBanner.querySelector('.config-refresh')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'refreshConfig' });
+        });
+    }
 
     const list = el('div', 'model-list');
 
@@ -2097,12 +1681,6 @@ function showError(message: string): void {
     errEl.textContent = message;
     container.appendChild(errEl);
     scrollToBottom();
-}
-
-function updateStreamingUI(): void {
-    const container = document.getElementById('streaming-message');
-    if (!container) return;
-    container.innerHTML = '';
 }
 
 // ── Events ──
@@ -2543,19 +2121,6 @@ function updateImageChips(): void {
     });
 }
 
-/** Image attachments on a persisted user message. The host ships base64
- *  payloads once via stateSync.images; messages carry assetId references. */
-function extractUserImages(msg: any): string[] {
-    if (!Array.isArray(msg.content)) return [];
-    const sources: string[] = [];
-    for (const c of msg.content) {
-        if ((c.type !== 'image' && c.type !== 'image_url') || c.assetId == null) continue;
-        const dataUrl = state.imageCache[c.assetId];
-        if (dataUrl) sources.push(dataUrl);
-    }
-    return sources;
-}
-
 function bindCopyButtons(): void {
     document.querySelectorAll('.copy-btn:not([data-bound])').forEach((btn) => {
         btn.setAttribute('data-bound', '1');
@@ -2883,53 +2448,6 @@ function isMentionMenuVisible(): boolean {
 }
 
 // ── Helpers ──
-
-function buildMessageFooter(msg: any, index: number): HTMLElement | null {
-    const role = msg.role ?? 'unknown';
-    if (role !== 'user' && role !== 'assistant') return null;
-
-    const parts: string[] = [];
-
-    const ts = msg.timestamp;
-    if (ts) {
-        parts.push(formatTimestamp(ts));
-    }
-
-    if (role === 'user') {
-        // Show input tokens from the next assistant message's usage
-        for (let j = index + 1; j < state.messages.length; j++) {
-            const next = state.messages[j];
-            if (next.role === 'assistant' && next.usage && next.usage.input > 0) {
-                parts.push(t('meta.inputTokens', { n: next.usage.input.toLocaleString() }));
-                break;
-            }
-            if (next.role === 'user') break;
-        }
-    }
-
-    if (role === 'assistant') {
-        if (msg._messageEndTime && msg.timestamp) {
-            const startMs = msg.timestamp < 1e12 ? msg.timestamp * 1000 : msg.timestamp;
-            const durationSec = (msg._messageEndTime - startMs) / 1000;
-            const usage = msg.usage;
-            if (usage && usage.output > 0 && durationSec > 0) {
-                const tokPerSec = usage.output / durationSec;
-                parts.push(`${tokPerSec.toFixed(1)} tok/s`);
-            }
-        }
-
-        const usage = msg.usage;
-        if (usage && usage.output > 0) {
-            parts.push(t('meta.outputTokens', { n: usage.output.toLocaleString() }));
-        }
-    }
-
-    if (parts.length === 0) return null;
-
-    const footer = el('div', 'message-footer');
-    footer.textContent = parts.join(' · ');
-    return footer;
-}
 
 let userHasScrolled = false;
 let isProgrammaticScroll = false;

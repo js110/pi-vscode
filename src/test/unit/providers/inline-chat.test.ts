@@ -87,6 +87,7 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
         getContextUsage: () => undefined,
         getMessages: () => [],
         setMessages: () => {},
+        rollbackTo: vi.fn(() => ({ cutoff: -1, suspended: [] })),
         getModels: () => [],
         getCurrentModel: () => undefined,
         getThinkingLevel: () => undefined,

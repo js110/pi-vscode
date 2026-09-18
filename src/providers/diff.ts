@@ -5,6 +5,7 @@ import type { PiSessionManager } from '../pi/session';
 import type { FileChangeInfo } from '../shared/protocol';
 import type { CheckpointManager } from './checkpoint';
 import { computeUnifiedDiff } from '../utils/diff';
+import { resolveWorkspacePath } from '../utils/paths';
 
 interface PendingEdit {
     toolCallId: string;
@@ -256,13 +257,7 @@ export class DiffManager implements vscode.Disposable {
     }
 
     private _resolveFilePath(filePath: string): string {
-        if (filePath.startsWith('~/') || filePath === '~') {
-            const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
-            filePath = path.join(home, filePath.slice(2));
-        }
-        if (path.isAbsolute(filePath)) return filePath;
-        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        return root ? path.join(root, filePath) : path.resolve(filePath);
+        return resolveWorkspacePath(filePath, { expandHome: true });
     }
 
     private _getDiffContentProvider(): DiffContentProvider | undefined {

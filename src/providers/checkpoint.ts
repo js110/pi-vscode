@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveWorkspacePath } from '../utils/paths';
 
 interface CheckpointEntry {
     filesBefore: Map<string, string | null>;
@@ -169,8 +170,6 @@ export class CheckpointManager implements vscode.Disposable {
     }
 
     private _resolveAbsolute(filePath: string): string {
-        if (path.isAbsolute(filePath)) return filePath;
-        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        return root ? path.join(root, filePath) : path.resolve(filePath);
+        return resolveWorkspacePath(filePath);
     }
 }

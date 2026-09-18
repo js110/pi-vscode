@@ -1,5 +1,8 @@
 import type { ApprovalRuleInfo, SettingsClientMessage, SettingsServerMessage, SettingsData, SkillInfo } from '../shared/protocol';
 import { t, setLang } from '../shared/i18n';
+import { el, escHtml } from './dom';
+import { escAttr } from '../shared/webview-text';
+import { showToast as presentToast } from './toast';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: SettingsClientMessage): void;
@@ -137,7 +140,7 @@ function buildSelect(key: string, label: string, value: string, options: { value
             <label for="setting-${key}">${escHtml(label)}</label>
         </div>
         <select id="setting-${key}" class="setting-select" data-key="${key}">
-            ${options.map(o => `<option value="${escHtml(o.value)}" ${o.value === value ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('')}
+            ${options.map(o => `<option value="${escAttr(o.value)}" ${o.value === value ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('')}
         </select>
         <p class="setting-description">${escHtml(description)}</p>
     `;
@@ -162,7 +165,7 @@ function buildTextarea(key: string, label: string, value: string, description: s
         <div class="setting-label-row">
             <label for="setting-${key}">${escHtml(label)}</label>
         </div>
-        <input type="text" id="setting-${key}" class="setting-input" data-key="${key}" value="${escHtml(value)}" placeholder="${escHtml(t('settings.allowedToolsPlaceholder'))}">
+        <input type="text" id="setting-${key}" class="setting-input" data-key="${key}" value="${escAttr(value)}" placeholder="${escAttr(t('settings.allowedToolsPlaceholder'))}">
         <p class="setting-description">${escHtml(description)}</p>
     `;
     return row;
@@ -221,7 +224,7 @@ function buildApiKeyField(data: SettingsData): HTMLElement {
                 <span class="key-status unset">${escHtml(t('settings.noKey'))}</span>
             </div>
             <div class="api-key-input-row">
-                <input type="password" id="api-key-input" class="setting-input" placeholder="${escHtml(t('settings.enterKey'))}">
+                <input type="password" id="api-key-input" class="setting-input" placeholder="${escAttr(t('settings.enterKey'))}">
                 <button class="setting-btn primary" id="btn-save-key">${escHtml(t('settings.save'))}</button>
             </div>
             <p class="setting-description">${escHtml(t('settings.keySecureDesc'))}</p>
@@ -447,39 +450,14 @@ function bindEvents(): void {
     });
 }
 
-let toastTimeout: ReturnType<typeof setTimeout>;
-
 function showToast(message: string, type: 'error' | 'info' = 'info'): void {
-    let toast = document.getElementById('toast');
-    if (!toast) {
-        toast = el('div', 'toast');
-        toast.id = 'toast';
-        document.body.appendChild(toast);
-    }
-    toast.className = `toast toast-${type} visible`;
-    toast.textContent = message;
-    clearTimeout(toastTimeout);
-    toastTimeout = setTimeout(() => toast!.classList.remove('visible'), 3000);
-}
-
-function el(tag: string, className?: string): HTMLElement {
-    const e = document.createElement(tag);
-    if (className) e.className = className;
-    return e;
-}
-
-function escHtml(s: string): string {
-    const div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
-}
-
-function escAttr(s: string): string {
-    return s
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+    presentToast({
+        reuseId: 'toast',
+        className: `toast toast-${type}`,
+        hideClass: 'visible',
+        message,
+        durationMs: 3000,
+    });
 }
 
 vscode.postMessage({ type: 'getSettings' });

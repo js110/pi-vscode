@@ -1,4 +1,4 @@
-import type { PiSessionManager } from '../pi/session';
+import { PiSessionManager } from '../pi/session';
 import { ensureConfigDiscovered, refreshPiConfig } from '../pi/config';
 import { ApprovalMemory, type GlobalRuleStore } from '../pi/approval-memory';
 import type {
@@ -28,7 +28,11 @@ import {
 } from '../shared/mention';
 import { t, thinkingLevelLabel } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
-import { extractLastAssistantText, parseBuiltinSlashCommand } from '../shared/slash-commands';
+import {
+    classifySlashInput,
+    extractLastAssistantText,
+    parseBuiltinSlashCommand,
+} from '../shared/slash-commands';
 import { collectAndReplaceImages } from '../shared/message-assets';
 import { SessionLockManager, LOCK_HEARTBEAT_MS, type SessionLockDeps } from '../pi/session-lock';
 
@@ -221,11 +225,9 @@ export class TabManager {
         tab.diffManager.suspendChangesAfter(messageIndex);
         tab.messagesDirty = true;
 
-        const allMsgs = tab.session.getMessages();
-        const cutoff = this._findCutoffIndex(allMsgs, messageIndex);
-        if (cutoff >= 0 && cutoff < allMsgs.length) {
-            tab.suspendedMessages = allMsgs.slice(cutoff);
-            tab.session.setMessages(allMsgs.slice(0, cutoff));
+        const { suspended } = tab.session.rollbackTo(messageIndex);
+        if (suspended.length > 0) {
+            tab.suspendedMessages = suspended;
         }
 
         if (restored.length > 0) {
@@ -766,6 +768,11 @@ export class TabManager {
                 this._emitStateChange();
                 break;
             case 'followUp':
+                // A builtin reaching the follow-up queue drains past the host
+                // as plain text — intercept here like queueMessage/steer.
+                if (await this._maybeExecuteBuiltinCommand(tab, msg.text)) {
+                    break;
+                }
                 await tab.session.followUp(msg.text);
                 break;
             case 'abort': {
@@ -1104,19 +1111,6 @@ export class TabManager {
         this._emitStateChange();
     }
 
-    private _findCutoffIndex(messages: any[], rollbackPoint: number): number {
-        let userMsgCount = 0;
-        for (let i = 0; i < messages.length; i++) {
-            if (messages[i].role === 'user') {
-                userMsgCount++;
-                if (userMsgCount > rollbackPoint) {
-                    return i;
-                }
-            }
-        }
-        return -1;
-    }
-
     async newSession(): Promise<void> {
         await this.dispatch({ type: 'newSession' });
     }
@@ -1198,9 +1192,16 @@ export class TabManager {
      * been handled; false leaves the text on the normal prompt/queue path.
      */
     private async _maybeExecuteBuiltinCommand(tab: TabState, text: string): Promise<boolean> {
-        const parsed = parseBuiltinSlashCommand(text);
-        if (!parsed) return false;
-        const { name, args } = parsed;
+        const input = classifySlashInput(text);
+        if (input.kind === 'passthrough') return false;
+        if (!input.supported) {
+            this._hooks.showMessage(t('slash.unsupported', { name: input.name }));
+            return true;
+        }
+        const { name, args } = input;
+        // `name` is now SupportedBuiltinCommandName; the exhaustiveness check in
+        // the default branch forces a handler whenever the support matrix in
+        // shared/slash-commands.ts gains a new native command.
         switch (name) {
             case 'compact':
                 if (tab.isStreaming) {
@@ -1288,9 +1289,11 @@ export class TabManager {
             case 'session':
                 this._hooks.showMessage(this._buildSessionInfo(tab));
                 return true;
-            default:
-                this._hooks.showMessage(t('slash.unsupported', { name }));
+            default: {
+                const exhaustive: never = name;
+                this._hooks.showMessage(t('slash.unsupported', { name: exhaustive }));
                 return true;
+            }
         }
     }
 

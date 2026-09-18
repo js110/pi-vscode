@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as vscode from "vscode";
-import { handleRpc } from "./handlers";
+import { createHandler } from "./handlers";
 import { captureSelection, getEditorInfo } from "./serialize";
 import { createBridgeState } from "./state";
 import type { BridgeContext, RpcRequest } from "./types";
 import { toErrorMessage } from "./utils";
+import { createVscodeApis } from "./vscode-apis";
 
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 
@@ -13,6 +14,7 @@ export async function createBridge(
   context: vscode.ExtensionContext,
   onTerminalSession?: (terminalId: string, sessionFile: string) => void,
 ): Promise<BridgeContext> {
+  const handleRpc = createHandler(createVscodeApis());
   const state = createBridgeState(
     captureSelection(vscode.window.activeTextEditor),
     onTerminalSession,
