@@ -27,7 +27,7 @@ import {
     MENTION_CONTEXT_WINDOW_LINES,
     type MentionContextEntry,
 } from '../shared/mention';
-import { t, thinkingLevelLabel } from '../shared/i18n';
+import { t, thinkingLevelLabel, getLang } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import {
     classifySlashInput,
@@ -928,6 +928,10 @@ export class TabManager {
                 break;
             }
             case 'getState': {
+                // The eager langChanged pushed at webview resolve races the
+                // webview script's listener registration and can be dropped;
+                // this handshake is the reliable moment to (re)send it.
+                this._hooks.post({ type: 'langChanged', lang: getLang() });
                 const { state, images } = this.getSnapshot(true);
                 this._hooks.post({ type: 'stateSync', state, images });
                 break;

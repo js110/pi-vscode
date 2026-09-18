@@ -3,6 +3,7 @@ import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from '../
 import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
+import { setLang } from '../../../shared/i18n';
 
 const PNG = 'iVBORw0KGgo=';
 const JPEG = '/9j/4AAQ';
@@ -307,6 +308,25 @@ describe('lazy initialization', () => {
         const sync = vi.mocked(hooks.post).mock.calls.find((c) => (c[0] as any).type === 'stateSync');
         expect(sync).toBeDefined();
         expect((sync![0] as any).state.messages).toEqual([]);
+    });
+
+    it('getState handshake re-sends the display language before the snapshot', async () => {
+        setLang('zh');
+        try {
+            const { manager, hooks } = makeManager();
+            await manager.dispatch({ type: 'getState' });
+
+            const calls = vi.mocked(hooks.post).mock.calls as unknown as [
+                { type: string; lang?: string },
+            ][];
+            const langIdx = calls.findIndex((c) => c[0].type === 'langChanged');
+            const syncIdx = calls.findIndex((c) => c[0].type === 'stateSync');
+            expect(langIdx).toBeGreaterThanOrEqual(0);
+            expect(langIdx).toBeLessThan(syncIdx);
+            expect(calls[langIdx][0].lang).toBe('zh');
+        } finally {
+            setLang('en');
+        }
     });
 
     it('concurrent session entry points wait for one initialization', async () => {
