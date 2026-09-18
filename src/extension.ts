@@ -35,6 +35,15 @@ let bridgeContext: BridgeContext | undefined;
 
 const APPROVAL_RULES_KEY = 'pi-agent.approvalRules.global';
 
+// Completion notifications below this many seconds are noise, not signal.
+const NOTIFY_MIN_DURATION_SEC = 5;
+
+function formatDurationSec(durationSec: number): string {
+    const total = Math.max(1, Math.round(durationSec));
+    if (total < 60) return `${total}s`;
+    return `${Math.floor(total / 60)}m ${total % 60}s`;
+}
+
 // ── @-mention workspace glue (AC-FN-21/22) ──
 
 const MENTION_FILE_TTL_MS = 5000;
@@ -209,6 +218,36 @@ export async function activate(context: vscode.ExtensionContext) {
             resolveMentionPath: (path) => resolveMentionPath(path),
             readTextFile: (fsPath) => readMentionFile(fsPath),
             resolveDroppedFiles: (uris) => resolveDroppedFiles(uris),
+            exportSession: async (content, suggestedName) => {
+                const folder = vscode.workspace.workspaceFolders?.[0];
+                const defaultUri = folder
+                    ? vscode.Uri.joinPath(folder.uri, suggestedName)
+                    : vscode.Uri.file(suggestedName);
+                const target = await vscode.window.showSaveDialog({
+                    defaultUri,
+                    saveLabel: t('export.save'),
+                    filters: { Markdown: ['md'] },
+                });
+                if (!target) return;
+                await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+                const open = await vscode.window.showInformationMessage(
+                    t('export.success', { path: target.fsPath }),
+                    t('export.open'),
+                );
+                if (open) {
+                    void vscode.workspace.openTextDocument(target).then((doc) =>
+                        vscode.window.showTextDocument(doc, { preview: true }),
+                    );
+                }
+            },
+            notifyAgentDone: (tabName, durationSec, isTabActive) => {
+                if (!vscode.workspace.getConfiguration('pi-agent').get('notifyOnCompletion', true)) return;
+                if (durationSec < NOTIFY_MIN_DURATION_SEC) return;
+                if (isTabActive && vscode.window.state.focused) return;
+                void vscode.window.showInformationMessage(
+                    t('notify.done', { name: tabName, duration: formatDurationSec(durationSec) }),
+                );
+            },
         };
 
         const factory: TabFactory = {

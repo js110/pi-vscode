@@ -1835,6 +1835,74 @@ body {
     color: var(--fg);
 }
 
+/* Edit / regenerate buttons on user messages */
+.edit-btn,
+.regen-btn {
+    position: absolute;
+    top: 8px;
+    background: none;
+    border: 1px solid transparent;
+    color: var(--faint);
+    padding: 3px 7px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+    user-select: none;
+}
+.edit-btn { right: 40px; }
+.regen-btn { right: 68px; }
+.message-user:hover .edit-btn,
+.message-user:hover .regen-btn { opacity: 1; }
+.edit-btn:hover,
+.regen-btn:hover {
+    background: var(--surface-hover);
+    border-color: var(--hairline);
+    color: var(--fg);
+}
+
+/* Edit-mode banner above the composer */
+.edit-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+    font-size: var(--fs-sm);
+    color: var(--muted);
+}
+.edit-banner-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.edit-banner-cancel {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+    font-size: 9px;
+    line-height: 16px;
+    text-align: center;
+    cursor: pointer;
+}
+.edit-banner-cancel:hover {
+    background: color-mix(in srgb, var(--fg) 12%, transparent);
+    color: var(--fg);
+}
+
 .redo-anchor {
     position: relative;
     height: 0;

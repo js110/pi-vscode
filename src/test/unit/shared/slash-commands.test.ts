@@ -115,6 +115,7 @@ describe('support matrix', () => {
         'copy',
         'name',
         'session',
+        'export',
         'login',
         'new',
         'compact',

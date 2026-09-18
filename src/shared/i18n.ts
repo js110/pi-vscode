@@ -310,6 +310,23 @@ const EN = {
     'settings.authNone': 'No credentials detected',
     'settings.toastSelectProvider': 'Select a provider first',
     'settings.toastEnterKey': 'Enter an API key',
+
+    // Message actions (edit / regenerate)
+    'msg.editTitle': 'Edit and resend from this turn',
+    'msg.replayTitle': 'Roll back to this turn and resend',
+    'edit.banner': 'Editing turn {n} — sending rolls the conversation back to here',
+    'edit.cancelTitle': 'Cancel editing',
+    'edit.blockedStreaming': 'Cannot resend while the agent is streaming. Stop it first.',
+
+    // Session export
+    'export.save': 'Export as Markdown',
+    'export.success': 'Session exported to {path}',
+    'export.empty': 'Nothing to export yet — send a message first.',
+    'export.open': 'Open',
+    'export.failed': 'Export failed: {message}',
+
+    // Completion notification
+    'notify.done': '"{name}" finished responding ({duration}).',
 } as const;
 
 export type TextKey = keyof typeof EN;
@@ -593,7 +610,24 @@ const ZH: Record<TextKey, string> = {
     'settings.authNone': '未检测到凭据',
     'settings.toastSelectProvider': '请先选择提供者',
     'settings.toastEnterKey': '请输入 API 密钥',
-};
+
+    // Message actions (edit / regenerate)
+    'msg.editTitle': '编辑并从此轮重发',
+    'msg.replayTitle': '回滚到此轮并重发',
+    'edit.banner': '正在编辑第 {n} 轮——发送后对话将回滚到此处',
+    'edit.cancelTitle': '取消编辑',
+    'edit.blockedStreaming': 'Agent 正在回复，无法重发。请先停止。',
+
+    // Session export
+    'export.save': '导出为 Markdown',
+    'export.success': '会话已导出到 {path}',
+    'export.empty': '暂无可导出的内容——请先发送一条消息。',
+    'export.open': '打开',
+    'export.failed': '导出失败：{message}',
+
+    // Completion notification
+    'notify.done': '“{name}”已完成回复（用时 {duration}）。',
+} as const;
 
 let currentLang: Lang = 'en';
 

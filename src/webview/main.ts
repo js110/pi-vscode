@@ -7,7 +7,7 @@ import { rankSlashMenuItems } from '../shared/slash-commands';
 import { t, setLang } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
-import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel } from '../shared/webview-text';
+import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
 import { looksBinary, normalizeAttachContent, MAX_ATTACH_FILE_BYTES, type AttachFileEntry } from '../shared/attach';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
@@ -277,6 +277,9 @@ function handleConfirmResult(action: string, confirmed: boolean, payload?: any):
 // change the session, so they resolve on the first messages frame.
 let historyReplacePending: { from: string | undefined; rewrite: boolean } | null = null;
 
+// Turn currently being edited in the composer; null when not editing.
+let editingTurn: number | null = null;
+
 function applyStateSync(s: SerializedAgentState): void {
     const prevTab = state.activeTabId;
     // Unchanged message lists are omitted from the frame (T16); keep ours.
@@ -320,6 +323,7 @@ function applyStateSync(s: SerializedAgentState): void {
         state.mentions = [];
         hideMentionMenu();
         dropPendingRequestId = -1;
+        cancelEditMode({ keepDraft: true });
     }
 
     if (tabSwitched || !skeletonBuilt) {
@@ -518,6 +522,10 @@ function render(): void {
     occupancyBanner.id = 'occupancy-banner';
     occupancyBanner.style.display = 'none';
     inputContainer.appendChild(occupancyBanner);
+    const editBanner = el('div', 'edit-banner');
+    editBanner.id = 'edit-banner';
+    editBanner.style.display = 'none';
+    inputContainer.appendChild(editBanner);
     const compactionBanner = el('div', 'compaction-banner');
     compactionBanner.id = 'compaction-banner';
     compactionBanner.style.display = 'none';
@@ -564,6 +572,7 @@ function render(): void {
     // Bind stable event listeners (these elements persist for the lifetime of the skeleton)
     bindStableEvents();
     bindScrollListener();
+    updateEditBanner();
     scrollBtn.addEventListener('click', () => {
         userHasScrolled = false;
         scrollToBottom(true);
@@ -613,6 +622,7 @@ function updateMessages(): void {
     bindCopyButtons();
     bindCodeBlockActions();
     bindCheckpointButtons();
+    bindMessageActionButtons();
     bindRedoButtons();
     bindDiffButtons();
     bindToolClickable();
@@ -1764,6 +1774,10 @@ function bindStableEvents(): void {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (state.isStreaming) {
+                if (editingTurn !== null) {
+                    showError(t('edit.blockedStreaming'), ERROR_HINT_MS);
+                    return;
+                }
                 const text = input.value.trim();
                 if (text) {
                     if (e.ctrlKey || e.metaKey) {
@@ -1778,6 +1792,11 @@ function bindStableEvents(): void {
             } else {
                 sendMessage();
             }
+        }
+        if (e.key === 'Escape' && editingTurn !== null && !state.isStreaming) {
+            e.preventDefault();
+            cancelEditMode();
+            return;
         }
         if (e.key === 'Escape' && state.isStreaming) {
             e.preventDefault();
@@ -1959,6 +1978,109 @@ function bindRedoButtons(): void {
     });
 }
 
+// ── Edit / regenerate (replayTurn) ──
+
+function findUserMessageByTurn(turn: number): any | null {
+    let count = 0;
+    for (const msg of state.messages) {
+        if ((msg.role ?? '') === 'user') {
+            count++;
+            if (count === turn) return msg;
+        }
+    }
+    return null;
+}
+
+/** dataUrls of a persisted user message's images, recovered via assetId. */
+function extractUserMessageImages(msg: any): string[] {
+    if (!Array.isArray(msg.content)) return [];
+    const sources: string[] = [];
+    for (const c of msg.content) {
+        if ((c.type !== 'image' && c.type !== 'image_url') || c.assetId == null) continue;
+        const dataUrl = state.imageCache[c.assetId];
+        if (dataUrl) sources.push(dataUrl);
+    }
+    return sources;
+}
+
+function bindMessageActionButtons(): void {
+    document.querySelectorAll('.regen-btn:not([data-bound])').forEach((btn) => {
+        btn.setAttribute('data-bound', '1');
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const turn = parseInt((btn as HTMLElement).dataset.turn ?? '-1', 10);
+            const msg = turn >= 1 ? findUserMessageByTurn(turn) : null;
+            if (!msg) return;
+            if (state.isStreaming) {
+                showError(t('edit.blockedStreaming'), ERROR_HINT_MS);
+                return;
+            }
+            cancelEditMode();
+            historyReplacePending = { from: state.sessionId, rewrite: true };
+            vscode.postMessage({
+                type: 'replayTurn',
+                turn,
+                text: extractText(msg),
+                images: extractUserMessageImages(msg),
+            });
+        });
+    });
+    document.querySelectorAll('.edit-btn:not([data-bound])').forEach((btn) => {
+        btn.setAttribute('data-bound', '1');
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const turn = parseInt((btn as HTMLElement).dataset.turn ?? '-1', 10);
+            const msg = turn >= 1 ? findUserMessageByTurn(turn) : null;
+            if (!msg) return;
+            enterEditMode(turn, extractText(msg), extractUserMessageImages(msg));
+        });
+    });
+}
+
+function enterEditMode(turn: number, text: string, images: string[]): void {
+    editingTurn = turn;
+    const input = document.getElementById('input') as HTMLTextAreaElement | null;
+    state.pendingImages = [...images];
+    updateImageChips();
+    if (input) {
+        input.value = text;
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }
+    updateEditBanner();
+}
+
+function cancelEditMode(opts: { keepDraft?: boolean } = {}): void {
+    if (editingTurn === null) return;
+    editingTurn = null;
+    updateEditBanner();
+    const input = document.getElementById('input') as HTMLTextAreaElement | null;
+    state.pendingImages = [];
+    updateImageChips();
+    if (input && !opts.keepDraft) {
+        input.value = '';
+        input.style.height = 'auto';
+    }
+}
+
+function updateEditBanner(): void {
+    const banner = document.getElementById('edit-banner');
+    if (!banner) return;
+    if (editingTurn === null) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
+    }
+    banner.style.display = '';
+    banner.innerHTML = `
+        <span class="edit-banner-label">&#9998; ${escHtml(t('edit.banner', { n: editingTurn }))}</span>
+        <button class="edit-banner-cancel" title="${escHtml(t('edit.cancelTitle'))}">&#10005;</button>
+    `;
+    banner.querySelector('.edit-banner-cancel')?.addEventListener('click', () => cancelEditMode());
+}
+
 function bindDiffButtons(): void {
     document.querySelectorAll('.diff-file-header:not([data-bound])').forEach((header) => {
         header.setAttribute('data-bound', '1');
@@ -2007,6 +2129,22 @@ function bindChangedFileItems(): void {
 function sendMessage(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (!input) return;
+    if (editingTurn !== null) {
+        const replayText = input.value.trim();
+        if (!replayText) return;
+        if (state.isStreaming) {
+            showError(t('edit.blockedStreaming'), ERROR_HINT_MS);
+            return;
+        }
+        const turn = editingTurn;
+        const images = state.pendingImages.length > 0 ? [...state.pendingImages] : undefined;
+        cancelEditMode();
+        userHasScrolled = false;
+        updateScrollButton();
+        historyReplacePending = { from: state.sessionId, rewrite: true };
+        vscode.postMessage({ type: 'replayTurn', turn, text: replayText, images });
+        return;
+    }
     const text = input.value.trim();
     if (!text && state.pendingImages.length === 0 && state.pendingAttachments.length === 0) return;
     const images = state.pendingImages.length > 0 ? [...state.pendingImages] : undefined;

@@ -149,6 +149,9 @@ export interface PiConfigSnapshot {
 // Webview -> Extension messages
 export type ClientMessage =
     | { type: 'prompt'; text: string; images?: string[]; mentions?: string[]; attachContents?: { name: string; content: string }[]; bypassSlashCommands?: boolean }
+    /** Roll the session back to the start of `turn` (user-turn ordinal) and
+     *  send `text` as the replacement prompt (edit / regenerate). */
+    | { type: 'replayTurn'; turn: number; text: string; images?: string[] }
     | { type: 'steer'; text: string }
     | { type: 'followUp'; text: string }
     | { type: 'abort' }

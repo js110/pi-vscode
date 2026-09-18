@@ -371,6 +371,16 @@ function buildMessage(msg: any, index: number, turnNumber: number | undefined, c
             checkpointBtn.dataset.turn = String(turnNumber);
             checkpointBtn.innerHTML = '&#8634;';
             wrapper.appendChild(checkpointBtn);
+            const regenBtn = el('button', 'regen-btn');
+            regenBtn.title = t('msg.replayTitle');
+            regenBtn.dataset.turn = String(turnNumber);
+            regenBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89"/><path d="M13.5 1.5v3.5h-3.5"/></svg>';
+            wrapper.appendChild(regenBtn);
+            const editBtn = el('button', 'edit-btn');
+            editBtn.title = t('msg.editTitle');
+            editBtn.dataset.turn = String(turnNumber);
+            editBtn.innerHTML = '&#9998;';
+            wrapper.appendChild(editBtn);
         }
         const text = extractText(msg);
         if (text) {

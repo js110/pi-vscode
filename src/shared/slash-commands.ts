@@ -27,7 +27,7 @@ const BUILTIN_COMMAND_DEFS = [
     { name: 'tree', description: 'Navigate session tree (switch branches)', support: 'unsupported' },
     { name: 'thinking', description: 'Set thinking level', support: 'native' },
     { name: 'scoped-models', description: 'Enable/disable models for Ctrl+P cycling', support: 'unsupported' },
-    { name: 'export', description: 'Export session (HTML default, or specify path: .html/.jsonl)', support: 'unsupported' },
+    { name: 'export', description: 'Export the session as a Markdown file', support: 'native' },
     { name: 'import', description: 'Import and resume a session from a JSONL file', support: 'unsupported' },
     { name: 'share', description: 'Share session as a secret GitHub gist', support: 'unsupported' },
     { name: 'copy', description: 'Copy last agent message to clipboard', support: 'native' },

@@ -20,7 +20,10 @@ The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetapho
 - IDE bridge tools for selections, diagnostics, open editors, symbols, definitions, type definitions, implementations, declarations, hover information, references, workspace symbols, Code Actions, formatting, saving, WorkspaceEdit, and notifications.
 - Editor integration: send the current selection to the active tab from the context menu, `@`-mention files and symbols with fuzzy completion, drag and drop files into the prompt, and attach images for vision-capable models.
 - Selection awareness: selecting code in the editor shows a chip above the prompt and the next message automatically carries the selection (Copilot-style, one-shot, dismissible).
-- Built-in slash commands from the prompt — `/compact`, `/new`, `/model`, `/thinking`, `/name`, `/resume`, `/copy`, `/session`, `/settings` and `/login` are routed to their panel implementations; the remaining CLI-only builtins (e.g. `/tree`, `/fork`, `/export`) report that they are unavailable in the panel instead of leaking into the model; `/skill:name` skills and prompt templates expand via the SDK as before.
+- Built-in slash commands from the prompt — `/compact`, `/new`, `/model`, `/thinking`, `/name`, `/resume`, `/copy`, `/session`, `/export`, `/settings` and `/login` are routed to their panel implementations; the remaining CLI-only builtins (e.g. `/tree`, `/fork`) report that they are unavailable in the panel instead of leaking into the model; `/skill:name` skills and prompt templates expand via the SDK as before.
+- Message actions on hover: edit and resend from any earlier turn (the conversation rolls back to it) or regenerate a turn with its original prompt and images.
+- Session export to Markdown via `/export` — thinking blocks, tool output, and image attachments are rendered, with a save dialog and one-click open.
+- Turn-completion notifications when the panel runs in the background and the turn took at least 5 seconds (`pi-agent.notifyOnCompletion`).
 - Inline chat from a quick-input prompt, with per-turn change highlighting and an accept/discard review flow in the status bar.
 - Commit message generation from the working-tree diff, written straight into the SCM input box.
 - Background task panel with live per-tab activity, occupancy banners, a single-writer session lock, and tool cancellation.

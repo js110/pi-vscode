@@ -35,6 +35,7 @@ import {
     parseBuiltinSlashCommand,
 } from '../shared/slash-commands';
 import { collectAndReplaceImages } from '../shared/message-assets';
+import { buildSessionMarkdown, suggestedExportFileName } from '../shared/session-export';
 import { SessionLockManager, LOCK_HEARTBEAT_MS, type SessionLockDeps } from '../pi/session-lock';
 
 export interface Tab {
@@ -67,6 +68,10 @@ export interface TabManagerHooks {
     resolveMentionPath(path: string): Promise<string | null>;
     readTextFile(fsPath: string): Promise<string | null>;
     resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>;
+    /** Save `content` to disk under `suggestedName` (user picks the location). */
+    exportSession?(content: string, suggestedName: string): Promise<void>;
+    /** OS-level turn-completion notification; the host decides when it fires. */
+    notifyAgentDone?(tabName: string, durationSec: number, isTabActive: boolean): void;
 }
 
 interface PendingApproval {
@@ -129,6 +134,8 @@ type TabState = Tab & {
     imageAssets: Map<string, string>;
     /** assetId → dataUrl, used to re-ship full image set on webview rebuild. */
     imageData: Map<string, string>;
+    /** Wall-clock duration of the last finished turn, for the completion notify. */
+    lastTurnDurationSec: number;
 };
 
 export class TabManager {
@@ -388,6 +395,7 @@ export class TabManager {
             messagesDirty: true,
             imageAssets: new Map<string, string>(),
             imageData: new Map<string, string>(),
+            lastTurnDurationSec: 0,
         };
     }
 
@@ -541,6 +549,11 @@ export class TabManager {
                     this._hooks.post({ type: 'agentEvent', event: safeSerialize(event) });
                 }
             } else {
+                // Capture the wall-clock turn duration before it is cleared;
+                // the completion notification fires on agent_settled.
+                tab.lastTurnDurationSec = tab.agentStartTime > 0
+                    ? (Date.now() - tab.agentStartTime) / 1000
+                    : 0;
                 // Don't clear isStreaming yet — wait for agent_settled
                 // to prevent race condition where user sends new prompt
                 // before SDK finishes internal cleanup
@@ -560,6 +573,7 @@ export class TabManager {
             } else {
                 tab.hasNotification = true;
             }
+            this._hooks.notifyAgentDone?.(tab.name, tab.lastTurnDurationSec, isActive);
         }
 
         if (event.type === 'queue_update') {
@@ -698,29 +712,46 @@ export class TabManager {
                 if (!text.trim() && !(images && images.length > 0)) {
                     break;
                 }
-                // Mention expansion awaits fs I/O; the streaming state may have
-                // flipped during it. Re-check to avoid two concurrent turns.
+                await this._sendPromptTurn(tab, text, images);
+                break;
+            }
+            case 'replayTurn': {
+                // Roll back to the start of `msg.turn` and re-send it — the
+                // edit/resend and regenerate paths share this entry point.
                 if (tab.isStreaming) {
                     throw new Error('Agent is still processing. Please wait or queue your message.');
                 }
-                if (tab.checkpointManager.rollbackPoint !== null) {
-                    tab.checkpointManager.discardSuspended();
-                    tab.diffManager.discardSuspended();
-                    tab.suspendedMessages = [];
-                    tab.messagesDirty = true;
+                if (tab.lock && tab.lock.occupancy !== 'none') {
+                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    break;
                 }
-                tab.turnCounter++;
-                const turnIdx = tab.turnCounter;
-                tab.checkpointManager.startTurn(turnIdx);
-                tab.diffManager.setCurrentTurn(turnIdx);
-                try {
-                    await tab.session.prompt(text, images);
-                } catch (err) {
-                    // The turn never ran: release its index so the next prompt
-                    // reuses it (checkpoint/rollback math counts user turns).
-                    tab.turnCounter--;
-                    throw err;
+                let images: ImagePayload[] | undefined;
+                if (msg.images && msg.images.length > 0) {
+                    // Validate attachments before the destructive rollback so a
+                    // failed prep never truncates the session.
+                    const prepared = preparePromptImages(msg.images);
+                    if (!prepared.ok) {
+                        const message =
+                            prepared.reason === 'tooMany'
+                                ? t('image.tooMany', { n: prepared.count })
+                                : prepared.reason === 'tooLarge'
+                                  ? t('image.tooLarge')
+                                  : t('image.invalid');
+                        this._hooks.post({ type: 'error', message });
+                        break;
+                    }
+                    if (!tab.session.supportsImages()) {
+                        this._hooks.post({ type: 'error', message: t('image.unsupported') });
+                        break;
+                    }
+                    images = prepared.images;
                 }
+                const text = msg.text.trim();
+                if (!text && !(images && images.length > 0)) {
+                    break;
+                }
+                await this._restoreCheckpointOnTab(tab, Math.max(0, msg.turn - 1));
+                await this._sendPromptTurn(tab, text, images);
                 break;
             }
             case 'steer':
@@ -1026,6 +1057,35 @@ export class TabManager {
         }
     }
 
+    /** Shared tail of every prompt path: streaming re-check, redo discard,
+     *  turn accounting, and the SDK prompt call. `text` must be non-empty
+     *  (or images non-empty); caller owns the earlier validation. */
+    private async _sendPromptTurn(tab: TabState, text: string, images?: ImagePayload[]): Promise<void> {
+        // Mention expansion awaits fs I/O; the streaming state may have
+        // flipped during it. Re-check to avoid two concurrent turns.
+        if (tab.isStreaming) {
+            throw new Error('Agent is still processing. Please wait or queue your message.');
+        }
+        if (tab.checkpointManager.rollbackPoint !== null) {
+            tab.checkpointManager.discardSuspended();
+            tab.diffManager.discardSuspended();
+            tab.suspendedMessages = [];
+            tab.messagesDirty = true;
+        }
+        tab.turnCounter++;
+        const turnIdx = tab.turnCounter;
+        tab.checkpointManager.startTurn(turnIdx);
+        tab.diffManager.setCurrentTurn(turnIdx);
+        try {
+            await tab.session.prompt(text, images);
+        } catch (err) {
+            // The turn never ran: release its index so the next prompt
+            // reuses it (checkpoint/rollback math counts user turns).
+            tab.turnCounter--;
+            throw err;
+        }
+    }
+
     private _clearStreamingFields(tab: any): void {
         tab.streamingText = '';
         tab.streamingThinking = '';
@@ -1299,6 +1359,32 @@ export class TabManager {
             case 'session':
                 this._hooks.showMessage(this._buildSessionInfo(tab));
                 return true;
+            case 'export': {
+                // Read-only — allowed mid-stream. Renders the serialized SDK
+                // messages to Markdown and lets the host pick a destination.
+                const messages = tab.session.getMessages();
+                if (messages.length === 0) {
+                    this._hooks.showMessage(t('export.empty'));
+                    return true;
+                }
+                const model = tab.session.getCurrentModel();
+                const markdown = buildSessionMarkdown(messages, {
+                    name: tab.session.getSessionName() ?? tab.name,
+                    model: model ? (model.name ?? model.id) : undefined,
+                    exportedAtMs: Date.now(),
+                });
+                const fileName = suggestedExportFileName(
+                    tab.session.getSessionName() ?? tab.name,
+                    Date.now(),
+                );
+                try {
+                    await this._hooks.exportSession?.(markdown, fileName);
+                } catch (err) {
+                    const detail = humanizeErrorMessage(err) ?? (err instanceof Error ? err.message : String(err));
+                    this._hooks.showMessage(t('export.failed', { message: detail }));
+                }
+                return true;
+            }
             default: {
                 const exhaustive: never = name;
                 this._hooks.showMessage(t('slash.unsupported', { name: exhaustive }));
