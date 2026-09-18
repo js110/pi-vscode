@@ -1683,9 +1683,17 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     });
 }
 
-function showError(message: string): void {
+/** Input-validation hints dismiss themselves; agent errors stay until the next turn. */
+const ERROR_HINT_MS = 5000;
+
+function showError(message: string, durationMs?: number): void {
     const container = document.getElementById('messages');
     if (!container) return;
+    if (durationMs != null) {
+        showToast({ containerId: 'messages', className: 'error-message', message, durationMs });
+        scrollToBottom();
+        return;
+    }
     const errEl = el('div', 'error-message');
     errEl.textContent = message;
     container.appendChild(errEl);
@@ -2014,7 +2022,7 @@ function sendMessage(): void {
         // have started after they were attached (e.g. auto-compaction) —
         // refuse and keep the draft instead of silently dropping them.
         if (images || attachments) {
-            showError(t('image.queueUnsupported'));
+            showError(t('image.queueUnsupported'), ERROR_HINT_MS);
             return;
         }
         vscode.postMessage({ type: 'queueMessage', text });
@@ -2065,7 +2073,7 @@ async function addTextAttachments(files: File[]): Promise<void> {
     }
     for (const file of files) {
         if (file.size > MAX_ATTACH_FILE_BYTES) {
-            showError(t('attach.tooLarge', { name: file.name }));
+            showError(t('attach.tooLarge', { name: file.name }), ERROR_HINT_MS);
             continue;
         }
         try {
@@ -2097,18 +2105,21 @@ function addImageFiles(files: File[]): void {
     const candidates = files.filter((f) => f.type.startsWith('image/'));
     const slots = MAX_IMAGES_PER_PROMPT - state.pendingImages.length;
     if (candidates.length > slots) {
-        showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }));
+        showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }), ERROR_HINT_MS);
     }
     const gen = imageReadGeneration;
     for (const file of candidates.slice(0, Math.max(0, slots))) {
         void normalizeImageFile(file).then((res) => {
             if (gen !== imageReadGeneration) return;
             if (!res.ok) {
-                showError(t(res.reason === 'tooLarge' ? 'image.tooLarge' : 'image.invalid'));
+                showError(
+                    t(res.reason === 'tooLarge' ? 'image.tooLarge' : 'image.invalid'),
+                    ERROR_HINT_MS,
+                );
                 return;
             }
             if (state.pendingImages.length >= MAX_IMAGES_PER_PROMPT) {
-                showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }));
+                showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }), ERROR_HINT_MS);
                 return;
             }
             if (file.size > MAX_IMAGE_BYTES) {
