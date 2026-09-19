@@ -47,19 +47,30 @@ export interface PiSdkSource {
 
 let cachedSdk: PiSdk | undefined;
 let cachedSource: PiSdkSource | undefined;
+let sdkLoadPromise: Promise<PiSdk> | undefined;
 
 /**
  * Load (and cache) the Pi SDK. The SDK is externalized in esbuild and resolved
  * at runtime; system copies are imported by absolute path, the bundled copy by
  * package name (resolved by VS Code's module loader).
+ *
+ * Concurrent callers share a single discovery+load (single-flight): the first
+ * call performs the system probe, everyone else awaits the same result.
  */
 export async function loadPiSdk(): Promise<PiSdk> {
-    if (!cachedSdk) {
-        const loaded = await loadPreferredSdk();
-        cachedSdk = loaded.sdk;
-        cachedSource = loaded.source;
+    if (cachedSdk) { return cachedSdk; }
+    if (!sdkLoadPromise) {
+        sdkLoadPromise = loadPreferredSdk()
+            .then((loaded) => {
+                cachedSdk = loaded.sdk;
+                cachedSource = loaded.source;
+                return loaded.sdk;
+            })
+            .finally(() => {
+                sdkLoadPromise = undefined;
+            });
     }
-    return cachedSdk;
+    return sdkLoadPromise;
 }
 
 /** The already-loaded SDK, if any (does not trigger a load). */
@@ -81,31 +92,127 @@ export function hasFunction(obj: any, method: string): boolean {
 // SDK selection
 // ---------------------------------------------------------------------------
 
+/**
+ * The system-probe result can be persisted across activations so repeat
+ * launches skip the shell probes (`where/which pi`, `npm root -g`) and jump
+ * straight to the cached directory. The cache is validated every launch
+ * (path must still exist *and* version must be unchanged); anything stale
+ * triggers a full re-probe. Only positive hits are cached, so a fresh global
+ * `pi` install is never missed.
+ */
+interface SdkProbeCache {
+    version: 1;
+    dir: string;
+    sdkVersion: string;
+    sealed: number;
+}
+
+const PROBE_CACHE_FILENAME = 'sdk-probe.json';
+let sdkProbeCacheFile: string | undefined;
+
+/** Point the system-SDK probe cache at the extension's global storage dir. */
+export function setSdkProbeCacheDir(dir: string | undefined): void {
+    sdkProbeCacheFile = dir ? path.join(dir, PROBE_CACHE_FILENAME) : undefined;
+}
+
+function readSdkProbeCache(): SdkProbeCache | undefined {
+    if (!sdkProbeCacheFile) { return undefined; }
+    try {
+        const raw = JSON.parse(fs.readFileSync(sdkProbeCacheFile, 'utf8'));
+        if (raw?.version === 1 && typeof raw.dir === 'string' && typeof raw.sdkVersion === 'string') {
+            return raw as SdkProbeCache;
+        }
+    } catch {
+        /* no cache file yet, or it is corrupt */
+    }
+    return undefined;
+}
+
+function writeSdkProbeCache(dir: string, sdkVersion: string): void {
+    if (!sdkProbeCacheFile) { return; }
+    try {
+        fs.mkdirSync(path.dirname(sdkProbeCacheFile), { recursive: true });
+        fs.writeFileSync(
+            sdkProbeCacheFile,
+            JSON.stringify({ version: 1, dir, sdkVersion, sealed: Date.now() }),
+        );
+    } catch {
+        /* cache write failure is non-fatal */
+    }
+}
+
+function clearSdkProbeCache(): void {
+    if (!sdkProbeCacheFile) { return; }
+    try {
+        fs.unlinkSync(sdkProbeCacheFile);
+    } catch {
+        /* nothing to clear */
+    }
+}
+
 async function loadPreferredSdk(): Promise<{ sdk: PiSdk; source: PiSdkSource }> {
+    // 1. Explicit env override — always honored, never cached.
+    const override = process.env.PI_VSCODE_SDK_PATH;
+    if (override && readPkgVersion(override)) {
+        const hit = await tryLoadSystemSdk(override);
+        if (hit.sdk) {
+            return { sdk: hit.sdk, source: { source: 'system', version: hit.version, path: override } };
+        }
+        return await loadBundledSdk(hit.reason);
+    }
+
+    // 2. Persisted probe result: one stat + import on repeat launches.
+    const cached = readSdkProbeCache();
+    if (cached && readPkgVersion(cached.dir) === cached.sdkVersion) {
+        const hit = await tryLoadSystemSdk(cached.dir);
+        if (hit.sdk) {
+            return { sdk: hit.sdk, source: { source: 'system', version: hit.version, path: cached.dir } };
+        }
+        clearSdkProbeCache();
+    }
+
+    // 3. Full discovery (shell probes); persist a positive hit for next launch.
     const systemDir = await findSystemSdkDir();
     if (systemDir) {
-        const version = readPkgVersion(systemDir) ?? 'unknown';
-        try {
-            const entry = resolveSdkEntry(systemDir);
-            const mod: any = await import(pathToFileURL(entry).href);
-            const missing = findMissingApis(mod);
-            if (missing.length > 0) {
-                const shown = missing.slice(0, 3).join(', ') + (missing.length > 3 ? ', …' : '');
-                return await loadBundledSdk(
-                    `system Pi ${version} is incompatible (missing APIs: ${shown})`
-                );
-            }
-            return {
-                sdk: mod as PiSdk,
-                source: { source: 'system', version, path: systemDir },
-            };
-        } catch (err: any) {
-            return await loadBundledSdk(
-                `system Pi ${version} at ${systemDir} could not be loaded (${err?.message ?? err})`
-            );
+        const hit = await tryLoadSystemSdk(systemDir);
+        if (hit.sdk) {
+            writeSdkProbeCache(systemDir, hit.version);
+            return { sdk: hit.sdk, source: { source: 'system', version: hit.version, path: systemDir } };
         }
+        clearSdkProbeCache();
+        return await loadBundledSdk(hit.reason);
     }
     return await loadBundledSdk('no system-wide Pi installation detected');
+}
+
+/**
+ * Import + API-validate a system copy at `dir`. Returns the loaded module on
+ * success, or a rejection reason on failure — never throws.
+ */
+async function tryLoadSystemSdk(
+    dir: string,
+): Promise<{ sdk: PiSdk | undefined; version: string; reason: string }> {
+    const version = readPkgVersion(dir) ?? 'unknown';
+    try {
+        const entry = resolveSdkEntry(dir);
+        const mod: any = await import(pathToFileURL(entry).href);
+        const missing = findMissingApis(mod);
+        if (missing.length > 0) {
+            const shown = missing.slice(0, 3).join(', ') + (missing.length > 3 ? ', …' : '');
+            return {
+                sdk: undefined,
+                version,
+                reason: `system Pi ${version} is incompatible (missing APIs: ${shown})`,
+            };
+        }
+        return { sdk: mod as PiSdk, version, reason: '' };
+    } catch (err: any) {
+        return {
+            sdk: undefined,
+            version,
+            reason: `system Pi ${version} at ${dir} could not be loaded (${err?.message ?? err})`,
+        };
+    }
 }
 
 async function loadBundledSdk(reason: string): Promise<{ sdk: PiSdk; source: PiSdkSource }> {

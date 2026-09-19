@@ -157,7 +157,7 @@
           "group": "9_pi-agent"
         }
       ],
-      "scm/inputBox": [
+      "scm/title": [
         {
           "command": "pi-agent.generateCommitMessage",
           "when": "scmProvider == git",

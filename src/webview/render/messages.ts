@@ -14,8 +14,6 @@
 // changed tail; that cache is the only module state here (alongside the
 // markdown renderer's block-id counter), and it is keyed by element so it
 // disappears with the node.
-import { marked } from 'marked';
-import hljs from 'highlight.js/lib/common';
 import type { FileChangeInfo, ApprovalScope, ToolCallPendingInfo, ApplyPreviewInfo, PiConfigSnapshot } from '../../shared/protocol';
 import { t } from '../../shared/i18n';
 import { isDangerousTool } from '../../shared/tool-safety';
@@ -36,62 +34,51 @@ import {
 import { el, escHtml } from '../dom';
 
 // ── Markdown rendering ──
+//
+// The marked + highlight.js engine lives in its own module (`./markdown`) so
+// the bundler can split it into a lazy chunk. `prepareMarkdown()` loads it
+// once (memoized module singleton); the sync `renderMarkdown` below uses the
+// engine whenever it is ready and falls back to plain escaped text otherwise,
+// so renderers stay synchronous. main.ts awaits `prepareMarkdown()` before the
+// first content render, which makes the fallback unreachable in production.
 
-let codeBlockId = 0;
-const renderer = new marked.Renderer();
+export interface MarkdownEngine {
+    render(text: string): string;
+    reset(): void;
+}
 
-const NON_APPLY_LANGS = new Set(['text', 'plaintext', 'plain', 'txt', '']);
+let markdownEngine: MarkdownEngine | undefined;
+let markdownEnginePromise: Promise<MarkdownEngine> | undefined;
 
-renderer.code = function ({ text, lang }: { text: string; lang?: string | undefined }) {
-    const id = `cb-${++codeBlockId}`;
-    const normalizedLang = (lang ?? '').trim().toLowerCase();
-    let highlighted: string;
-    let langLabel = lang ?? '';
-    if (normalizedLang && hljs.getLanguage(normalizedLang)) {
-        highlighted = hljs.highlight(text, { language: normalizedLang }).value;
-    } else {
-        highlighted = escHtml(text);
+/** Load and memoize the markdown engine chunk. Safe to call repeatedly. */
+export function prepareMarkdown(): Promise<MarkdownEngine> {
+    if (!markdownEnginePromise) {
+        markdownEnginePromise = import('./markdown').then((mod) => {
+            const engine: MarkdownEngine = {
+                render: (text) => mod.renderMarkdownWithEngine(text),
+                // eslint-disable-next-line @typescript-eslint/no-misused-promises
+                reset: () => mod.resetEngineCodeBlockIds(),
+            };
+            markdownEngine = engine;
+            return engine;
+        });
     }
-    const lineCount = text.split('\n').length;
-    const collapsible = lineCount > 20;
-    const applyable = !NON_APPLY_LANGS.has(normalizedLang);
-    const applyBtn = applyable
-        ? `<button class="apply-btn" data-apply-id="${id}" data-apply-lang="${escAttr(normalizedLang)}">${escHtml(t('code.apply'))}</button>`
-        : '';
-    return `<div class="code-block-wrapper${collapsible ? ' code-block-collapsed' : ''}">
-        <div class="code-block-header">${langLabel ? `<span class="code-lang">${escHtml(langLabel)}</span>` : ''}<span class="code-block-actions">${applyBtn}<button class="copy-btn" data-code-id="${id}">${escHtml(t('code.copy'))}</button></span></div>
-        <pre class="code-block-pre" id="${id}"><code class="code-block-code hljs">${highlighted}</code></pre>
-        ${collapsible ? `<button class="code-block-toggle" data-toggle-id="${id}">${escHtml(t('code.showMore'))}</button>` : ''}
-    </div>`;
-};
+    return markdownEnginePromise;
+}
 
-renderer.codespan = function ({ text }: { text: string }) {
-    return `<code>${escHtml(text)}</code>`;
-};
-
-renderer.html = function ({ text }: { text: string }) {
-    return escHtml(text);
-};
-
-renderer.link = function (this: any, { href, title, tokens }: { href: string; title?: string | null; tokens: unknown[] }) {
-    const text = this.parser?.parseInline(tokens) ?? '';
-    if (/^javascript:/i.test(href)) return text;
-    return `<a href="${escAttr(href)}"${title ? ` title="${escAttr(title)}"` : ''}>${text}</a>`;
-};
-
-marked.setOptions({
-    renderer,
-    breaks: true,
-    gfm: true,
-});
+function renderMarkdownFallback(text: string): string {
+    return `<div class="message-content-plain">${escHtml(text)}</div>`;
+}
 
 export function renderMarkdown(text: string): string {
     if (!text) return '';
-    return marked.parse(text) as string;
+    if (markdownEngine) return markdownEngine.render(text);
+    return renderMarkdownFallback(text);
 }
 
 export function resetCodeBlockIds(): void {
-    codeBlockId = 0;
+    // Per-frame code-block id reset; only the engine allocates ids.
+    markdownEngine?.reset();
 }
 
 // ── Streaming region ──

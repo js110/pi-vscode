@@ -16,6 +16,7 @@ describe('Protocol types', () => {
             { type: 'setThinkingLevel', level: 'high' },
             { type: 'newSession' },
             { type: 'getModels' },
+            { type: 'getConfig' },
             { type: 'getSessions' },
             { type: 'getState' },
             { type: 'refreshConfig' },

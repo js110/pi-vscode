@@ -11,7 +11,7 @@ import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultTex
 import { looksBinary, normalizeAttachContent, MAX_ATTACH_FILE_BYTES, type AttachFileEntry } from '../shared/attach';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
-import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText } from './render/messages';
+import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown } from './render/messages';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -593,7 +593,18 @@ function render(): void {
     scrollToBottom();
 }
 
-function updateMessages(): void {
+async function updateMessages(): Promise<void> {
+    // First call loads the markdown chunk; later calls resolve immediately.
+    // A frame that cannot load the engine falls back to plain-escaped message
+    // rendering rather than stalling the whole conversation view.
+    try {
+        await prepareMarkdown();
+    } catch (err) {
+        console.error('[pi-vscode] markdown engine failed to load:', err);
+    }
+
+    // Re-query after the await: a concurrent render() may have replaced the
+    // tree while we waited, so pre-await references can be stale.
     const container = document.getElementById('messages');
     if (!container) return;
 
@@ -626,6 +637,14 @@ function updateMessages(): void {
     bindRedoButtons();
     bindDiffButtons();
     bindToolClickable();
+
+    // The first content render happens asynchronously (after the markdown
+    // chunk resolves), so the caller's own scrollToBottom may have run against
+    // an empty container. Take the scroll here when the user hasn't claimed it.
+    if (!userHasScrolled) {
+        scrollToBottom();
+        updateScrollButton();
+    }
 }
 
 function updateTabs(): void {
@@ -1419,6 +1438,7 @@ function showNotice(message: string): void {
 // ── Model picker popup ──
 
 let pendingModelPicker = false;
+let configRequested = false;
 
 function toggleModelPicker(): void {
     const existing = document.getElementById('model-picker');
@@ -1426,6 +1446,13 @@ function toggleModelPicker(): void {
         existing.remove();
         pendingModelPicker = false;
         return;
+    }
+
+    // Config discovery (agent dir + models + skills scan) is deferred off the
+    // panel-open path; request the snapshot the first time the picker needs it.
+    if (!state.config && !configRequested) {
+        configRequested = true;
+        vscode.postMessage({ type: 'getConfig' });
     }
 
     if (state.availableModels.length === 0) {
@@ -2744,6 +2771,9 @@ function bindScrollListener(): void {
 }
 
 // ── Init ──
+// Preload the markdown engine chunk in parallel with the shell render so the
+// first content frame can highlight immediately.
+void prepareMarkdown();
 render();
 // The host pushes the full snapshot when it resolves the view, but those
 // posts race the document reload whenever VS Code re-creates the webview

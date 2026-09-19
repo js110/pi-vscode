@@ -204,4 +204,26 @@ describe('SidebarProvider webview lifecycle', () => {
             selection: { path: 'src/a.ts', startLine: 2, endLine: 3 },
         });
     });
+
+    it('skips stateSync frames identical to the last posted one', () => {
+        const tm = makeTabManager();
+        const provider = new SidebarProvider({} as any, tm, makeSelectionTracker());
+        const { view, posted } = makeWebviewView();
+        provider.resolveWebviewView(view, {} as any, {} as any);
+        const cb = tm.onStateChange.mock.calls[0][0] as () => void;
+
+        cb();
+        const shared = posted.filter((m) => m.type === 'stateSync').length;
+        // A second emission with identical content must be swallowed.
+        cb();
+        expect(posted.filter((m) => m.type === 'stateSync').length).toBe(shared);
+
+        tm.getSnapshot.mockReturnValue({
+            state: { messages: [{ role: 'assistant', content: 'diff' }], isStreaming: false, tools: [] },
+            images: undefined,
+        });
+        cb();
+        expect(posted.filter((m) => m.type === 'stateSync').length).toBe(shared + 1);
+        expect(tm.getSnapshot).toHaveBeenCalledTimes(3);
+    });
 });

@@ -65,18 +65,18 @@
 
 **API 核实（本机 VS Code 1.112.0 工作台代码 + SDK d.ts）**：
 
-- `scm/inputBox` 菜单贡献点稳定存在：workbench 源码含 `MenuId.SCMInputBox = new a("SCMInputBox")` 与 `"scm/inputBox"` 字符串（Copilot Chat 生成按钮同款入口）。
+- `scm/inputBox` 菜单贡献点属 **proposed API**（`enabledApiProposals` 才可用），发布版不允许 → 入口改用稳定菜单 `scm/title`（SCM 视图标题栏 navigation 组），生成结果仍写入 `repository.inputBox`（stable API）。
 - `ModelRuntime.completeSimple(model, context, options?): Promise<AssistantMessage>`（SDK model-runtime.d.ts:90）——单轮无工具文本生成，凭据由 runtime 内部解析（与 T2 secrets 注入同一链路），无需手动传 apiKey、无需新建 AgentSession/ResourceLoader。消息形状照抄 SDK `buildSummarizationContext`（`{role:'user', content:[{type:'text',text}], timestamp}`）。
 
 **方案**：
 
-1. **入口**（package.json contributes）：命令 `pi-agent.generateCommitMessage`（icon `$(sparkle)`）+ `menus["scm/inputBox"]` navigation 组（`when: scmProvider == git`）+ commandPalette（`when: gitOpenRepositoryCount != 0`）。重新生成 = 再次点击（SC-MSG-RGEN）。
+1. **入口**（package.json contributes）：命令 `pi-agent.generateCommitMessage`（icon `$(sparkle)`）+ `menus["scm/title"]` navigation 组（`when: scmProvider == git`）+ commandPalette（`when: gitOpenRepositoryCount != 0`）。重新生成 = 再次点击（SC-MSG-RGEN）。
 2. **diff 来源**：git 扩展 API（`vscode.extensions.getExtension('vscode.git').exports.getAPI(1)`），`repository.diff(true)`（staged）与 `repository.diff()`（unstaged）；纯函数 `pickCommitDiffSource`：staged 非空 → staged，否则 unstaged，都空 → null（无改动）。截断 `COMMIT_DIFF_MAX_CHARS = 40_000`，保头部（diff 结构信息在前）并标注省略。
 3. **纯模块** `shared/commit-message.ts`：`pickCommitDiffSource` / `truncateCommitDiff` / `buildCommitMessagePrompt`（英文 message、≤72 字符标题、祈使句、可选 body、只输出 message 本身）/ `extractCommitMessage`（去 code fence、去引导语行、trim；空输出报错）。
 4. **生成**：模型选择（`pickCommitModel`）：活跃 Tab 会话 `session.model` → VS Code `defaultModel/apiProvider` 设置（registry.find）→ `getAvailableSnapshot()[0]`；全无 → 报错。`completeSimple` maxTokens 512 + AbortSignal。
 5. **填入**：`repository.inputBox.value = message`，只填入不提交。生成中先写本地化占位并**保存原值**，失败恢复原文（防覆盖用户已写 message）；重入点击 → 提示生成中；仓库选取：与首工作区路径匹配的 repository，否则第一个。
 6. **错误分支**：无 git 扩展 / 无仓库 / 无改动 / 无可用模型 / 生成失败——各有 i18n 文案（commit.*）。provider 错误经 `stopReason` 检查透传（completeSimple 以 resolve 而非 reject 报告错误）；diff 读取失败走 error 分支而非误报 noChanges；生成挂起由 AbortSignal.timeout(120s) 兜底；失败恢复仅在输入框仍是占位符时回写（生成期间用户键入的内容优先）；生成中重复点击静默忽略。
-7. **多仓库局限**：`scm/inputBox` 按钮出现在每个仓库输入框；命令优先使用 VS Code 传入的 repository 参数（duck-type 校验），否则写与工作区路径（大小写不敏感，Windows）匹配的仓库，再退回第一个仓库。
+7. **多仓库局限**：`scm/title` 是视图级入口（不随仓库出现，命令不携带 repository 参数）；命令回退到与工作区路径（大小写不敏感，Windows）匹配的仓库，再退回第一个仓库。
 8. **数据流与隐私**：diff 全文（截断后）作为 prompt 上下文发送给所配模型 provider——新增行可能含密钥/敏感内容，与 Copilot 等同类功能语义一致；不留存、不落日志。
 
 ### 2.4 C11 后台任务面板 + 单写者呈现（T15，2026-09-16）

@@ -18,6 +18,7 @@ import { getModelRuntime } from './pi/auth';
 import { getModelRegistry, findConfiguredModel } from './pi/models';
 import { setLang, t, thinkingLevelLabel } from './shared/i18n';
 import { humanizeErrorMessage } from './shared/error-copy';
+import { setSdkProbeCacheDir } from './pi/compat';
 import { fuzzyFilterFiles, MAX_MENTION_RESULTS } from './shared/mention';
 import {
     buildSelectionPrompt,
@@ -154,6 +155,10 @@ async function resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>
 export async function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('Pi Agent');
     outputChannel.appendLine('Pi Agent extension activating...');
+
+    // Persist the SDK system-probe result under global storage so repeat
+    // launches skip `where/which pi` and `npm root -g`.
+    setSdkProbeCacheDir(context.globalStorageUri.fsPath);
 
     try {
         bridgeContext = await createBridge(context);

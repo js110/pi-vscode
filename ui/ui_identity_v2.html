@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-vscode 原型 · 卡片身份感（Identity v2）</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/shared.css">
+<style>
+/* ============================================================
+   Identity v2 —— 卡片身份感设计语言（原型评审用，非最终实现）
+   核心主张：
+   1. 统一「卡片原语」：工具/审批/任务/改动/diff/横幅 全部收敛为同一张卡片
+      （surface 背景 + hairline 边框 + 6px 圆角 + 微弱驻留阴影 + 统一内边距）
+   2. 人与对话身份：头像 + 发言人 + 轮次，用户与助手不再是匿名文字堆
+   3. 助手轮次之间用发丝线分隔，消除「一整面文字墙」
+   4. 5 套散装横幅收敛为一种 notice-bar 原语（info/warn/error 三态）
+   5. 页头 Pi 词标 + 模型/上下文合一的状态章（窄侧栏自动折叠）
+   6. 欢迎页改为建议卡片（可点击预填）
+   7. diff 行加行号槽 + ± 符号列
+   8. 身份性文字（Tab、模型、文件名、分组标题）改用平台 sans
+   颜色/字体一律引用 var(--vscode-*) / var(--proto-*)，深浅主题自动适配。
+   ============================================================ */
+
+  /* ---------- 1. 统一卡片原语（轻盈圆润版） ---------- */
+  :root { --hairline-soft: color-mix(in srgb, var(--vscode-editor-foreground) 12%, transparent); }
+  .card {
+    background: var(--vscode-editorWidget-background);
+    border: 1px solid var(--hairline-soft);
+    border-radius: 14px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.07);
+    padding: 12px 14px;
+    margin: 10px 0;
+  }
+  .card .card-head {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 600; font-size: 12px;
+    margin-bottom: 6px;
+  }
+  .card .card-head .card-tool { font-family: var(--proto-mono); font-weight: 500; }
+  .card .card-head .spacer { flex: 1; }
+  .card .card-body { font-size: 12px; line-height: 1.6; color: var(--vscode-foreground); }
+
+  /* 既有组件全部蒙版为统一卡片 */
+  .approval-card, .todo-card, .plan-card, .changed-files,
+  .diff-card, .trace-entry {
+    background: var(--vscode-editorWidget-background);
+    border: 1px solid var(--hairline-soft);
+    border-radius: 14px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.07);
+  }
+  .approval-card { border-left: 3px solid var(--vscode-charts-blue); padding: 10px 12px; }
+  .approval-card.danger { border-left-color: var(--vscode-testing-iconFailed); }
+  .todo-card .tc-head, .plan-card .pc-head { border-bottom-color: var(--hairline-soft); }
+  .changed-files summary { border-radius: inherit; }
+
+  /* ---------- 2. 对话身份：头像 + 发言人 + 轮次（更轻更圆） ---------- */
+  .msg { margin-bottom: 16px; }
+  .msg-head {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 11px; color: var(--vscode-descriptionForeground);
+    margin: 0 0 5px;
+  }
+  .msg-avatar {
+    width: 20px; height: 20px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10.5px; font-weight: 700;
+    background: var(--proto-avatar-bg);
+    box-shadow: 0 0 0 1px var(--hairline-soft);
+  }
+  .msg-avatar.user { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .msg-avatar.assistant { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .msg-name { font-weight: 600; color: var(--vscode-foreground); }
+  .msg-turn { margin-left: auto; font-size: 10px; opacity: 0.75; }
+
+  /* 用户：右侧卡片 + 头部向右对齐 */
+  .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
+  .msg.user .msg-head { flex-direction: row-reverse; }
+  .msg.user .msg-body {
+    background: var(--vscode-input-background);
+    border: 1px solid var(--hairline-soft);
+    border-radius: 16px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.07);
+    padding: 10px 14px;
+    max-width: 92%;
+    line-height: 1.6;
+  }
+
+  /* 助手：透明正文，轮次之间用发丝线分隔 */
+  .msg.assistant { position: relative; }
+  .msg.assistant + .msg.assistant { border-top: 1px solid var(--hairline-soft); padding-top: 16px; }
+  .msg.assistant .msg-body { padding: 0 2px; line-height: 1.68; }
+
+  /* ---------- 3. 页头：Pi 词标 + 状态章（轻盈） ---------- */
+  .pi-header { padding: 10px 14px; }
+  .pi-header .wordmark {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-weight: 700; font-size: 12.5px; letter-spacing: 0.2px;
+    color: var(--vscode-foreground);
+  }
+  .pi-header .wordmark .wm-glyph {
+    width: 19px; height: 19px; border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+    font-family: var(--proto-mono); font-size: 11px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  }
+  .status-chips { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+  .status-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 10px; border-radius: 12px;
+    background: color-mix(in srgb, var(--vscode-editor-foreground) 6%, transparent);
+    border: 1px solid transparent;
+    font-size: 10.5px; color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+  }
+  .status-chip:hover { background: var(--proto-hover); border-color: var(--hairline-soft); }
+  .status-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .status-chip .dot.good { background: var(--vscode-testing-iconPassed); }
+  .status-chip .dot.warn { background: var(--vscode-charts-orange); }
+
+  /* ---------- 4. Tab：活跃药丸（圆润） ---------- */
+  .tab {
+    border-radius: 10px; margin: 2px 2px 0;
+    padding: 5px 9px 5px 11px;
+    font-size: 12px;
+  }
+  .tab.active {
+    background: var(--vscode-editorWidget-background);
+    border: 1px solid var(--hairline-soft);
+    border-bottom: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+  }
+  .tab .tab-title { font-family: var(--proto-font); font-weight: 500; }
+
+  /* ---------- 5. 统一横幅原语（三态 + 可关闭，圆润轻盈） ---------- */
+  .notice-bar {
+    background: var(--vscode-editorWidget-background);
+    border: 1px solid var(--hairline-soft);
+    border-left: 3px solid var(--proto-border-strong);
+    border-radius: 12px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.06);
+    padding: 11px 14px; margin: 10px 0;
+  }
+  .notice-bar.info { border-left-color: var(--vscode-charts-blue); }
+  .notice-bar.warn { border-left-color: var(--vscode-charts-orange); }
+  .notice-bar.error { border-left-color: var(--vscode-errorForeground); background: var(--proto-error-bg); }
+  .notice-bar.outband { background: var(--proto-info-bg); }
+  .notice-bar .nb-icon { color: var(--vscode-descriptionForeground); }
+  .notice-bar.info .nb-icon { color: var(--vscode-charts-blue); }
+  .notice-bar.warn .nb-icon { color: var(--vscode-charts-orange); }
+  .notice-bar.error .nb-icon { color: var(--vscode-errorForeground); }
+  .notice-bar .nb-dismiss { margin-left: 4px; font-size: 12px; opacity: 0.6; cursor: pointer; border: none; background: none; color: var(--vscode-foreground); }
+  .notice-bar .nb-dismiss:hover { opacity: 1; }
+
+  /* ---------- 6. 欢迎页：建议卡片（圆润轻盈） ---------- */
+  .welcome { padding: 28px 18px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .welcome .w-glyph {
+    width: 46px; height: 46px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+    font-family: var(--proto-mono); font-size: 24px; font-weight: 700;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  }
+  .welcome h1 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .welcome .w-sub { font-size: 12px; color: var(--vscode-descriptionForeground); margin-bottom: 20px; line-height: 1.6; }
+  .suggest-grid { width: 100%; display: grid; grid-template-columns: 1fr; gap: 10px; text-align: left; }
+  .suggest-grid.wide { grid-template-columns: 1fr 1fr; }
+  .suggest-card {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 14px;
+    background: var(--vscode-editorWidget-background);
+    border: 1px solid var(--hairline-soft);
+    border-radius: 14px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.06);
+    cursor: pointer;
+  }
+  .suggest-card:hover { background: var(--proto-hover); border-color: var(--proto-border-strong); }
+  .suggest-card .sc-ic {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--proto-info-bg); color: var(--vscode-charts-blue);
+    font-size: 14px;
+  }
+  .suggest-card .sc-title { font-weight: 600; font-size: 12px; margin-bottom: 3px; }
+  .suggest-card .sc-desc { font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.55; }
+  .welcome .w-hint { margin-top: 16px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+
+  /* ---------- 7. diff 行号槽 + ± 符号列 ---------- */
+  .diff-line { display: flex; padding: 0; }
+  .diff-line .ln-no {
+    width: 26px; text-align: right; margin-right: 0; padding-right: 8px;
+    border-right: 1px solid var(--hairline-soft);
+    color: var(--vscode-disabledForeground); flex-shrink: 0; user-select: none;
+  }
+  .diff-line .sign { width: 14px; flex-shrink: 0; text-align: center; margin-right: 6px; }
+  .diff-line .code { flex: 1; padding: 0 10px 0 0; }
+
+  /* ---------- 8. 身份性文字用 sans ---------- */
+  .footer-model, .status-chip, .group-label, .diff-card .cf-name,
+  .pi-header .title, .ac-title { font-family: var(--proto-font); }
+
+  /* ---------- 9. 输入区：更高更圆（多行安全感） ---------- */
+  .input-area {
+    border-top: 1px solid var(--hairline-soft);
+    padding: 10px 12px 8px;
+  }
+  .input-box {
+    align-items: center;
+    padding: 8px 8px 8px 12px;
+    border-radius: 14px;
+    border-color: var(--hairline-soft);
+  }
+  .input-box:focus-within { border-color: var(--vscode-focusBorder); box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .input-box textarea {
+    flex: 1;
+    min-height: 40px; max-height: 140px;
+    font-size: 13px; line-height: 1.55;
+  }
+  /* 进框的模型选择器：轻量文字 + 右侧发丝分隔，不抢视觉 */
+  .input-box .footer-model {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px;
+    font-family: var(--proto-font); font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+    background: transparent; border: none; border-radius: 6px;
+    padding: 3px 8px 3px 4px; margin-right: 4px;
+    max-width: 108px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border-right: 1px solid var(--hairline-soft);
+    cursor: pointer;
+  }
+  .input-box .footer-model:hover { color: var(--vscode-foreground); background: var(--proto-hover); }
+  /* 工具按钮：同尺寸紧凑排布，安静到 hover 才亮 */
+  .input-box .input-tools { gap: 0; flex-shrink: 0; }
+  .input-box .input-tools .icon-btn { width: 26px; height: 26px; opacity: 0.78; }
+  .input-box .input-tools .icon-btn:hover { opacity: 1; }
+  /* 进框的发送按钮 */
+  .input-box .send-btn { width: 28px; height: 28px; border-radius: 9px; margin-left: 4px; flex-shrink: 0; }
+
+  /* ---------- 窄侧栏（300px 自适应） ---------- */
+  @media (max-width: 340px) {
+    .msg.user .msg-body { max-width: 100%; }
+    .context-chips { flex-direction: column; align-items: flex-start; }
+    .suggest-grid.wide { grid-template-columns: 1fr; }
+    .pi-header .status-chips .status-chip .chip-copy { display: none; }
+    .profile-note { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="proto-stage">
+  <!-- ==================== 模拟编辑器 ==================== -->
+  <div class="proto-editor-mock" aria-hidden="true">
+    <div><span class="ln">1</span><span class="tok-k">import</span> { authClient } <span class="tok-k">from</span> <span class="tok-s">"./client"</span>;</div>
+    <div><span class="ln">2</span><span class="tok-k">import</span> <span class="tok-k">type</span> { <span class="tok-t">Session</span> } <span class="tok-k">from</span> <span class="tok-s">"./types"</span>;</div>
+    <div><span class="ln">3</span></div>
+    <div><span class="ln">4</span><span class="tok-c">// TODO(#412): 登录接口偶发 401 超时</span></div>
+    <div><span class="ln">5</span><span class="tok-k">export</span> <span class="tok-k">async</span> <span class="tok-k">function</span> <span class="tok-f">login</span>(<span class="tok-v">user</span>: <span class="tok-t">string</span>, <span class="tok-v">pass</span>: <span class="tok-t">string</span>) {</div>
+    <div><span class="ln">6</span>&nbsp;&nbsp;<span class="tok-k">const</span> <span class="tok-v">res</span> = <span class="tok-k">await</span> authClient.<span class="tok-f">post</span>(<span class="tok-s">"/auth/login"</span>, {</div>
+    <div><span class="ln">7</span>&nbsp;&nbsp;&nbsp;&nbsp;user,</div>
+    <div><span class="ln">8</span>&nbsp;&nbsp;&nbsp;&nbsp;pass,</div>
+    <div><span class="ln">9</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="sel">timeout: <span class="tok-n">1500</span>,</span></div>
+    <div><span class="ln">10</span>&nbsp;&nbsp;});</div>
+    <div><span class="ln">11</span>&nbsp;&nbsp;<span class="tok-k">if</span> (!res.data.token) <span class="tok-k">throw</span> <span class="tok-k">new</span> <span class="tok-f">Error</span>(<span class="tok-s">"no token"</span>);</div>
+    <div><span class="ln">12</span>&nbsp;&nbsp;<span class="tok-k">return</span> <span class="tok-f">createSession</span>(res.data);</div>
+    <div><span class="ln">13</span>}</div>
+  </div>
+
+  <!-- ==================== 面板 A：对话主界面（460px，身份语言） ==================== -->
+  <div class="pi-panel" style="width:460px;min-width:460px;">
+
+    <div class="pi-header">
+      <div class="wordmark">
+        <span class="wm-glyph">π</span>
+        <span data-i18n="wm.title" style="flex:1">Pi Agent</span>
+      </div>
+      <div class="status-chips">
+        <span class="status-chip" title="配置正常">
+          <span class="dot good"></span><span class="chip-copy" data-i18n="chip.config">配置就绪</span>
+        </span>
+        <button class="icon-btn" title="新建 Tab" aria-label="新建 Tab">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+        </button>
+        <button class="icon-btn" title="会话历史" aria-label="会话历史">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+        </button>
+        <button class="icon-btn" title="设置" aria-label="设置">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2M3.4 3.4l1.55 1.55M11.05 11.05l1.55 1.55M12.6 3.4l-1.55 1.55M4.95 11.05L3.4 12.6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="tab-strip">
+      <div class="tab active">
+        <span class="tab-status"><span class="tab-spinner" aria-hidden="true"></span></span>
+        <span class="tab-title" data-i18n="tab.fixLogin">修复登录超时</span>
+        <span class="tab-close">✕</span>
+      </div>
+      <div class="tab">
+        <span class="tab-status aborted" title="已中断">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"/></svg>
+        </span>
+        <span class="tab-title" data-i18n="tab.termErr">终端报错排查</span>
+        <span class="tab-close">✕</span>
+      </div>
+      <div class="tab">
+        <span class="tab-title" data-i18n="tab.parser">重构 parser</span>
+        <span class="tab-close">✕</span>
+      </div>
+    </div>
+
+    <div class="messages">
+
+      <!-- 用户消息：头像 + 名字 + 轮次 + 卡片正文 -->
+      <div class="msg user">
+        <div class="msg-head">
+          <span class="msg-avatar user">我</span>
+          <span class="msg-name" data-i18n="user.name">我</span>
+          <span class="msg-turn" data-i18n="user.turn">Turn 12</span>
+        </div>
+        <div class="msg-body">
+          <span data-i18n="user.text1">登录接口偶发 401 超时，帮我排查一下：</span>
+          <span class="mention-chip"><span class="chip-icon">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg>
+          </span>@src/auth.ts</span>
+          <div data-i18n="user.text2">附上控制台报错截图，超时点和调用栈都在里面。</div>
+        </div>
+      </div>
+
+      <!-- 助手消息：头像 + 名字 -->
+      <div class="msg assistant">
+        <div class="msg-head">
+          <span class="msg-avatar assistant">P</span>
+          <span class="msg-name">Pi</span>
+          <span class="msg-turn">Turn 12</span>
+        </div>
+        <div class="msg-body" data-i18n="ai.diag">已读取 src/auth.ts 与 src/middleware/session.ts。诊断：token 过期后未自动刷新，落在过期边界的请求被网关以 401 拒绝，叠加 1500ms 过短超时。修复方案如下。</div>
+      </div>
+
+      <!-- 助手轮次二（发丝线分隔 + 统一工具卡） -->
+      <div class="msg assistant">
+        <div class="msg-head">
+          <span class="msg-avatar assistant">P</span>
+          <span class="msg-name">Pi</span>
+        </div>
+        <div class="msg-body">
+          <div class="card">
+            <div class="card-head">
+              <span class="card-tool">read_file</span>
+              <span class="badge auto" data-i18n="trace.badge">记忆放行</span>
+              <span class="spacer"></span>
+              <span class="stat-add">×2</span>
+            </div>
+            <div class="card-body">src/middleware/session.ts · src/auth/types.ts</div>
+          </div>
+          <div data-i18n="ai.plan">修改两处：login() 提到 8s 超时并加重试；session 中间件在过期边界主动刷新。改动如下。</div>
+
+          <div class="codeblock" id="fix-codeblock">
+            <div class="codeblock-head">
+              <span class="lang">typescript</span>
+              <span class="spacer"></span>
+              <button class="cb-btn" data-i18n="cb.copy">复制</button>
+              <button class="cb-btn primary" data-i18n="cb.apply">Apply</button>
+            </div>
+            <pre><span class="tok-k">export</span> <span class="tok-k">async</span> <span class="tok-k">function</span> <span class="tok-f">login</span>(<span class="tok-v">user</span>: <span class="tok-t">string</span>, <span class="tok-v">pass</span>: <span class="tok-t">string</span>) {
+  <span class="tok-c">// 401 抖动：8s 超时 + 指数退避重试（最多 2 次）</span>
+  <span class="tok-k">for</span> (<span class="tok-k">let</span> <span class="tok-v">attempt</span> = <span class="tok-n">0</span>; <span class="tok-v">attempt</span> &lt; <span class="tok-n">2</span>; <span class="tok-v">attempt</span>++) {
+    <span class="tok-k">try</span> { <span class="tok-k">return</span> <span class="tok-k">await</span> authClient.<span class="tok-f">post</span>(<span class="tok-s">"/auth/login"</span>, { user, pass }, { timeout: <span class="tok-n">8000</span> }); }
+    <span class="tok-k">catch</span> (<span class="tok-v">err</span>) { <span class="tok-k">if</span> (!<span class="tok-f">isTransient</span>(err)) <span class="tok-k">throw</span> err; <span class="tok-k">await</span> <span class="tok-f">sleep</span>(<span class="tok-n">200</span> * <span class="tok-n">2</span> ** attempt); }
+  }
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 助手轮次三：改动文件卡（统一卡片 + diff 行号槽） -->
+      <div class="msg assistant">
+        <div class="msg-head">
+          <span class="msg-avatar assistant">P</span>
+          <span class="msg-name">Pi</span>
+          <span class="msg-turn">Turn 12</span>
+        </div>
+        <div class="msg-body">
+          <div class="changed-files" open>
+            <summary>
+              <span>▸</span>
+              <span data-i18n="cf.summary">3 个文件已更改 · Turn 12</span>
+            </summary>
+            <div class="cf-item" title="打开 diff">
+              <span class="cf-name">src/auth.ts</span>
+              <span class="stat-add">+18</span>
+              <span class="stat-del">-6</span>
+            </div>
+            <div class="cf-item" title="打开 diff">
+              <span class="cf-name">src/middleware/session.ts</span>
+              <span class="stat-add">+7</span>
+              <span class="stat-del">-3</span>
+            </div>
+          </div>
+          <div class="diff-view">
+            <div class="diff-line del"><span class="ln-no">44</span><span class="sign">−</span><span class="code">timeout: <span class="tok-n">1500</span>,</span></div>
+            <div class="diff-line add"><span class="ln-no">44</span><span class="sign">+</span><span class="code">timeout: <span class="tok-n">8000</span>,</span></div>
+            <div class="diff-line add"><span class="ln-no">45</span><span class="sign">+</span><span class="code"><span class="tok-k">catch</span> (<span class="tok-v">err</span>) { <span class="tok-k">await</span> <span class="tok-f">retry</span>(err); }</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 统一横幅：警告（压缩） -->
+      <div class="notice-bar warn">
+        <span class="nb-icon">⚠</span>
+        <div class="nb-body">
+          <span class="nb-title" data-i18n="nb.title">上下文接近上限（82%）</span>
+          <div data-i18n="nb.body">确认后将执行 Pi 原生压缩；未发送队列与最近 2 轮完整上下文不会丢失。</div>
+          <div class="nb-actions">
+            <button class="btn primary" data-i18n="nb.compact">压缩</button>
+            <button class="btn" data-i18n="nb.later">暂不</button>
+          </div>
+        </div>
+        <button class="nb-dismiss" aria-label="关闭">✕</button>
+      </div>
+
+      <!-- 统一横幅：信息（入队说明，页外态） -->
+      <div class="notice-bar info">
+        <span class="nb-icon">ⓘ</span>
+        <div class="nb-body" data-i18n="queue.demo">Pi 正在流式生成：新消息将入队，本轮结束后依序发送；Steer 可打断并转向。</div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="context-chips">
+        <span class="mention-chip"><span class="chip-icon">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg>
+        </span>@src/auth.ts</span>
+        <span class="mention-chip"><span class="chip-icon">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13"/></svg>
+        </span>@src/middleware/session.ts</span>
+      </div>
+      <div class="input-box">
+        <button class="footer-model" title="模型选择器">deepseek-chat <span class="caret">▾</span></button>
+        <textarea rows="1" data-i18n-ph="ph.input" placeholder="描述任务，@ 引用文件/符号，/ 调用技能…"></textarea>
+        <div class="input-tools">
+          <button class="icon-btn" title="添加文件" aria-label="添加文件">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 5.15 4.65 10.8a3 3 0 1 0 4.24 4.24l4.42-4.42a4.4 4.4 0 0 0-6.22-6.22L2.9 8.85a6.1 6.1 0 0 0 8.63 8.63l4.97-4.97"/></svg>
+          </button>
+          <button class="icon-btn" title="@ 引用" aria-label="@ 引用" style="font-weight:600">@</button>
+          <button class="icon-btn" title="技能菜单" aria-label="技能菜单" style="font-weight:600">/</button>
+          <button class="send-btn queue" title="发送（入队）" aria-label="发送（入队）">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="input-footer">
+        <span class="ctx-pct warn" title="上下文用量">54K / 128K · 82%</span>
+        <span class="spacer"></span>
+        <button class="btn" data-i18n="btn.steer">Steer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 面板 B：窄侧栏对话（300px 自适应） ==================== -->
+  <div class="pi-panel" style="width:300px;min-width:300px;border-left:1px solid var(--hairline-soft);">
+
+    <div class="pi-header">
+      <div class="wordmark">
+        <span class="wm-glyph">π</span>
+        <span style="flex:1">Pi</span>
+      </div>
+      <div class="status-chips">
+        <span class="status-chip" title="配置正常"><span class="dot good"></span></span>
+        <button class="icon-btn" title="新建 Tab" aria-label="新建 Tab">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+        </button>
+        <button class="icon-btn" title="设置" aria-label="设置">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2M3.4 3.4l1.55 1.55M11.05 11.05l1.55 1.55M12.6 3.4l-1.55 1.55M4.95 11.05L3.4 12.6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="tab-strip">
+      <div class="tab active">
+        <span class="tab-status"><span class="tab-spinner" aria-hidden="true"></span></span>
+        <span class="tab-title">修复登录超时</span>
+        <span class="tab-close">✕</span>
+      </div>
+    </div>
+
+    <div class="messages">
+      <div class="msg user">
+        <div class="msg-head">
+          <span class="msg-avatar user">我</span>
+          <span class="msg-name">我</span>
+          <span class="msg-turn">T12</span>
+        </div>
+        <div class="msg-body" data-i18n="user.text1">登录接口偶发 401 超时，帮我排查一下：</div>
+      </div>
+      <div class="msg assistant">
+        <div class="msg-head">
+          <span class="msg-avatar assistant">P</span>
+          <span class="msg-name">Pi</span>
+        </div>
+        <div class="msg-body" data-i18n="ai.diag">已读取 src/auth.ts。诊断：token 过期后未刷新，落在过期边界的请求被网关 401 拒绝。</div>
+      </div>
+      <div class="msg assistant">
+        <div class="msg-head">
+          <span class="msg-avatar assistant">P</span>
+          <span class="msg-name">Pi</span>
+        </div>
+        <div class="msg-body">
+          <div class="card">
+            <div class="card-head">
+              <span class="card-tool">edit_file</span>
+              <span class="badge auto" data-i18n="trace.badge">记忆放行</span>
+              <span class="spacer"></span>
+            </div>
+            <div class="card-body">src/auth.ts（+18 / -6）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-box">
+        <button class="footer-model" title="模型选择器" style="max-width:92px;">deepseek-chat ▾</button>
+        <textarea rows="1" data-i18n-ph="ph.input" placeholder="描述任务…"></textarea>
+        <div class="input-tools">
+          <button class="icon-btn" title="添加文件" aria-label="添加文件">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 5.15 4.65 10.8a3 3 0 1 0 4.24 4.24l4.42-4.42a4.4 4.4 0 0 0-6.22-6.22L2.9 8.85a6.1 6.1 0 0 0 8.63 8.63l4.97-4.97"/></svg>
+          </button>
+          <button class="icon-btn" title="@ 引用" style="font-weight:600">@</button>
+          <button class="send-btn" aria-label="发送">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="input-footer">
+        <span class="spacer"></span>
+        <span class="ctx-pct warn">82%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 面板 C：欢迎页（300px，建议卡片） ==================== -->
+  <div class="pi-panel" style="width:300px;min-width:300px;border-left:1px solid var(--hairline-soft);">
+
+    <div class="pi-header">
+      <div class="wordmark">
+        <span class="wm-glyph">π</span>
+        <span style="flex:1" data-i18n="wm.title2">Pi Agent</span>
+      </div>
+      <div class="status-chips">
+        <span class="status-chip" title="配置正常"><span class="dot good"></span></span>
+        <button class="icon-btn" title="设置" aria-label="设置">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2M3.4 3.4l1.55 1.55M11.05 11.05l1.55 1.55M12.6 3.4l-1.55 1.55M4.95 11.05L3.4 12.6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="welcome" style="flex:1;overflow-y:auto;">
+      <div class="w-glyph">π</div>
+      <h1 data-i18n="wel.title">和 Pi 聊聊你的代码库</h1>
+      <div class="w-sub" data-i18n="wel.sub">选中代码发送到面板，或直接描述任务。开始前建议看看可以做什么：</div>
+      <div class="suggest-grid">
+        <div class="suggest-card">
+          <span class="sc-ic">🐞</span>
+          <div>
+            <div class="sc-title" data-i18n="sug1.t">调试报错</div>
+            <div class="sc-desc" data-i18n="sug1.d">把终端报错或异常堆栈发给我，我帮你定位根因并给出修复。</div>
+          </div>
+        </div>
+        <div class="suggest-card">
+          <span class="sc-ic">📝</span>
+          <div>
+            <div class="sc-title" data-i18n="sug2.t">审阅改动</div>
+            <div class="sc-desc" data-i18n="sug2.d">选中工作区里的未提交改动，生成逐文件评审与改进建议。</div>
+          </div>
+        </div>
+        <div class="suggest-card">
+          <span class="sc-ic">🧩</span>
+          <div>
+            <div class="sc-title" data-i18n="sug3.t">重构代码</div>
+            <div class="sc-desc" data-i18n="sug3.d">描述想拆解或抽取的模块，我来给出重构方案与前后对比。</div>
+          </div>
+        </div>
+        <div class="suggest-card">
+          <span class="sc-ic">✍️</span>
+          <div>
+            <div class="sc-title" data-i18n="sug4.t">解释选区</div>
+            <div class="sc-desc" data-i18n="sug4.d">在编辑器选中一段代码，发送后我会逐行讲解其行为。</div>
+          </div>
+        </div>
+      </div>
+      <div class="w-hint">
+        <kbd>/</kbd> 技能 · <kbd>@</kbd> 引用 · <kbd>Ctrl</kbd>+<kbd>L</kbd> 聚焦
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-box">
+        <button class="footer-model" title="模型选择器" style="max-width:92px;">deepseek-chat ▾</button>
+        <textarea rows="1" data-i18n-ph="ph.input" placeholder="描述任务…"></textarea>
+        <div class="input-tools">
+          <button class="icon-btn" title="添加文件" aria-label="添加文件">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 5.15 4.65 10.8a3 3 0 1 0 4.24 4.24l4.42-4.42a4.4 4.4 0 0 0-6.22-6.22L2.9 8.85a6.1 6.1 0 0 0 8.63 8.63l4.97-4.97"/></svg>
+          </button>
+          <button class="icon-btn" title="@ 引用" style="font-weight:600">@</button>
+          <button class="send-btn" aria-label="发送">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 原型标注 -->
+<div class="proto-note" data-i18n="note.label">卡片身份感（Identity v2）— 面板A=对话主界面 460px / 面板B=窄侧栏 300px / 面板C=欢迎页建议卡。右上角可切深/浅主题。</div>
+
+<script>
+window.PI_PAGE = {
+  zh: {
+    "wm.title": "Pi Agent",
+    "wm.title2": "Pi Agent",
+    "chip.config": "配置就绪",
+    "tab.fixLogin": "修复登录超时",
+    "tab.termErr": "终端报错排查",
+    "tab.parser": "重构 parser",
+    "user.name": "我",
+    "user.turn": "Turn 12",
+    "user.text1": "登录接口偶发 401 超时，帮我排查一下：",
+    "user.text2": "附上控制台报错截图，超时点和调用栈都在里面。",
+    "ai.diag": "已读取 src/auth.ts 与 src/middleware/session.ts。诊断：token 过期后未自动刷新，落在过期边界的请求被网关以 401 拒绝，叠加 1500ms 过短超时。修复方案如下。",
+    "ai.plan": "修改两处：login() 提到 8s 超时并加重试；session 中间件在过期边界主动刷新。改动如下。",
+    "trace.badge": "记忆放行",
+    "cb.copy": "复制",
+    "cb.apply": "Apply",
+    "ac.title": "工具审批 · edit_file",
+    "ac.badge": "写文件",
+    "ac.once": "允许一次",
+    "ac.remember": "允许并记住 ▾",
+    "ac.deny": "拒绝",
+    "cf.summary": "3 个文件已更改 · Turn 12",
+    "nb.title": "上下文接近上限（82%）",
+    "nb.body": "确认后将执行 Pi 原生压缩；未发送队列与最近 2 轮完整上下文不会丢失。",
+    "nb.compact": "压缩",
+    "nb.later": "暂不",
+    "queue.demo": "Pi 正在流式生成：新消息将入队，本轮结束后依序发送；Steer 可打断并转向。",
+    "btn.steer": "Steer",
+    "ph.input": "描述任务，@ 引用文件/符号，/ 调用技能…",
+    "wel.title": "和 Pi 聊聊你的代码库",
+    "wel.sub": "选中代码发送到面板，或直接描述任务。可以试试这些：",
+    "sug1.t": "调试报错",
+    "sug1.d": "把终端报错或异常堆栈发给我，我帮你定位根因并给出修复。",
+    "sug2.t": "审阅改动",
+    "sug2.d": "选中工作区里的未提交改动，生成逐文件评审与改进建议。",
+    "sug3.t": "重构代码",
+    "sug3.d": "描述想拆解或抽取的模块，我来给出重构方案与前后对比。",
+    "sug4.t": "解释选区",
+    "sug4.d": "在编辑器选中一段代码，发送后我会逐行讲解其行为。",
+    "note.label": "卡片身份感（Identity v2）— 面板A=对话主界面 460px / 面板B=窄侧栏 300px / 面板C=欢迎页建议卡。右上角可切深/浅主题。"
+  },
+  en: {
+    "wm.title": "Pi Agent",
+    "wm.title2": "Pi Agent",
+    "chip.config": "Ready",
+    "tab.fixLogin": "Fix login timeout",
+    "tab.termErr": "Terminal error triage",
+    "tab.parser": "Refactor parser",
+    "user.name": "Me",
+    "user.turn": "Turn 12",
+    "user.text1": "The login endpoint intermittently fails with 401 timeouts, please investigate:",
+    "user.text2": "Attached is the console error screenshot with the timeout point and call stack.",
+    "ai.diag": "Read src/auth.ts and src/middleware/session.ts. Diagnosis: tokens are not refreshed after expiry, so requests at the expiry boundary are rejected with 401, compounded by the 1500ms timeout. Fix below.",
+    "ai.plan": "Two edits: raise login() timeout to 8s with retry; refresh session in middleware at the expiry boundary.",
+    "trace.badge": "Memory auto-allow",
+    "cb.copy": "Copy",
+    "cb.apply": "Apply",
+    "ac.title": "Tool approval · edit_file",
+    "ac.badge": "Write file",
+    "ac.once": "Allow once",
+    "ac.remember": "Allow & remember ▾",
+    "ac.deny": "Deny",
+    "cf.summary": "3 files changed · Turn 12",
+    "nb.title": "Context nearing limit (82%)",
+    "nb.body": "Confirming runs Pi native compaction; queued messages and the last 2 turns are preserved.",
+    "nb.compact": "Compact",
+    "nb.later": "Not now",
+    "queue.demo": "Pi is streaming: new messages are queued and sent in order after this turn; Steer interrupts and redirects.",
+    "btn.steer": "Steer",
+    "ph.input": "Describe a task; @ to reference files/symbols, / for skills…",
+    "wel.title": "Chat with Pi about your codebase",
+    "wel.sub": "Select code to send to the panel, or just describe a task. Try:",
+    "sug1.t": "Debug an error",
+    "sug1.d": "Paste terminal errors or a stack trace and I’ll root-cause it and propose a fix.",
+    "sug2.t": "Review changes",
+    "sug2.d": "Review uncommitted workspace changes file-by-file with suggestions.",
+    "sug3.t": "Refactor code",
+    "sug3.d": "Describe a module to extract or split; I’ll draft the refactor with before/after.",
+    "sug4.t": "Explain selection",
+    "sug4.d": "Select code in the editor and I’ll walk through its behavior line by line.",
+    "note.label": "Card identity (Identity v2) — Panel A=chat 460px / Panel B=narrow 300px / Panel C=welcome suggestions. Toggle theme top-right."
+  }
+};
+</script>
+<script src="assets/shared.js"></script>
+</body>
+</html>

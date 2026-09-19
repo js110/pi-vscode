@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { el, escHtml } from '../../../webview/dom';
 import {
     renderMarkdown,
+    prepareMarkdown,
     buildWelcome,
     buildThinkingBlock,
     buildDiffCard,
@@ -31,6 +32,13 @@ function toolCtx(overrides: Record<string, any> = {}) {
         ...overrides,
     };
 }
+
+beforeAll(async () => {
+    // renderMarkdown is synchronous; it needs the lazily-loaded markdown
+    // chunk resolved first so hljs/marked behavior is asserted, not the
+    // plain-escaped fallback.
+    await prepareMarkdown();
+});
 
 function baseRenderState(overrides: Record<string, any> = {}) {
     return {

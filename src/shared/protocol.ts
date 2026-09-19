@@ -156,6 +156,9 @@ export type ClientMessage =
     | { type: 'followUp'; text: string }
     | { type: 'abort' }
     | { type: 'getModels' }
+    /** Lazily ask the host to run Pi config discovery (model picker banner).
+     *  Discovery is deferred off the panel-open path. */
+    | { type: 'getConfig' }
     | { type: 'setModel'; provider: string; modelId: string }
     | { type: 'setThinkingLevel'; level: string }
     | { type: 'newSession' }

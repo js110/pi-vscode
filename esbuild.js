@@ -31,8 +31,8 @@ const extensionConfig = {
     format: 'cjs',
     platform: 'node',
     target: 'node22',
-    sourcemap: true,
-    minify: false,
+    sourcemap: isWatch,
+    minify: !isWatch,
     plugins: [importMetaPlugin],
     banner: {
         js: [
@@ -48,12 +48,15 @@ const extensionConfig = {
 const webviewConfig = {
     entryPoints: ['src/webview/main.ts'],
     bundle: true,
-    outfile: 'out/webview/main.js',
-    format: 'iife',
+    outdir: 'out/webview',
+    entryNames: '[name]',
+    chunkNames: '[name]-[hash]',
+    format: 'esm',
+    splitting: true,
     platform: 'browser',
     target: 'es2022',
-    sourcemap: true,
-    minify: false,
+    sourcemap: isWatch,
+    minify: !isWatch,
 };
 
 const settingsWebviewConfig = {
@@ -63,8 +66,8 @@ const settingsWebviewConfig = {
     format: 'iife',
     platform: 'browser',
     target: 'es2022',
-    sourcemap: true,
-    minify: false,
+    sourcemap: isWatch,
+    minify: !isWatch,
 };
 
 async function copyStyles() {

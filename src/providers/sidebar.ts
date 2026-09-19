@@ -12,6 +12,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private _extensionUri: vscode.Uri;
     private _tabManager: TabManager;
 
+    /** JSON of the last posted stateSync frame; repeated identical snapshots
+     *  (several emissions per agent event) are skipped so the webview doesn't
+     *  rebuild the message tree for nothing. Ordering of genuinely different
+     *  frames is preserved. */
+    private _lastSyncPayload = '';
+
     constructor(
         extensionUri: vscode.Uri,
         tabManager: TabManager,
@@ -21,6 +27,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this._tabManager = tabManager;
         tabManager.onStateChange(() => {
             const { state, images } = this._tabManager.getSnapshot();
+            const payload = JSON.stringify({ state, images });
+            if (payload === this._lastSyncPayload) return;
+            this._lastSyncPayload = payload;
             this.post({ type: 'stateSync', state, images });
         });
     }
@@ -61,7 +70,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             if (this._view !== webviewView) return;
             const { state, images } = this._tabManager.getSnapshot(true);
             this.post({ type: 'stateSync', state, images });
-            void this._tabManager.postConfigSnapshot();
         }, (err: unknown) => {
             if (this._view !== webviewView) return;
             const message = err instanceof Error ? err.message : String(err);
@@ -77,6 +85,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         try {
             if (msg.type === 'dismissSelection') {
                 this._selectionTracker?.dismiss();
+                return;
+            }
+            // Config discovery is deferred off the panel-open path; the
+            // webview asks for it the first time the model picker needs the
+            // config banner.
+            if (msg.type === 'getConfig') {
+                await this._tabManager.postConfigSnapshot();
                 return;
             }
             // Copilot-style auto-attach: a plain text prompt rides the active
@@ -152,13 +167,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}';">
+          content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' ${webview.cspSource};">
     <link rel="stylesheet" href="${styleUri}">
     <title>Pi Agent</title>
 </head>
 <body>
     <div id="app"></div>
-    <script nonce="${nonce}" src="${scriptUri}"></script>
+    <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
     }

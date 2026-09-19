@@ -139,8 +139,9 @@ export class CommitMessageManager {
     }
 
     private _pickRepository(gitApi: CommitGitApi, target?: unknown): CommitGitRepository | undefined {
-        // The scm/inputBox menu may hand us the repository it belongs to;
-        // duck-type rather than trust the shape blindly.
+        // A menu invocation may hand us its source-control context; accept it
+        // only when it really looks like a repository, else fall back to the
+        // workspace-matching repository (scm/title does not pass one).
         const candidate = target as CommitGitRepository | undefined;
         if (candidate
             && typeof candidate === 'object'
