@@ -106,10 +106,12 @@ describe('renderMarkdown', () => {
 });
 
 describe('buildWelcome', () => {
-    it('builds a welcome panel with title', () => {
+    it('builds a welcome panel with headline + suggestion items', () => {
         const node = buildWelcome();
         expect(node.className).toContain('welcome');
-        expect(node.querySelector('.welcome-title')?.textContent).toBe('Pi Agent');
+        expect(node.querySelector('.welcome-title')?.textContent).toBe('Chat with Pi about your codebase');
+        const items = node.querySelectorAll('.wi[data-suggestion]');
+        expect(items.length).toBe(4);
     });
 });
 

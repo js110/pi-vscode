@@ -15,16 +15,37 @@ export type { Lang };
 const EN = {
     // Welcome
     'welcome.title': 'Pi Agent',
+    'welcome.headline': 'Chat with Pi about your codebase',
     'welcome.subtitle': 'Pi reads, writes, and runs code in this workspace. Tell it what to build and it will show its work as it goes.',
     'welcome.hint': 'Type <kbd>/</kbd> for commands and skills',
+    'welcome.hintShort': '<kbd>/</kbd> skills&nbsp;&nbsp;<kbd>@</kbd> mention&nbsp;&nbsp;<kbd>Ctrl</kbd>+<kbd>L</kbd> focus',
+    'welcome.sug1.title': 'Debug an error',
+    'welcome.sug1.desc': 'Paste an error or stack trace and I’ll root-cause it',
+    'welcome.sug1.prompt': 'Debug this error — here is the message and where it appears:',
+    'welcome.sug2.title': 'Review changes',
+    'welcome.sug2.desc': 'Review the uncommitted workspace changes file-by-file',
+    'welcome.sug2.prompt': 'Review my uncommitted changes',
+    'welcome.sug3.title': 'Refactor code',
+    'welcome.sug3.desc': 'Split or extract a module, show before/after',
+    'welcome.sug3.prompt': 'Refactor the code in',
+    'welcome.sug4.title': 'Explain selection',
+    'welcome.sug4.desc': 'Select a piece of code and walk through it line by line',
+    'welcome.sug4.prompt': 'Explain the selected code',
 
     // Header / tabs
+    'header.ready': 'Ready',
+    'header.readyTitle': 'Pi config detected — {providers} provider(s), {models} model(s)',
     'header.newAgent': 'New Agent',
     'header.sessions': 'Sessions',
     'header.settings': 'Settings',
     'header.closeTab': 'Close tab',
     'header.renameSession': 'Rename session',
     'header.scrollToBottom': 'Scroll to bottom',
+
+    // Turn chrome (rail π markers)
+    'msg.pi': 'Pi',
+    'msg.me': 'Me',
+    'msg.turn': 'Turn {n}',
 
     // Composer
     'input.ask': 'Ask Pi anything... (type / for commands)',
@@ -116,6 +137,9 @@ const EN = {
     'config.modelCountMany': '{n} models',
     'config.skillCountOne': '{n} skill',
     'config.skillCountMany': '{n} skills',
+    'config.notFoundShort': 'No config',
+    'config.partialShort': 'Partial',
+    'config.discovering': 'Discovering config…',
 
     // Model picker
     'models.search': 'Search models...',
@@ -334,15 +358,36 @@ export const TEXT_KEYS: TextKey[] = Object.keys(EN) as TextKey[];
 
 const ZH: Record<TextKey, string> = {
     'welcome.title': 'Pi Agent',
+    'welcome.headline': '和 Pi 聊聊你的代码库',
     'welcome.subtitle': 'Pi 在这个工作区里读代码、写代码、跑代码。告诉它你想构建什么，它会边做边展示过程。',
     'welcome.hint': '输入 <kbd>/</kbd> 查看命令与技能',
+    'welcome.hintShort': '<kbd>/</kbd> 技能&nbsp;&nbsp;<kbd>@</kbd> 引用&nbsp;&nbsp;<kbd>Ctrl</kbd>+<kbd>L</kbd> 聚焦',
+    'welcome.sug1.title': '调试报错',
+    'welcome.sug1.desc': '把报错或堆栈发给我，定位根因',
+    'welcome.sug1.prompt': '帮我调试这个报错——以下是错误信息和出现位置：',
+    'welcome.sug2.title': '审阅改动',
+    'welcome.sug2.desc': '逐文件评审工作区未提交改动',
+    'welcome.sug2.prompt': '审阅我的未提交改动',
+    'welcome.sug3.title': '重构代码',
+    'welcome.sug3.desc': '拆解或抽取模块，给出前后对比',
+    'welcome.sug3.prompt': '重构这段代码：',
+    'welcome.sug4.title': '解释选区',
+    'welcome.sug4.desc': '选中一段代码，逐行讲解行为',
+    'welcome.sug4.prompt': '解释选中的代码',
 
+    'header.ready': '就绪',
+    'header.readyTitle': '已检测到 Pi 配置——{providers} 个提供者，{models} 个模型',
     'header.newAgent': '新建代理',
     'header.sessions': '会话',
     'header.settings': '设置',
     'header.closeTab': '关闭标签页',
     'header.renameSession': '重命名会话',
     'header.scrollToBottom': '滚动到底部',
+
+    // Turn chrome (rail π markers)
+    'msg.pi': 'Pi',
+    'msg.me': '我',
+    'msg.turn': '第 {n} 轮',
 
     'input.ask': '向 Pi 提出任何请求...（输入 / 唤出命令）',
     'input.queue': '排队一条消息...',
@@ -425,6 +470,9 @@ const ZH: Record<TextKey, string> = {
     'config.modelCountMany': '{n} 个模型',
     'config.skillCountOne': '{n} 个技能',
     'config.skillCountMany': '{n} 个技能',
+    'config.notFoundShort': '未配置',
+    'config.partialShort': '部分配置',
+    'config.discovering': '正在检测配置…',
 
     'models.search': '搜索模型...',
     'models.recent': '最近使用',

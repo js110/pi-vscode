@@ -15,7 +15,7 @@
 // markdown renderer's block-id counter), and it is keyed by element so it
 // disappears with the node.
 import type { FileChangeInfo, ApprovalScope, ToolCallPendingInfo, ApplyPreviewInfo, PiConfigSnapshot } from '../../shared/protocol';
-import { t } from '../../shared/i18n';
+import { t, type TextKey } from '../../shared/i18n';
 import { isDangerousTool } from '../../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../../shared/stream-blocks';
 import {
@@ -158,15 +158,30 @@ export function reconcileStreamingText(textEl: HTMLElement, text: string): void 
 
 // ── Static view builders ──
 
+/** Welcome suggestions: key feeds `welcome.<key>.title/.desc/.prompt`. */
+const WELCOME_SUGGESTIONS = [
+    { key: 'sug1', icon: '✳' },
+    { key: 'sug2', icon: '▤' },
+    { key: 'sug3', icon: '◈' },
+    { key: 'sug4', icon: '↯' },
+];
+
 export function buildWelcome(): HTMLElement {
     const w = el('div', 'welcome');
+    const items = WELCOME_SUGGESTIONS.map(
+        (s) => `
+        <button class="wi" type="button" data-suggestion="${s.key}">
+            <span class="wi-ic">${s.icon}</span>
+            <span class="wi-t">${escHtml(t(`welcome.${s.key}.title` as TextKey))}</span>
+            <span class="wi-d">${escHtml(t(`welcome.${s.key}.desc` as TextKey))}</span>
+        </button>`,
+    ).join('');
     w.innerHTML = `
-        <div class="welcome-icon">&pi;</div>
-        <div class="welcome-title">${escHtml(t('welcome.title'))}</div>
+        <div class="w-pi">&pi;</div>
+        <div class="welcome-title">${escHtml(t('welcome.headline'))}</div>
         <div class="welcome-subtitle">${escHtml(t('welcome.subtitle'))}</div>
-        <div class="welcome-hints">
-            <div class="welcome-hint">${t('welcome.hint')}</div>
-        </div>
+        <div class="w-items">${items}</div>
+        <div class="w-hint">${t('welcome.hintShort')}</div>
     `;
     return w;
 }
@@ -313,7 +328,7 @@ export function buildMessageTree(ctx: MessageRenderState): HTMLElement[] {
             }
         }
 
-        const msgEl = buildMessage(msg, i, role === 'user' ? userMsgCount : undefined, ctx);
+        const msgEl = buildMessage(msg, i, role === 'user' || role === 'assistant' ? userMsgCount : undefined, ctx);
         if (dimming) {
             msgEl.classList.add('dimmed');
         }
@@ -334,6 +349,40 @@ export function buildMessageTree(ctx: MessageRenderState): HTMLElement[] {
     return nodes;
 }
 
+/** π rail marker sitting on the gutter line, with an optional turn head.
+ *  The head (who + turn number) renders only at the start of a new assistant
+ *  turn; continuation blocks just get the π marker. */
+function buildTurnMarker(turnNumber: number | undefined, isTurnStart: boolean): HTMLElement {
+    const holder = el('div', 'turn-marker');
+    const av = el('span', 'turn-av');
+    av.textContent = 'π';
+    holder.appendChild(av);
+    if (isTurnStart) {
+        const head = el('div', 'turn-head');
+        const who = el('span', 'who');
+        who.textContent = t('msg.pi');
+        head.appendChild(who);
+        if (turnNumber !== undefined) {
+            const no = el('span', 'turn-no');
+            no.textContent = t('msg.turn', { n: turnNumber });
+            head.appendChild(no);
+        }
+        holder.appendChild(head);
+    }
+    return holder;
+}
+
+/** Compact "Me" avatar chip above the user bubble. Hidden while streaming so
+ *  the active turn keeps its π marker as the sole rail decoration. */
+function buildUserHead(isStreaming: boolean): HTMLElement | null {
+    if (isStreaming) return null;
+    const head = el('div', 'user-head');
+    const av = el('span', 'u-av');
+    av.textContent = t('msg.me');
+    head.appendChild(av);
+    return head;
+}
+
 function buildMessage(msg: any, index: number, turnNumber: number | undefined, ctx: MessageRenderState): HTMLElement {
     const role = msg.role ?? 'unknown';
 
@@ -349,7 +398,11 @@ function buildMessage(msg: any, index: number, turnNumber: number | undefined, c
     }
 
     if (role === 'user') {
-        const group = el('div', 'message-group-user');
+        const group = el('div', 'message-group-user turn turn-user');
+        const head = buildUserHead(ctx.isStreaming);
+        if (head) {
+            group.appendChild(head);
+        }
 
         const wrapper = el('div', `message message-${role}`);
         if (turnNumber !== undefined && !ctx.isStreaming) {
@@ -401,7 +454,10 @@ function buildMessage(msg: any, index: number, turnNumber: number | undefined, c
         return empty;
     }
 
-    const group = el('div', 'message-group-assistant');
+    const group = el('div', 'message-group-assistant turn turn-assistant');
+
+    const isTurnStart = index === 0 || (ctx.messages[index - 1]?.role ?? 'unknown') !== 'assistant';
+    group.appendChild(buildTurnMarker(turnNumber, isTurnStart));
 
     const wrapper = el('div', `message message-${role}`);
 

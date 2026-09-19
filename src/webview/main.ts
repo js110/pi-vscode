@@ -4,7 +4,7 @@ import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { normalizeImageFile } from './image-resize';
 import { matchesModelFilter } from '../shared/model-filter';
 import { rankSlashMenuItems } from '../shared/slash-commands';
-import { t, setLang } from '../shared/i18n';
+import { t, setLang, type TextKey } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
 import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
@@ -175,6 +175,7 @@ function handleMessage(msg: ServerMessage): void {
             break;
         case 'configState':
             state.config = msg.config;
+            updateStatusChip();
             if (document.getElementById('model-picker')) {
                 showModelPicker();
             }
@@ -471,10 +472,20 @@ function render(): void {
     app.innerHTML = '';
     skeletonBuilt = false;
 
-    // Header: tab-strip (dynamic) + header-right (static)
+    // Header: brand row (mark + name + tabs) + rail row (status chip + actions)
     const header = el('div', 'header');
+    const brandRow = el('div', 'brand-row');
+    const brand = el('div', 'brand');
+    brand.innerHTML = `<span class="brand-mark">&pi;</span><span class="brand-name">${escHtml(t('welcome.title'))}</span>`;
+    brandRow.appendChild(brand);
     const tabStrip = el('div', 'tab-strip');
-    header.appendChild(tabStrip);
+    brandRow.appendChild(tabStrip);
+    header.appendChild(brandRow);
+    const railRow = el('div', 'rail-row');
+    const statusChip = el('span', 'status-chip');
+    statusChip.id = 'status-chip';
+    statusChip.innerHTML = '<span class="status-dot"></span><span class="status-label"></span>';
+    railRow.appendChild(statusChip);
     const headerActions = el('div', 'header-right');
     headerActions.innerHTML = `
         <button class="icon-btn" id="btn-new-tab" title="${escHtml(t('header.newAgent'))}">
@@ -494,7 +505,8 @@ function render(): void {
             </svg>
         </button>
     `;
-    header.appendChild(headerActions);
+    railRow.appendChild(headerActions);
+    header.appendChild(railRow);
     app.appendChild(header);
 
     // Messages container (persistent, children managed by updateMessages)
@@ -565,7 +577,7 @@ function render(): void {
     const area = el('div', 'input-area');
     area.innerHTML = `<textarea id="input" placeholder="${escHtml(t('input.ask'))}" rows="1"></textarea>`;
     inputContainer.appendChild(area);
-    const footer = el('div', 'input-footer');
+    const footer = el('div', 'input-footer cstrip');
     inputContainer.appendChild(footer);
     app.appendChild(inputContainer);
 
@@ -583,6 +595,7 @@ function render(): void {
 
     // Populate all dynamic sections
     updateTabs();
+    updateStatusChip();
     updateMessages();
     updateInputArea();
     updateChangedFiles();
@@ -634,6 +647,7 @@ async function updateMessages(): Promise<void> {
     bindCodeBlockActions();
     bindCheckpointButtons();
     bindMessageActionButtons();
+    bindWelcomeSuggestions();
     bindRedoButtons();
     bindDiffButtons();
     bindToolClickable();
@@ -689,6 +703,27 @@ function updateTabs(): void {
     bindTabEvents();
 }
 
+function updateStatusChip(): void {
+    const chip = document.getElementById('status-chip');
+    if (!chip) return;
+    const cfg = state.config;
+    const ok = cfg?.status === 'ok';
+    chip.classList.toggle('status-ok', ok);
+    const label = chip.querySelector('.status-label');
+    if (!label) return;
+    if (!cfg) {
+        label.textContent = '';
+        chip.title = t('config.discovering');
+        return;
+    }
+    const statusText =
+        cfg.status === 'ok' ? t('header.ready') :
+        cfg.status === 'not-found' ? t('config.notFoundShort') :
+        t('config.partialShort');
+    label.textContent = statusText;
+    chip.title = t('header.readyTitle', { providers: cfg.providers.length, models: cfg.models.length });
+}
+
 function updateInputArea(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (input) {
@@ -708,18 +743,22 @@ function updateInputArea(): void {
 
     const modelName = state.model?.name ?? state.model?.id ?? '';
 
-    let contextHtml = '';
-    if (state.contextUsage) {
+    // The composer becomes a status-bar-style strip: left = model + context
+    // meter (the "instrument"), right = transport controls (abort/steer/attach/send).
+    const meterHtml = (() => {
+        if (!state.contextUsage) return '';
         const cu = state.contextUsage;
         const tokensK = cu.tokens != null ? formatTokenCount(cu.tokens) : null;
         const windowK = formatTokenCount(cu.contextWindow);
         const pct = cu.percent != null ? Math.round(cu.percent) : null;
         if (tokensK !== null && pct !== null) {
-            contextHtml = `<span class="footer-context" title="${escAttr(t('input.contextTooltip', { tokens: tokensK, window: windowK, percent: pct }))}">${tokensK} / ${windowK} &middot; ${pct}%</span>`;
-        } else {
-            contextHtml = `<span class="footer-context" title="${escAttr(t('input.contextWindowTooltip', { window: windowK }))}">${windowK}</span>`;
+            return `<span class="meter" title="${escAttr(t('input.contextTooltip', { tokens: tokensK, window: windowK, percent: pct }))}">
+                <span class="meter-track"><span class="meter-fill" style="width:${pct}%"></span></span>
+                <span class="meter-label">${escHtml(tokensK)} / ${escHtml(windowK)} &middot; ${pct}%</span>
+            </span>`;
         }
-    }
+        return `<span class="footer-context" title="${escAttr(t('input.contextWindowTooltip', { window: windowK }))}">${escHtml(windowK)}</span>`;
+    })();
 
     const steerBtnHtml = state.isStreaming
         ? `<button id="btn-steer" class="steer-btn" title="${escHtml(t('input.steer'))}"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
@@ -732,13 +771,16 @@ function updateInputArea(): void {
         : '';
 
     footer.innerHTML = `
-        <span class="footer-model">${escHtml(modelName)}</span>
-        <span class="footer-spacer"></span>
-        ${contextHtml}
+        <div class="cstrip-left">
+            <span class="footer-model" title="${escHtml(t('models.selectPlaceholder'))}">${escHtml(modelName)}</span>
+            ${meterHtml}
+        </div>
+        <div class="cstrip-right">
         ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}
         ${steerBtnHtml}
         ${attachBtnHtml}
         <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.queueSend') : t('input.send'))}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
     `;
 
     // Rebind the dynamic footer elements
@@ -2060,6 +2102,29 @@ function bindMessageActionButtons(): void {
             const msg = turn >= 1 ? findUserMessageByTurn(turn) : null;
             if (!msg) return;
             enterEditMode(turn, extractText(msg), extractUserMessageImages(msg));
+        });
+    });
+}
+
+/** Welcome suggestion buttons prefill the composer with a starter prompt.
+ *  While streaming the text is queued on Enter instead (follow-up path). */
+function bindWelcomeSuggestions(): void {
+    document.querySelectorAll('.welcome .wi:not([data-bound])').forEach((btn) => {
+        btn.setAttribute('data-bound', '1');
+        btn.addEventListener('click', () => {
+            const key = (btn as HTMLElement).dataset.suggestion;
+            if (!key) return;
+            const prompt = t(`welcome.${key}.prompt` as TextKey);
+            const input = document.getElementById('input') as HTMLTextAreaElement | null;
+            if (input) {
+                input.value = prompt;
+                input.style.height = 'auto';
+            }
+            if (state.isStreaming || !input) {
+                input?.focus();
+                return;
+            }
+            sendMessage();
         });
     });
 }
