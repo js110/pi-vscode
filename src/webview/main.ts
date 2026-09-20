@@ -1664,7 +1664,14 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     }
 
     if (sessions.length === 0) {
-        panel.innerHTML = `<div class="session-empty">${escHtml(t('sessions.empty'))}</div>`;
+        panel.innerHTML = `
+            <div class="session-header">
+                <span>${escHtml(t('sessions.title'))}</span>
+                <button class="icon-btn" id="btn-close-sessions" title="${escHtml(t('sessions.close'))}">&times;</button>
+            </div>
+            <div class="session-empty">${escHtml(t('sessions.empty'))}</div>
+        `;
+        document.getElementById('btn-close-sessions')?.addEventListener('click', () => panel?.remove());
         return;
     }
 
