@@ -9,6 +9,7 @@ src/**
 node_modules/**
 .github/**
 .gitignore
+.env
 vitest.config.ts
 tsconfig.json
 tsconfig.test.json
