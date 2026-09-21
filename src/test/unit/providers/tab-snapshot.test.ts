@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from '../../../providers/tab';
+import { TabManager, type Tab, type TabFactory, type TabManagerAdapters, type TransportAdapter, type WorkspaceAdapter, type UIAdapter, type AgentCapabilities } from '../../../providers/tab';
 import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
@@ -70,35 +70,46 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
     return { id: '', name: 'New Agent', session, diffManager, checkpointManager };
 }
 
-function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
+function makeAdapters(overrides: { transport?: Partial<TransportAdapter>; workspace?: Partial<WorkspaceAdapter>; ui?: Partial<UIAdapter>; agent?: Partial<AgentCapabilities> } = {}): TabManagerAdapters {
     return {
-        post: vi.fn(),
-        setContext: vi.fn(),
-        openFile: vi.fn(),
-        showMessage: vi.fn(),
-        confirmDialog: vi.fn(async () => false),
-        openSettings: vi.fn(),
-        writeClipboard: vi.fn(async () => {}),
-        getCwd: vi.fn(() => '/work'),
-        applyPreview: vi.fn(async () => null),
-        applyConfirm: vi.fn(async () => ({ ok: true })),
-        applyCancel: vi.fn(),
-        getCompactionThreshold: vi.fn(() => 80),
-        searchFiles: vi.fn(async () => []),
-        searchSymbols: vi.fn(async () => []),
-        resolveMentionPath: vi.fn(async () => null),
-        readTextFile: vi.fn(async () => null),
-        resolveDroppedFiles: vi.fn(async () => []),
-        ...overrides,
+        transport: {
+            post: vi.fn(),
+            setContext: vi.fn(),
+            ...overrides.transport,
+        },
+        workspace: {
+            openFile: vi.fn(),
+            getCwd: vi.fn(() => '/work'),
+            searchFiles: vi.fn(async () => []),
+            searchSymbols: vi.fn(async () => []),
+            resolveMentionPath: vi.fn(async () => null),
+            readTextFile: vi.fn(async () => null),
+            resolveDroppedFiles: vi.fn(async () => []),
+            ...overrides.workspace,
+        },
+        ui: {
+            showMessage: vi.fn(),
+            confirmDialog: vi.fn(async () => false),
+            openSettings: vi.fn(),
+            writeClipboard: vi.fn(async () => {}),
+            ...overrides.ui,
+        },
+        agent: {
+            applyPreview: vi.fn(async () => null),
+            applyConfirm: vi.fn(async () => ({ ok: true })),
+            applyCancel: vi.fn(),
+            getCompactionThreshold: vi.fn(() => 80),
+            ...overrides.agent,
+        },
     };
 }
 
 function makeManager(sessionOverrides: Partial<Tab['session']> = {}) {
     const factory: TabFactory = { create: vi.fn(async () => makeTab(sessionOverrides)) };
-    const hooks = makeHooks();
-    const manager = new TabManager(factory, hooks);
+    const adapters = makeAdapters();
+    const manager = new TabManager(factory, adapters);
     managers.push(manager);
-    return { manager, hooks, factory };
+    return { manager, adapters, factory };
 }
 
 function fakeOf(manager: TabManager): { messages: any[]; serializeStateCalls: number } {
@@ -300,12 +311,12 @@ describe('image asset separation', () => {
 
 describe('lazy initialization', () => {
     it('dispatch auto-initializes when the manager was never initialized', async () => {
-        const { manager, hooks, factory } = makeManager();
+        const { manager, adapters, factory } = makeManager();
 
         await manager.dispatch({ type: 'getState' });
 
         expect(factory.create).toHaveBeenCalledTimes(1);
-        const sync = vi.mocked(hooks.post).mock.calls.find((c) => (c[0] as any).type === 'stateSync');
+        const sync = vi.mocked(adapters.transport.post).mock.calls.find((c) => (c[0] as any).type === 'stateSync');
         expect(sync).toBeDefined();
         expect((sync![0] as any).state.messages).toEqual([]);
     });
@@ -313,10 +324,10 @@ describe('lazy initialization', () => {
     it('getState handshake re-sends the display language before the snapshot', async () => {
         setLang('zh');
         try {
-            const { manager, hooks } = makeManager();
+            const { manager, adapters } = makeManager();
             await manager.dispatch({ type: 'getState' });
 
-            const calls = vi.mocked(hooks.post).mock.calls as unknown as [
+            const calls = vi.mocked(adapters.transport.post).mock.calls as unknown as [
                 { type: string; lang?: string },
             ][];
             const langIdx = calls.findIndex((c) => c[0].type === 'langChanged');

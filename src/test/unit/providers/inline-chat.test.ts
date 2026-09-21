@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { InlineChatManager, type InlineChatDeps } from '../../../providers/inline-chat';
-import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from '../../../providers/tab';
+import { TabManager, type Tab, type TabFactory, type TabManagerAdapters, type TransportAdapter, type WorkspaceAdapter, type UIAdapter, type AgentCapabilities } from '../../../providers/tab';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
 import { EventRouter } from '../../../pi/events';
@@ -123,29 +123,40 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
     } as unknown as Tab;
 }
 
-function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
+function makeAdapters(overrides: { transport?: Partial<TransportAdapter>; workspace?: Partial<WorkspaceAdapter>; ui?: Partial<UIAdapter>; agent?: Partial<AgentCapabilities> } = {}): TabManagerAdapters {
     return {
-        post: vi.fn(),
-        setContext: vi.fn(),
-        openFile: vi.fn(),
-        showMessage: vi.fn(),
-        confirmDialog: vi.fn(async () => false),
-        openSettings: vi.fn(),
-        writeClipboard: vi.fn(async () => {}),
-        getCwd: vi.fn(() => h.workRoot),
-        applyPreview: vi.fn(async () => ({
-            previewId: 'ap-1', targetPath: '/work/a.ts', isNew: false,
-            diff: '+code', addedLines: 1, removedLines: 0, code: 'code',
-        })),
-        applyConfirm: vi.fn(async () => ({ ok: true })),
-        applyCancel: vi.fn(),
-        getCompactionThreshold: vi.fn(() => 80),
-        searchFiles: vi.fn(async () => []),
-        searchSymbols: vi.fn(async () => []),
-        resolveMentionPath: vi.fn(async () => null),
-        readTextFile: vi.fn(async () => null),
-        resolveDroppedFiles: vi.fn(async () => []),
-        ...overrides,
+        transport: {
+            post: vi.fn(),
+            setContext: vi.fn(),
+            ...overrides.transport,
+        },
+        workspace: {
+            openFile: vi.fn(),
+            getCwd: vi.fn(() => h.workRoot),
+            searchFiles: vi.fn(async () => []),
+            searchSymbols: vi.fn(async () => []),
+            resolveMentionPath: vi.fn(async () => null),
+            readTextFile: vi.fn(async () => null),
+            resolveDroppedFiles: vi.fn(async () => []),
+            ...overrides.workspace,
+        },
+        ui: {
+            showMessage: vi.fn(),
+            confirmDialog: vi.fn(async () => false),
+            openSettings: vi.fn(),
+            writeClipboard: vi.fn(async () => {}),
+            ...overrides.ui,
+        },
+        agent: {
+            applyPreview: vi.fn(async () => ({
+                previewId: 'ap-1', targetPath: '/work/a.ts', isNew: false,
+                diff: '+code', addedLines: 1, removedLines: 0, code: 'code',
+            })),
+            applyConfirm: vi.fn(async () => ({ ok: true })),
+            applyCancel: vi.fn(),
+            getCompactionThreshold: vi.fn(() => 80),
+            ...overrides.agent,
+        },
     };
 }
 
@@ -230,7 +241,7 @@ describe('InlineChatManager (C13)', () => {
         h.inputBox = undefined;
 
         tab = makeTab();
-        tm = new TabManager({ create: vi.fn(async () => tab) }, makeHooks());
+        tm = new TabManager({ create: vi.fn(async () => tab) }, makeAdapters());
         await tm.initialize();
         const made = makeManager(tm);
         manager = made.manager;

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as path from 'path';
-import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from '../../../providers/tab';
+import { TabManager, type Tab, type TabFactory, type TabManagerAdapters, type TransportAdapter, type WorkspaceAdapter, type UIAdapter, type AgentCapabilities } from '../../../providers/tab';
 import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
@@ -114,36 +114,47 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
     };
 }
 
-function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
+function makeAdapters(overrides: { transport?: Partial<TransportAdapter>; workspace?: Partial<WorkspaceAdapter>; ui?: Partial<UIAdapter>; agent?: Partial<AgentCapabilities> } = {}): TabManagerAdapters {
     return {
-        post: vi.fn(),
-        setContext: vi.fn(),
-        openFile: vi.fn(),
-        showMessage: vi.fn(),
-        confirmDialog: vi.fn(async () => false),
-        openSettings: vi.fn(),
-        writeClipboard: vi.fn(async () => {}),
-        getCwd: vi.fn(() => '/work'),
-        applyPreview: vi.fn(async () => null),
-        applyConfirm: vi.fn(async () => ({ ok: true })),
-        applyCancel: vi.fn(),
-        getCompactionThreshold: vi.fn(() => 80),
-        searchFiles: vi.fn(async () => []),
-        searchSymbols: vi.fn(async () => []),
-        resolveMentionPath: vi.fn(async () => null),
-        readTextFile: vi.fn(async () => null),
-        resolveDroppedFiles: vi.fn(async () => []),
-        ...overrides,
+        transport: {
+            post: vi.fn(),
+            setContext: vi.fn(),
+            ...overrides.transport,
+        },
+        workspace: {
+            openFile: vi.fn(),
+            getCwd: vi.fn(() => '/work'),
+            searchFiles: vi.fn(async () => []),
+            searchSymbols: vi.fn(async () => []),
+            resolveMentionPath: vi.fn(async () => null),
+            readTextFile: vi.fn(async () => null),
+            resolveDroppedFiles: vi.fn(async () => []),
+            ...overrides.workspace,
+        },
+        ui: {
+            showMessage: vi.fn(),
+            confirmDialog: vi.fn(async () => false),
+            openSettings: vi.fn(),
+            writeClipboard: vi.fn(async () => {}),
+            ...overrides.ui,
+        },
+        agent: {
+            applyPreview: vi.fn(async () => null),
+            applyConfirm: vi.fn(async () => ({ ok: true })),
+            applyCancel: vi.fn(),
+            getCompactionThreshold: vi.fn(() => 80),
+            ...overrides.agent,
+        },
     };
 }
 
 async function makeManager(lockDeps?: SessionLockDeps, sessionOverrides: Partial<Tab['session']> = {}) {
     const factory: TabFactory = { create: vi.fn(async () => makeTab(sessionOverrides)) };
-    const hooks = makeHooks();
-    const manager = new TabManager(factory, hooks, undefined, lockDeps);
+    const adapters = makeAdapters();
+    const manager = new TabManager(factory, adapters, undefined, lockDeps);
     managers.push(manager);
     await manager.initialize();
-    return { manager, hooks, factory };
+    return { manager, adapters, factory };
 }
 
 describe('TabManager single-writer occupancy (AC-OP-03)', () => {
@@ -172,14 +183,14 @@ describe('TabManager single-writer occupancy (AC-OP-03)', () => {
     it('rejects prompt while read-only and tells the user why', async () => {
         const lockDeps = makeLockDeps();
         lockDeps.files.set(lockPath(lockDeps, '/s/a.jsonl'), foreignLock());
-        const { manager, hooks } = await makeManager(lockDeps);
+        const { manager, adapters } = await makeManager(lockDeps);
         await manager.dispatch({ type: 'loadSession', sessionPath: '/s/a.jsonl' });
         const session = manager.activeTab!.session as any;
 
         await manager.dispatch({ type: 'prompt', text: 'hello' });
 
         expect(session.prompt).not.toHaveBeenCalled();
-        expect(hooks.showMessage).toHaveBeenCalledWith(expect.stringContaining('read-only'));
+        expect(adapters.ui.showMessage).toHaveBeenCalledWith(expect.stringContaining('read-only'));
     });
 
     it('restores write access after takeover', async () => {

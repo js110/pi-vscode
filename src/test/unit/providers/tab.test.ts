@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from '../../../providers/tab';
+import { TabManager, type Tab, type TabFactory, type TabManagerAdapters, type TransportAdapter, type WorkspaceAdapter, type UIAdapter, type AgentCapabilities } from '../../../providers/tab';
 import { EventRouter } from '../../../pi/events';
 import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
@@ -73,42 +73,53 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
     };
 }
 
-function makeHooks(overrides: Partial<TabManagerHooks> = {}): TabManagerHooks {
+function makeAdapters(overrides: { transport?: Partial<TransportAdapter>; workspace?: Partial<WorkspaceAdapter>; ui?: Partial<UIAdapter>; agent?: Partial<AgentCapabilities> } = {}): TabManagerAdapters {
     return {
-        post: vi.fn(),
-        setContext: vi.fn(),
-        openFile: vi.fn(),
-        showMessage: vi.fn(),
-        confirmDialog: vi.fn(async () => false),
-        openSettings: vi.fn(),
-        writeClipboard: vi.fn(async () => {}),
-        getCwd: vi.fn(() => '/work'),
-        applyPreview: vi.fn(async () => ({
-            previewId: 'ap-1',
-            targetPath: '/work/a.ts',
-            isNew: false,
-            diff: '+code',
-            addedLines: 1,
-            removedLines: 0,
-            code: 'code',
-        })),
-        applyConfirm: vi.fn(async () => ({ ok: true })),
-        applyCancel: vi.fn(),
-        getCompactionThreshold: vi.fn(() => 80),
-        searchFiles: vi.fn(async () => []),
-        searchSymbols: vi.fn(async () => []),
-        resolveMentionPath: vi.fn(async () => null),
-        readTextFile: vi.fn(async () => null),
-        resolveDroppedFiles: vi.fn(async () => []),
-        ...overrides,
+        transport: {
+            post: vi.fn(),
+            setContext: vi.fn(),
+            ...overrides.transport,
+        },
+        workspace: {
+            openFile: vi.fn(),
+            getCwd: vi.fn(() => '/work'),
+            searchFiles: vi.fn(async () => []),
+            searchSymbols: vi.fn(async () => []),
+            resolveMentionPath: vi.fn(async () => null),
+            readTextFile: vi.fn(async () => null),
+            resolveDroppedFiles: vi.fn(async () => []),
+            ...overrides.workspace,
+        },
+        ui: {
+            showMessage: vi.fn(),
+            confirmDialog: vi.fn(async () => false),
+            openSettings: vi.fn(),
+            writeClipboard: vi.fn(async () => {}),
+            ...overrides.ui,
+        },
+        agent: {
+            applyPreview: vi.fn(async () => ({
+                previewId: 'ap-1',
+                targetPath: '/work/a.ts',
+                isNew: false,
+                diff: '+code',
+                addedLines: 1,
+                removedLines: 0,
+                code: 'code',
+            })),
+            applyConfirm: vi.fn(async () => ({ ok: true })),
+            applyCancel: vi.fn(),
+            getCompactionThreshold: vi.fn(() => 80),
+            ...overrides.agent,
+        },
     };
 }
 
 describe('TabManager', () => {
     it('initializes with a single active tab and emits initial state', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
-        const hooks = makeHooks();
-        const manager = new TabManager(factory, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
         expect(factory.create).toHaveBeenCalledTimes(1);
@@ -119,8 +130,8 @@ describe('TabManager', () => {
 
     it('creates additional tabs on createTab and switches active tab', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
-        const hooks = makeHooks();
-        const manager = new TabManager(factory, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'createTab' });
@@ -134,8 +145,8 @@ describe('TabManager', () => {
 
     it('fires onStateChange when a state-changing dispatch occurs', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
-        const hooks = makeHooks();
-        const manager = new TabManager(factory, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
         const listener = vi.fn();
@@ -147,8 +158,8 @@ describe('TabManager', () => {
 
     it('does not fire onStateChange for pure query messages', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
-        const hooks = makeHooks();
-        const manager = new TabManager(factory, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
         const listener = vi.fn();
@@ -156,37 +167,37 @@ describe('TabManager', () => {
 
         await manager.dispatch({ type: 'getModels' });
         expect(listener).not.toHaveBeenCalled();
-        expect(hooks.post).toHaveBeenCalledWith(expect.objectContaining({ type: 'models' } as any));
+        expect(adapters.transport.post).toHaveBeenCalledWith(expect.objectContaining({ type: 'models' } as any));
     });
 
     it('dispatches pure UI side effects through the hooks', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
-        const hooks = makeHooks();
-        const manager = new TabManager(factory, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'openFile', filePath: '/tmp/a.txt' });
-        expect(hooks.openFile).toHaveBeenCalledWith('/tmp/a.txt');
+        expect(adapters.workspace.openFile).toHaveBeenCalledWith('/tmp/a.txt');
 
         await manager.dispatch({ type: 'openSettings' });
-        expect(hooks.openSettings).toHaveBeenCalled();
+        expect(adapters.ui.openSettings).toHaveBeenCalled();
     });
 
     it('gets the current agentEvent to the webview on a message for the active tab', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
-        const hooks = makeHooks();
-        const manager = new TabManager(factory, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
         manager.activeTab!.session.events.dispatch({ type: 'agent_start' } as any);
-        expect(hooks.post).toHaveBeenCalledWith(expect.objectContaining({ type: 'agentEvent' } as any));
-        expect(hooks.setContext).toHaveBeenCalledWith('pi-agent.isStreaming', true);
+        expect(adapters.transport.post).toHaveBeenCalledWith(expect.objectContaining({ type: 'agentEvent' } as any));
+        expect(adapters.transport.setContext).toHaveBeenCalledWith('pi-agent.isStreaming', true);
     });
 
     it('dispose cleans up all tabs and subscriptions', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
-        const hooks = makeHooks();
-        const manager = new TabManager(factory, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
         await manager.initialize();
         await manager.dispatch({ type: 'createTab' });
 
@@ -196,19 +207,19 @@ describe('TabManager', () => {
 
     it('posts the config snapshot and refreshes it on request', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
-        const hooks = makeHooks();
-        const manager = new TabManager(factory, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
         await manager.postConfigSnapshot();
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'configState', config: CONFIG_SNAPSHOT } as any),
         );
 
-        vi.mocked(hooks.post).mockClear();
+        vi.mocked(adapters.transport.post).mockClear();
         await manager.dispatch({ type: 'refreshConfig' });
         expect(refreshPiConfig).toHaveBeenCalledWith('/work');
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'configState', config: CONFIG_SNAPSHOT } as any),
         );
     });
@@ -218,8 +229,8 @@ describe('TabManager', () => {
         const tab = makeTab({
             getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
@@ -240,8 +251,8 @@ describe('TabManager', () => {
         const tab = makeTab({
             getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
@@ -268,16 +279,16 @@ describe('TabManager', () => {
                 percent = 5;
             }),
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
-        vi.mocked(hooks.post).mockClear();
+        vi.mocked(adapters.transport.post).mockClear();
 
         await manager.dispatch({ type: 'compactionAccept' });
         expect(tab.session.compact).toHaveBeenCalled();
-        expect(hooks.post).toHaveBeenCalledWith({ type: 'compactionResult', ok: true });
+        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'compactionResult', ok: true });
         expect(manager.getState().compactionPrompt).toBeNull();
     });
 
@@ -289,15 +300,15 @@ describe('TabManager', () => {
                 throw new Error('boom');
             }),
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
-        vi.mocked(hooks.post).mockClear();
+        vi.mocked(adapters.transport.post).mockClear();
 
         await expect(manager.dispatch({ type: 'compactionAccept' })).resolves.toBeUndefined();
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'compactionResult', ok: false, message: expect.stringContaining('boom') }),
         );
         expect(manager.getState().compactionPrompt).toBeNull();
@@ -313,8 +324,8 @@ describe('TabManager', () => {
         const tab = makeTab({
             getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }) as any,
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
@@ -345,8 +356,8 @@ describe('TabManager', () => {
                 await gate;
             }),
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
@@ -368,7 +379,7 @@ describe('TabManager', () => {
                 ),
             ),
         };
-        const manager = new TabManager(factory, makeHooks());
+        const manager = new TabManager(factory, makeAdapters());
         await manager.initialize();
 
         const highId = manager.getState().activeTabId!;
@@ -391,8 +402,8 @@ describe('TabManager', () => {
 
     it('passes prompt images through to the session', async () => {
         const tab = makeTab({ supportsImages: () => true });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
@@ -405,37 +416,37 @@ describe('TabManager', () => {
 
     it('rejects prompt images when the model cannot accept them', async () => {
         const tab = makeTab({ supportsImages: () => false });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
         await manager.dispatch({ type: 'prompt', text: 'look', images: [png] });
 
         expect(tab.session.prompt).not.toHaveBeenCalled();
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'error' } as any),
         );
     });
 
     it('rejects invalid prompt images without starting a turn', async () => {
         const tab = makeTab();
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'prompt', text: 'look', images: ['data:image/png;base64,###'] });
 
         expect(tab.session.prompt).not.toHaveBeenCalled();
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'error' } as any),
         );
     });
 
     it('sends a text-only prompt without an images option', async () => {
         const tab = makeTab();
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'prompt', text: 'plain' });
@@ -445,8 +456,8 @@ describe('TabManager', () => {
 
     it('appends attached file contents to the prompt text', async () => {
         const tab = makeTab();
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({
@@ -465,8 +476,8 @@ describe('TabManager', () => {
 
     it('does not start a turn for attachments with no usable text', async () => {
         const tab = makeTab();
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({
@@ -480,8 +491,8 @@ describe('TabManager', () => {
 
     it('still starts a turn for an attachment-only prompt', async () => {
         const tab = makeTab();
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({
@@ -498,7 +509,7 @@ describe('TabManager', () => {
 
     it('sendToPi prompts the active tab when it is not streaming', async () => {
         const tab = makeTab();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeHooks());
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeAdapters());
         await manager.initialize();
 
         await manager.sendToPi('look at this');
@@ -509,7 +520,7 @@ describe('TabManager', () => {
 
     it('sendToPi queues via followUp while the active tab is streaming', async () => {
         const tab = makeTab({ getFollowUpMessages: () => ['look at this'] });
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeHooks());
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeAdapters());
         await manager.initialize();
 
         manager.activeTab!.session.events.dispatch({ type: 'agent_start' } as any);
@@ -522,7 +533,7 @@ describe('TabManager', () => {
 
     it('sendToPi resumes prompting once streaming settles', async () => {
         const tab = makeTab();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeHooks());
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeAdapters());
         await manager.initialize();
 
         manager.activeTab!.session.events.dispatch({ type: 'agent_start' } as any);
@@ -538,7 +549,7 @@ describe('TabManager', () => {
         const factory: TabFactory = {
             create: vi.fn(async () => first),
         };
-        const manager = new TabManager(factory, makeHooks());
+        const manager = new TabManager(factory, makeAdapters());
         await manager.initialize();
         // Replace the pool with distinct tabs for each create call.
         (factory.create as any).mockImplementation(async () => second);
@@ -558,8 +569,8 @@ describe('TabManager', () => {
                 percent = 5;
             }),
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'setThinkingLevel', level: 'medium' });
@@ -580,14 +591,14 @@ describe('TabManager', () => {
         const tab = makeTab({
             setToolApprovalHandler: (h: any) => { handler = h; },
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
         expect(handler).toBeDefined();
 
         // First call prompts: a pending card is posted.
         const first = handler!('t1', 'write', {});
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'toolCallPending' } as any),
         );
 
@@ -596,13 +607,13 @@ describe('TabManager', () => {
         expect(await first).toBe(true);
 
         // Second call is auto-approved from memory with a trace, no card.
-        vi.mocked(hooks.post).mockClear();
+        vi.mocked(adapters.transport.post).mockClear();
         const second = await handler!('t2', 'write', {});
         expect(second).toBe(true);
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'approvalTrace', toolCallId: 't2', toolName: 'write', scope: 'session' } as any),
         );
-        expect(hooks.post).not.toHaveBeenCalledWith(
+        expect(adapters.transport.post).not.toHaveBeenCalledWith(
             expect.objectContaining({ type: 'toolCallPending' } as any),
         );
     });
@@ -612,40 +623,42 @@ describe('TabManager', () => {
         const tab = makeTab({
             setToolApprovalHandler: (h: any) => { handler = h; },
         });
-        const hooks = makeHooks();
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'rememberToolApproval', toolCallId: 'missing', scope: 'global' });
 
         const pending = handler!('t1', 'bash', {});
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'toolCallPending' } as any),
         );
         await manager.dispatch({ type: 'rememberToolApproval', toolCallId: 't1', scope: 'global' });
         expect(await pending).toBe(true);
 
         // Even though remember was requested, bash must prompt again.
-        vi.mocked(hooks.post).mockClear();
+        vi.mocked(adapters.transport.post).mockClear();
         handler!('t2', 'bash', {});
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'toolCallPending' } as any),
         );
     });
 
     it('answers mention queries through the search hooks without a state change', async () => {
-        const hooks = makeHooks({
-            searchFiles: vi.fn(async () => ['src/a.ts']),
-            searchSymbols: vi.fn(async () => [{ name: 'Tab', kind: 'Class', path: 'src/tab.ts', line: 8 }]),
+        const adapters = makeAdapters({
+            workspace: {
+                searchFiles: vi.fn(async () => ['src/a.ts']),
+                searchSymbols: vi.fn(async () => [{ name: 'Tab', kind: 'Class', path: 'src/tab.ts', line: 8 }]),
+            },
         });
-        const manager = new TabManager({ create: vi.fn(async () => makeTab()) }, hooks);
+        const manager = new TabManager({ create: vi.fn(async () => makeTab()) }, adapters);
         await manager.initialize();
 
         const listener = vi.fn();
         manager.onStateChange(listener);
         await manager.dispatch({ type: 'mentionQuery', query: 'tab', requestId: 7 });
 
-        expect(hooks.post).toHaveBeenCalledWith({
+        expect(adapters.transport.post).toHaveBeenCalledWith({
             type: 'mentionResults',
             requestId: 7,
             files: ['src/a.ts'],
@@ -655,14 +668,16 @@ describe('TabManager', () => {
     });
 
     it('answers dropFiles through the resolution hook without a state change', async () => {
-        const hooks = makeHooks({
-            resolveDroppedFiles: vi.fn(async (): Promise<DropResolveResult[]> => [
-                { status: 'file', path: 'src/a.ts' },
-                { status: 'image' },
-                { status: 'invalid' },
-            ]),
+        const adapters = makeAdapters({
+            workspace: {
+                resolveDroppedFiles: vi.fn(async (): Promise<DropResolveResult[]> => [
+                    { status: 'file', path: 'src/a.ts' },
+                    { status: 'image' },
+                    { status: 'invalid' },
+                ]),
+            },
         });
-        const manager = new TabManager({ create: vi.fn(async () => makeTab()) }, hooks);
+        const manager = new TabManager({ create: vi.fn(async () => makeTab()) }, adapters);
         await manager.initialize();
 
         const listener = vi.fn();
@@ -673,10 +688,10 @@ describe('TabManager', () => {
             requestId: 9,
         });
 
-        expect(hooks.resolveDroppedFiles).toHaveBeenCalledWith([
+        expect(adapters.workspace.resolveDroppedFiles).toHaveBeenCalledWith([
             'file:///w/src/a.ts', 'file:///w/img.png', 'file:///w/outside.txt',
         ]);
-        expect(hooks.post).toHaveBeenCalledWith({
+        expect(adapters.transport.post).toHaveBeenCalledWith({
             type: 'dropResolved',
             requestId: 9,
             results: [
@@ -690,11 +705,13 @@ describe('TabManager', () => {
 
     it('expands a valid mention with the file content on prompt', async () => {
         const tab = makeTab();
-        const hooks = makeHooks({
-            resolveMentionPath: vi.fn(async (p: string) => (p === 'src/a.ts' ? '/abs/a.ts' : null)),
-            readTextFile: vi.fn(async () => 'const a = 1;'),
+        const adapters = makeAdapters({
+            workspace: {
+                resolveMentionPath: vi.fn(async (p: string) => (p === 'src/a.ts' ? '/abs/a.ts' : null)),
+                readTextFile: vi.fn(async () => 'const a = 1;'),
+            },
         });
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'prompt', text: 'explain @src/a.ts please', mentions: ['src/a.ts'] });
@@ -706,15 +723,17 @@ describe('TabManager', () => {
 
     it('strips invalid mentions, reports them, and still prompts', async () => {
         const tab = makeTab();
-        const hooks = makeHooks({
-            resolveMentionPath: vi.fn(async () => null),
+        const adapters = makeAdapters({
+            workspace: {
+                resolveMentionPath: vi.fn(async () => null),
+            },
         });
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'prompt', text: 'look at @gone.ts now', mentions: ['gone.ts'] });
 
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'error' } as any),
         );
         expect(tab.session.prompt).toHaveBeenCalledWith('look at now', undefined);
@@ -722,15 +741,17 @@ describe('TabManager', () => {
 
     it('skips the turn when every mention is invalid and the remaining text is empty', async () => {
         const tab = makeTab();
-        const hooks = makeHooks({
-            resolveMentionPath: vi.fn(async () => null),
+        const adapters = makeAdapters({
+            workspace: {
+                resolveMentionPath: vi.fn(async () => null),
+            },
         });
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         await manager.dispatch({ type: 'prompt', text: '@gone.ts', mentions: ['gone.ts'] });
 
-        expect(hooks.post).toHaveBeenCalledWith(
+        expect(adapters.transport.post).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'error' } as any),
         );
         expect(tab.session.prompt).not.toHaveBeenCalled();
@@ -738,27 +759,31 @@ describe('TabManager', () => {
 
     it('ignores mentions that no longer appear in the message text', async () => {
         const tab = makeTab();
-        const hooks = makeHooks({
-            resolveMentionPath: vi.fn(async () => '/abs/a.ts'),
-            readTextFile: vi.fn(async () => 'A'),
+        const adapters = makeAdapters({
+            workspace: {
+                resolveMentionPath: vi.fn(async () => '/abs/a.ts'),
+                readTextFile: vi.fn(async () => 'A'),
+            },
         });
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         // The user deleted the @token from the draft before sending.
         await manager.dispatch({ type: 'prompt', text: 'plain question', mentions: ['src/a.ts'] });
 
-        expect(hooks.resolveMentionPath).not.toHaveBeenCalled();
+        expect(adapters.workspace.resolveMentionPath).not.toHaveBeenCalled();
         expect(tab.session.prompt).toHaveBeenCalledWith('plain question', undefined);
     });
 
     it('does not expand a file token that only survives as a symbol-token prefix', async () => {
         const tab = makeTab();
-        const hooks = makeHooks({
-            resolveMentionPath: vi.fn(async () => '/abs/a.ts'),
-            readTextFile: vi.fn(async () => 'l1\nl2'),
+        const adapters = makeAdapters({
+            workspace: {
+                resolveMentionPath: vi.fn(async () => '/abs/a.ts'),
+                readTextFile: vi.fn(async () => 'l1\nl2'),
+            },
         });
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         // '@src/a.ts' is not in the draft as a whole token — only
@@ -769,7 +794,7 @@ describe('TabManager', () => {
             mentions: ['src/a.ts', 'src/a.ts:42'],
         });
 
-        expect(hooks.resolveMentionPath).toHaveBeenCalledTimes(1);
+        expect(adapters.workspace.resolveMentionPath).toHaveBeenCalledTimes(1);
         const sent = vi.mocked(tab.session.prompt).mock.calls[0][0];
         expect(sent).not.toContain('@src/a.ts:\n');
         expect(sent).toContain('@src/a.ts:42:');
@@ -779,14 +804,16 @@ describe('TabManager', () => {
         const tab = makeTab();
         let release!: () => void;
         const gate = new Promise<void>((resolve) => { release = resolve; });
-        const hooks = makeHooks({
-            resolveMentionPath: vi.fn(async (p: string) => {
-                await gate;
-                return p === 'src/a.ts' ? '/abs/a.ts' : null;
-            }),
-            readTextFile: vi.fn(async () => 'A'),
+        const adapters = makeAdapters({
+            workspace: {
+                resolveMentionPath: vi.fn(async (p: string) => {
+                    await gate;
+                    return p === 'src/a.ts' ? '/abs/a.ts' : null;
+                }),
+                readTextFile: vi.fn(async () => 'A'),
+            },
         });
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
 
         const dispatching = manager.dispatch({
@@ -802,20 +829,20 @@ describe('TabManager', () => {
 });
 
 describe('TabManager built-in slash command dispatch', () => {
-    async function setup(overrides: Partial<Tab['session']> = {}, hookOverrides: Partial<TabManagerHooks> = {}) {
+    async function setup(overrides: Partial<Tab['session']> = {}, adapterOverrides: { transport?: Partial<TransportAdapter>; workspace?: Partial<WorkspaceAdapter>; ui?: Partial<UIAdapter>; agent?: Partial<AgentCapabilities> } = {}) {
         const tab = makeTab(overrides);
-        const hooks = makeHooks(hookOverrides);
-        const manager = new TabManager({ create: vi.fn(async () => tab) }, hooks);
+        const adapters = makeAdapters(adapterOverrides);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, adapters);
         await manager.initialize();
-        return { tab, hooks, manager };
+        return { tab, adapters, manager };
     }
 
     it('runs SDK compaction for /compact instead of prompting', async () => {
-        const { tab, hooks, manager } = await setup();
+        const { tab, adapters, manager } = await setup();
         await manager.dispatch({ type: 'prompt', text: '/compact' });
         expect(tab.session.compact).toHaveBeenCalledWith(undefined);
         expect(tab.session.prompt).not.toHaveBeenCalled();
-        const result = vi.mocked(hooks.post).mock.calls.find(
+        const result = vi.mocked(adapters.transport.post).mock.calls.find(
             (call) => (call[0] as any).type === 'compactionResult',
         );
         expect((result?.[0] as any)?.ok).toBe(true);
@@ -829,12 +856,12 @@ describe('TabManager built-in slash command dispatch', () => {
     });
 
     it('rejects /compact while streaming without compacting or prompting', async () => {
-        const { tab, hooks, manager } = await setup();
+        const { tab, adapters, manager } = await setup();
         (manager.activeTab as any).isStreaming = true;
         await manager.dispatch({ type: 'prompt', text: '/compact' });
         expect(tab.session.compact).not.toHaveBeenCalled();
         expect(tab.session.prompt).not.toHaveBeenCalled();
-        expect(hooks.showMessage).toHaveBeenCalled();
+        expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 
     it('starts a new session for /new', async () => {
@@ -864,48 +891,48 @@ describe('TabManager built-in slash command dispatch', () => {
     });
 
     it('posts the sessions list for /resume', async () => {
-        const { hooks, manager } = await setup({
+        const { adapters, manager } = await setup({
             getSessions: vi.fn(async () => []),
         });
         await manager.dispatch({ type: 'prompt', text: '/resume' });
-        const sent = vi.mocked(hooks.post).mock.calls.find(
+        const sent = vi.mocked(adapters.transport.post).mock.calls.find(
             (call) => (call[0] as any).type === 'sessions',
         );
         expect(sent).toBeDefined();
     });
 
     it('opens settings for /settings and /login', async () => {
-        const { hooks, manager } = await setup();
+        const { adapters, manager } = await setup();
         await manager.dispatch({ type: 'prompt', text: '/settings' });
-        expect(hooks.openSettings).toHaveBeenCalledTimes(1);
+        expect(adapters.ui.openSettings).toHaveBeenCalledTimes(1);
         await manager.dispatch({ type: 'prompt', text: '/login' });
-        expect(hooks.openSettings).toHaveBeenCalledTimes(2);
-        expect(hooks.showMessage).toHaveBeenCalled();
+        expect(adapters.ui.openSettings).toHaveBeenCalledTimes(2);
+        expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 
     it('copies the last assistant reply for /copy', async () => {
-        const { hooks, manager } = await setup({
+        const { adapters, manager } = await setup({
             getMessages: vi.fn(() => [
                 { role: 'assistant', content: [{ type: 'text', text: 'the answer' }] },
             ]),
         });
         await manager.dispatch({ type: 'prompt', text: '/copy' });
-        expect(hooks.writeClipboard).toHaveBeenCalledWith('the answer');
-        expect(hooks.showMessage).toHaveBeenCalled();
+        expect(adapters.ui.writeClipboard).toHaveBeenCalledWith('the answer');
+        expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 
     it('reports an empty clipboard source for /copy without replies', async () => {
-        const { hooks, manager } = await setup();
+        const { adapters, manager } = await setup();
         await manager.dispatch({ type: 'prompt', text: '/copy' });
-        expect(hooks.writeClipboard).not.toHaveBeenCalled();
-        expect(hooks.showMessage).toHaveBeenCalled();
+        expect(adapters.ui.writeClipboard).not.toHaveBeenCalled();
+        expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 
     it('reports unsupported builtins instead of prompting', async () => {
-        const { tab, hooks, manager } = await setup();
+        const { tab, adapters, manager } = await setup();
         await manager.dispatch({ type: 'prompt', text: '/tree' });
         expect(tab.session.prompt).not.toHaveBeenCalled();
-        expect(hooks.showMessage).toHaveBeenCalledWith(
+        expect(adapters.ui.showMessage).toHaveBeenCalledWith(
             expect.stringContaining('/tree'),
         );
     });
@@ -939,30 +966,30 @@ describe('TabManager built-in slash command dispatch', () => {
     });
 
     it('rejects /compact and /new queued while streaming', async () => {
-        const { tab, hooks, manager } = await setup();
+        const { tab, adapters, manager } = await setup();
         (manager.activeTab as any).isStreaming = true;
         await manager.dispatch({ type: 'queueMessage', text: '/compact' });
         await manager.dispatch({ type: 'queueMessage', text: '/new' });
         expect(tab.session.compact).not.toHaveBeenCalled();
         expect(tab.session.newSession).not.toHaveBeenCalled();
         expect(tab.session.followUp).not.toHaveBeenCalled();
-        expect(hooks.showMessage).toHaveBeenCalledTimes(2);
+        expect(adapters.ui.showMessage).toHaveBeenCalledTimes(2);
     });
 
     it('rejects /compact on a read-only locked tab', async () => {
-        const { tab, hooks, manager } = await setup();
+        const { tab, adapters, manager } = await setup();
         (manager.activeTab as any).lock = { occupancy: 'read-only' };
         await manager.dispatch({ type: 'prompt', text: '/compact' });
         expect(tab.session.compact).not.toHaveBeenCalled();
-        expect(hooks.showMessage).toHaveBeenCalled();
+        expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 
     it('rejects /compact while another compaction is in flight', async () => {
-        const { tab, hooks, manager } = await setup();
+        const { tab, adapters, manager } = await setup();
         (manager.activeTab as any).compactionInFlight = true;
         await manager.dispatch({ type: 'prompt', text: '/compact' });
         expect(tab.session.compact).not.toHaveBeenCalled();
-        expect(hooks.showMessage).toHaveBeenCalled();
+        expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 
     it('rejects /compact via steer but executes /model', async () => {
@@ -977,11 +1004,11 @@ describe('TabManager built-in slash command dispatch', () => {
     });
 
     it('refuses editing a queue item into a builtin command', async () => {
-        const { tab, hooks, manager } = await setup();
+        const { tab, adapters, manager } = await setup();
         (manager.activeTab as any).queuedMessages = ['hello'];
         await manager.dispatch({ type: 'editQueuedMessage', index: 0, text: '/new' });
         expect(tab.session.replaceFollowUpMessages).not.toHaveBeenCalled();
-        expect(hooks.showMessage).toHaveBeenCalled();
+        expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 
     it('applies an explicit thinking level with an argument', async () => {
@@ -996,26 +1023,26 @@ describe('TabManager built-in slash command dispatch', () => {
     });
 
     it('renames via /name without opening the sessions panel', async () => {
-        const { hooks, manager } = await setup({
+        const { adapters, manager } = await setup({
             setSessionName: vi.fn(),
             getCurrentSessionPath: vi.fn(() => undefined),
             getSessions: vi.fn(async () => []),
         });
         await manager.dispatch({ type: 'prompt', text: '/name Renamed' });
-        const sent = vi.mocked(hooks.post).mock.calls.find(
+        const sent = vi.mocked(adapters.transport.post).mock.calls.find(
             (call) => (call[0] as any).type === 'sessions',
         );
         expect(sent).toBeUndefined();
     });
 
     it('reports nothing-to-compact distinctly when the session is too small', async () => {
-        const { hooks, manager } = await setup({
+        const { adapters, manager } = await setup({
             compact: vi.fn(async () => {
                 throw new Error('Nothing to compact (session too small)');
             }),
         });
         await manager.dispatch({ type: 'prompt', text: '/compact' });
-        const result = vi.mocked(hooks.post).mock.calls.find(
+        const result = vi.mocked(adapters.transport.post).mock.calls.find(
             (call) => (call[0] as any).type === 'compactionResult',
         );
         expect((result?.[0] as any)?.ok).toBe(false);
@@ -1023,13 +1050,13 @@ describe('TabManager built-in slash command dispatch', () => {
     });
 
     it('includes the underlying detail for real compaction failures', async () => {
-        const { hooks, manager } = await setup({
+        const { adapters, manager } = await setup({
             compact: vi.fn(async () => {
                 throw new Error('provider 500: boom');
             }),
         });
         await manager.dispatch({ type: 'prompt', text: '/compact' });
-        const result = vi.mocked(hooks.post).mock.calls.find(
+        const result = vi.mocked(adapters.transport.post).mock.calls.find(
             (call) => (call[0] as any).type === 'compactionResult',
         );
         expect((result?.[0] as any)?.ok).toBe(false);

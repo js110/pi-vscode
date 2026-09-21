@@ -50,28 +50,49 @@ export interface TabFactory {
     create(): Promise<Tab>;
 }
 
-export interface TabManagerHooks {
+/** Push channel: TabManager → webview. */
+export interface TransportAdapter {
     post(message: ServerMessage): void;
     setContext(key: string, value: unknown): void;
+}
+
+/** Workspace file operations and search. */
+export interface WorkspaceAdapter {
     openFile(filePath: string): void;
-    showMessage(message: string): void;
-    confirmDialog(message: string): Promise<boolean>;
-    openSettings(): void;
-    writeClipboard(text: string): Promise<void>;
     getCwd(): string;
-    applyPreview(code: string, lang: string, tabId: string): Promise<ApplyPreviewInfo | null>;
-    applyConfirm(previewId: string): Promise<{ ok: boolean; message?: string }>;
-    applyCancel(previewId: string): void;
-    getCompactionThreshold(): number;
     searchFiles(query: string): Promise<string[]>;
     searchSymbols(query: string): Promise<MentionSymbolItem[]>;
     resolveMentionPath(path: string): Promise<string | null>;
     readTextFile(fsPath: string): Promise<string | null>;
     resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>;
+}
+
+/** User-facing dialogs, settings, and clipboard. */
+export interface UIAdapter {
+    showMessage(message: string): void;
+    confirmDialog(message: string): Promise<boolean>;
+    openSettings(): void;
+    writeClipboard(text: string): Promise<void>;
+}
+
+/** Agent lifecycle capabilities: apply flow, compaction, export, notify. */
+export interface AgentCapabilities {
+    applyPreview(code: string, lang: string, tabId: string): Promise<ApplyPreviewInfo | null>;
+    applyConfirm(previewId: string): Promise<{ ok: boolean; message?: string }>;
+    applyCancel(previewId: string): void;
+    getCompactionThreshold(): number;
     /** Save `content` to disk under `suggestedName` (user picks the location). */
     exportSession?(content: string, suggestedName: string): Promise<void>;
     /** OS-level turn-completion notification; the host decides when it fires. */
     notifyAgentDone?(tabName: string, durationSec: number, isTabActive: boolean): void;
+}
+
+/** All adapter seams the TabManager depends on. */
+export interface TabManagerAdapters {
+    transport: TransportAdapter;
+    workspace: WorkspaceAdapter;
+    ui: UIAdapter;
+    agent: AgentCapabilities;
 }
 
 interface PendingApproval {
@@ -149,7 +170,7 @@ export class TabManager {
 
     constructor(
         private _factory: TabFactory,
-        private _hooks: TabManagerHooks,
+        private _adapters: TabManagerAdapters,
         private _globalRules: GlobalRuleStore = inMemoryGlobalRuleStore(),
         private _lockDeps?: SessionLockDeps,
     ) {
@@ -239,7 +260,7 @@ export class TabManager {
         }
 
         if (restored.length > 0) {
-            this._hooks.showMessage(t('checkpoint.restored', { n: restored.length }));
+            this._adapters.ui.showMessage(t('checkpoint.restored', { n: restored.length }));
         }
         this._emitStateChange();
     }
@@ -258,8 +279,8 @@ export class TabManager {
 
     /** Push the cached config discovery snapshot (discovering on first call). */
     async postConfigSnapshot(): Promise<void> {
-        const config = await ensureConfigDiscovered(this._hooks.getCwd());
-        this._hooks.post({ type: 'configState', config });
+        const config = await ensureConfigDiscovered(this._adapters.workspace.getCwd());
+        this._adapters.transport.post({ type: 'configState', config });
     }
 
     /** Full state plus any first-seen image assets (T16: messages ship only
@@ -359,7 +380,7 @@ export class TabManager {
     }
 
     private _postModels(tab: any): void {
-        this._hooks.post({
+        this._adapters.transport.post({
             type: 'models',
             models: tab.session.getModels(),
             current: tab.session.getCurrentModel(),
@@ -411,7 +432,7 @@ export class TabManager {
         unsubs.push(
             tab.diffManager.onFileChange((change: any) => {
                 if (tab.id === this._activeTabId) {
-                    this._hooks.post({ type: 'fileChange', change });
+                    this._adapters.transport.post({ type: 'fileChange', change });
                 }
             }),
         );
@@ -443,7 +464,7 @@ export class TabManager {
         if (!tab) return;
         const percent = tab.session.getContextUsage()?.percent;
         if (percent == null || !Number.isFinite(percent)) return;
-        const threshold = this._hooks.getCompactionThreshold();
+        const threshold = this._adapters.agent.getCompactionThreshold();
         if (percent < threshold) {
             // Usage fell back under the threshold (compact, rollback): close
             // the banner and re-arm so the next climb prompts fresh.
@@ -483,12 +504,12 @@ export class TabManager {
                 invalid.push(token);
                 continue;
             }
-            const fsPath = await this._hooks.resolveMentionPath(ref.path);
+            const fsPath = await this._adapters.workspace.resolveMentionPath(ref.path);
             if (!fsPath) {
                 invalid.push(token);
                 continue;
             }
-            const raw = await this._hooks.readTextFile(fsPath);
+            const raw = await this._adapters.workspace.readTextFile(fsPath);
             if (raw === null) {
                 invalid.push(token);
                 continue;
@@ -514,7 +535,7 @@ export class TabManager {
             tab.streamingThinkingDuration = 0;
             tab.agentStartTime = Date.now();
             if (isActive) {
-                this._hooks.setContext('pi-agent.isStreaming', true);
+                this._adapters.transport.setContext('pi-agent.isStreaming', true);
             }
         }
 
@@ -546,7 +567,7 @@ export class TabManager {
             if (event.willRetry) {
                 // SDK will retry — keep streaming state active
                 if (isActive) {
-                    this._hooks.post({ type: 'agentEvent', event: safeSerialize(event) });
+                    this._adapters.transport.post({ type: 'agentEvent', event: safeSerialize(event) });
                 }
             } else {
                 // Capture the wall-clock turn duration before it is cleared;
@@ -559,7 +580,7 @@ export class TabManager {
                 // before SDK finishes internal cleanup
                 this._clearStreamingFields(tab);
                 if (isActive) {
-                    this._hooks.post({ type: 'agentEvent', event: safeSerialize(event) });
+                    this._adapters.transport.post({ type: 'agentEvent', event: safeSerialize(event) });
                 } else {
                     tab.hasNotification = true;
                 }
@@ -569,11 +590,11 @@ export class TabManager {
         if (event.type === 'agent_settled') {
             this._resetStreaming(tab);
             if (isActive) {
-                this._hooks.setContext('pi-agent.isStreaming', false);
+                this._adapters.transport.setContext('pi-agent.isStreaming', false);
             } else {
                 tab.hasNotification = true;
             }
-            this._hooks.notifyAgentDone?.(tab.name, tab.lastTurnDurationSec, isActive);
+            this._adapters.agent.notifyAgentDone?.(tab.name, tab.lastTurnDurationSec, isActive);
         }
 
         if (event.type === 'queue_update') {
@@ -628,7 +649,7 @@ export class TabManager {
         this._updateTabName(tab);
 
         if (isActive) {
-            this._hooks.post({ type: 'agentEvent', event: safeSerialize(event) });
+            this._adapters.transport.post({ type: 'agentEvent', event: safeSerialize(event) });
 
             if (
                 event.type === 'agent_start' ||
@@ -668,7 +689,7 @@ export class TabManager {
                     throw new Error('Agent is still processing. Please wait or queue your message.');
                 }
                 if (tab.lock && tab.lock.occupancy !== 'none') {
-                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
                     break;
                 }
                 let images: ImagePayload[] | undefined;
@@ -681,12 +702,12 @@ export class TabManager {
                                 : prepared.reason === 'tooLarge'
                                   ? t('image.tooLarge')
                                   : t('image.invalid');
-                        this._hooks.post({ type: 'error', message });
+                        this._adapters.transport.post({ type: 'error', message });
                         break;
                     }
                     // The model may have been switched after the images were attached.
                     if (!tab.session.supportsImages()) {
-                        this._hooks.post({ type: 'error', message: t('image.unsupported') });
+                        this._adapters.transport.post({ type: 'error', message: t('image.unsupported') });
                         break;
                     }
                     images = prepared.images;
@@ -695,7 +716,7 @@ export class TabManager {
                 if (msg.mentions && msg.mentions.length > 0) {
                     const resolved = await this._expandMentions(text, msg.mentions);
                     if (resolved.invalid.length > 0) {
-                        this._hooks.post({
+                        this._adapters.transport.post({
                             type: 'error',
                             message: t('mention.deleted', { path: resolved.invalid.join(', ') }),
                         });
@@ -722,7 +743,7 @@ export class TabManager {
                     throw new Error('Agent is still processing. Please wait or queue your message.');
                 }
                 if (tab.lock && tab.lock.occupancy !== 'none') {
-                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
                     break;
                 }
                 let images: ImagePayload[] | undefined;
@@ -737,11 +758,11 @@ export class TabManager {
                                 : prepared.reason === 'tooLarge'
                                   ? t('image.tooLarge')
                                   : t('image.invalid');
-                        this._hooks.post({ type: 'error', message });
+                        this._adapters.transport.post({ type: 'error', message });
                         break;
                     }
                     if (!tab.session.supportsImages()) {
-                        this._hooks.post({ type: 'error', message: t('image.unsupported') });
+                        this._adapters.transport.post({ type: 'error', message: t('image.unsupported') });
                         break;
                     }
                     images = prepared.images;
@@ -778,7 +799,7 @@ export class TabManager {
                 // command to the model as plain text.
                 const editedCommand = parseBuiltinSlashCommand(msg.text);
                 if (editedCommand) {
-                    this._hooks.showMessage(t('slash.blockedStreaming', { name: editedCommand.name }));
+                    this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: editedCommand.name }));
                     break;
                 }
                 if (
@@ -894,28 +915,28 @@ export class TabManager {
                 this._emitStateChange();
                 const sessions = await tab.session.getSessions();
                 const currentId = tab.session.getSessionId();
-                this._hooks.post({ type: 'sessions', sessions, currentSessionId: currentId });
+                this._adapters.transport.post({ type: 'sessions', sessions, currentSessionId: currentId });
                 break;
             }
             case 'getSessions': {
                 const sessions = await tab.session.getSessions();
                 const currentId = tab.session.getSessionId();
-                this._hooks.post({ type: 'sessions', sessions, currentSessionId: currentId });
+                this._adapters.transport.post({ type: 'sessions', sessions, currentSessionId: currentId });
                 break;
             }
             case 'refreshConfig': {
-                const config = await refreshPiConfig(this._hooks.getCwd());
-                this._hooks.post({ type: 'configState', config });
+                const config = await refreshPiConfig(this._adapters.workspace.getCwd());
+                this._adapters.transport.post({ type: 'configState', config });
                 break;
             }
             case 'applyPreview': {
                 try {
-                    const preview = await this._hooks.applyPreview(msg.code, msg.lang, tab.id);
+                    const preview = await this._adapters.agent.applyPreview(msg.code, msg.lang, tab.id);
                     if (preview) {
-                        this._hooks.post({ type: 'applyPreviewResult', preview });
+                        this._adapters.transport.post({ type: 'applyPreviewResult', preview });
                     }
                 } catch (err: unknown) {
-                    this._hooks.post({
+                    this._adapters.transport.post({
                         type: 'applyResult',
                         previewId: '',
                         ok: false,
@@ -925,8 +946,8 @@ export class TabManager {
                 break;
             }
             case 'applyConfirm': {
-                const result = await this._hooks.applyConfirm(msg.previewId);
-                this._hooks.post({
+                const result = await this._adapters.agent.applyConfirm(msg.previewId);
+                this._adapters.transport.post({
                     type: 'applyResult',
                     previewId: msg.previewId,
                     ok: result.ok,
@@ -935,7 +956,7 @@ export class TabManager {
                 break;
             }
             case 'applyCancel':
-                this._hooks.applyCancel(msg.previewId);
+                this._adapters.agent.applyCancel(msg.previewId);
                 break;
             case 'compactionAccept': {
                 await this._runManualCompaction(tab);
@@ -947,30 +968,30 @@ export class TabManager {
                 break;
             case 'mentionQuery': {
                 const [files, symbols] = await Promise.all([
-                    this._hooks.searchFiles(msg.query),
-                    this._hooks.searchSymbols(msg.query),
+                    this._adapters.workspace.searchFiles(msg.query),
+                    this._adapters.workspace.searchSymbols(msg.query),
                 ]);
-                this._hooks.post({ type: 'mentionResults', requestId: msg.requestId, files, symbols });
+                this._adapters.transport.post({ type: 'mentionResults', requestId: msg.requestId, files, symbols });
                 break;
             }
             case 'dropFiles': {
-                const results = await this._hooks.resolveDroppedFiles(msg.uris);
-                this._hooks.post({ type: 'dropResolved', requestId: msg.requestId, results });
+                const results = await this._adapters.workspace.resolveDroppedFiles(msg.uris);
+                this._adapters.transport.post({ type: 'dropResolved', requestId: msg.requestId, results });
                 break;
             }
             case 'getState': {
                 // The eager langChanged pushed at webview resolve races the
                 // webview script's listener registration and can be dropped;
                 // this handshake is the reliable moment to (re)send it.
-                this._hooks.post({ type: 'langChanged', lang: getLang() });
+                this._adapters.transport.post({ type: 'langChanged', lang: getLang() });
                 const { state, images } = this.getSnapshot(true);
-                this._hooks.post({ type: 'stateSync', state, images });
+                this._adapters.transport.post({ type: 'stateSync', state, images });
                 break;
             }
             case 'getSkills': {
                 const skills = tab.session.getSkills();
                 const commands = tab.session.getCommands();
-                this._hooks.post({ type: 'skills', skills, commands });
+                this._adapters.transport.post({ type: 'skills', skills, commands });
                 break;
             }
             case 'approveToolCall':
@@ -986,7 +1007,7 @@ export class TabManager {
                 const scope: ApprovalScope = msg.scope === 'global' ? 'global' : 'session';
                 tab.approvalMemory.remember(toolName, scope);
                 if (tab.id === this._activeTabId) {
-                    this._hooks.post({
+                    this._adapters.transport.post({
                         type: 'approvalTrace',
                         toolCallId: msg.toolCallId,
                         toolName,
@@ -997,7 +1018,7 @@ export class TabManager {
                 break;
             }
             case 'openFile':
-                this._hooks.openFile(msg.filePath);
+                this._adapters.workspace.openFile(msg.filePath);
                 break;
             case 'openDiff':
                 await tab.diffManager.openDiff(msg.filePath, msg.toolCallId);
@@ -1021,14 +1042,14 @@ export class TabManager {
                 tab.messagesDirty = true;
 
                 if (redone.length > 0) {
-                    this._hooks.showMessage(t('checkpoint.restored', { n: redone.length }));
+                    this._adapters.ui.showMessage(t('checkpoint.restored', { n: redone.length }));
                 }
                 this._emitStateChange();
                 break;
             }
             case 'confirmAction': {
-                const confirmed = await this._hooks.confirmDialog(msg.message);
-                this._hooks.post({
+                const confirmed = await this._adapters.ui.confirmDialog(msg.message);
+                this._adapters.transport.post({
                     type: 'confirmResult',
                     action: msg.action,
                     confirmed,
@@ -1046,7 +1067,7 @@ export class TabManager {
                 this._switchTab(msg.tabId);
                 break;
             case 'openSettings':
-                this._hooks.openSettings();
+                this._adapters.ui.openSettings();
                 break;
             case 'sessionTakeover':
                 if (tab.lock) {
@@ -1104,7 +1125,7 @@ export class TabManager {
         const decision = tab.approvalMemory.check(toolName);
         if (decision.approved) {
             if (tab.id === this._activeTabId) {
-                this._hooks.post({
+                this._adapters.transport.post({
                     type: 'approvalTrace',
                     toolCallId,
                     toolName,
@@ -1118,7 +1139,7 @@ export class TabManager {
             tab.pendingApprovals.set(toolCallId, { resolve, toolName });
 
             if (tab.id === this._activeTabId) {
-                this._hooks.post({
+                this._adapters.transport.post({
                     type: 'toolCallPending',
                     pending: { toolCallId, toolName, args: safeSerialize(args) },
                 });
@@ -1132,7 +1153,7 @@ export class TabManager {
             tab.pendingApprovals.delete(toolCallId);
             pending.resolve(approved);
             if (tab.id === this._activeTabId) {
-                this._hooks.post({ type: 'toolCallResolved', toolCallId });
+                this._adapters.transport.post({ type: 'toolCallResolved', toolCallId });
             }
         }
     }
@@ -1176,7 +1197,7 @@ export class TabManager {
         const tab = this._tabs.get(tabId)!;
         tab.hasNotification = false;
         tab.messagesDirty = true;
-        this._hooks.setContext('pi-agent.isStreaming', tab.isStreaming);
+        this._adapters.transport.setContext('pi-agent.isStreaming', tab.isStreaming);
 
         this._emitStateChange();
     }
@@ -1231,8 +1252,8 @@ export class TabManager {
             // stateSync first: the banner must clear before the result
             // lands, or the live buttons linger for one tick.
             this._emitStateChange();
-            this._hooks.post({ type: 'compactionResult', ok: true });
-            this._hooks.showMessage(t('compact.done'));
+            this._adapters.transport.post({ type: 'compactionResult', ok: true });
+            this._adapters.ui.showMessage(t('compact.done'));
         } catch (err) {
             // Keep the stage: a failed compact still gets the 90% re-prompt.
             tab.compactionInFlight = false;
@@ -1246,7 +1267,7 @@ export class TabManager {
             const message = /Nothing to compact|session too small|Already compacted/.test(detail)
                 ? t('compact.nothingToCompact')
                 : `${t('compact.failed')} ${humanizeErrorMessage(err) ?? detail}`.trim();
-            this._hooks.post({ type: 'compactionResult', ok: false, message });
+            this._adapters.transport.post({ type: 'compactionResult', ok: false, message });
         }
     }
 
@@ -1265,7 +1286,7 @@ export class TabManager {
         const input = classifySlashInput(text);
         if (input.kind === 'passthrough') return false;
         if (!input.supported) {
-            this._hooks.showMessage(t('slash.unsupported', { name: input.name }));
+            this._adapters.ui.showMessage(t('slash.unsupported', { name: input.name }));
             return true;
         }
         const { name, args } = input;
@@ -1275,26 +1296,26 @@ export class TabManager {
         switch (name) {
             case 'compact':
                 if (tab.isStreaming) {
-                    this._hooks.showMessage(t('slash.blockedStreaming', { name }));
+                    this._adapters.ui.showMessage(t('slash.blockedStreaming', { name }));
                     return true;
                 }
                 if (this._isReadOnlyLocked(tab)) {
-                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
                     return true;
                 }
                 if (tab.compactionInFlight) {
-                    this._hooks.showMessage(t('compact.compacting'));
+                    this._adapters.ui.showMessage(t('compact.compacting'));
                     return true;
                 }
                 await this._runManualCompaction(tab, args || undefined);
                 return true;
             case 'new':
                 if (tab.isStreaming) {
-                    this._hooks.showMessage(t('slash.blockedStreaming', { name }));
+                    this._adapters.ui.showMessage(t('slash.blockedStreaming', { name }));
                     return true;
                 }
                 if (this._isReadOnlyLocked(tab)) {
-                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
                     return true;
                 }
                 await this.newSession();
@@ -1307,7 +1328,7 @@ export class TabManager {
                 if (requested && tab.session.getAvailableThinkingLevels().includes(requested)) {
                     tab.session.setThinkingLevel(requested);
                     this._emitStateChange();
-                    this._hooks.showMessage(
+                    this._adapters.ui.showMessage(
                         t('command.thinkingChanged', { level: thinkingLevelLabel(requested) }),
                     );
                     return true;
@@ -1315,7 +1336,7 @@ export class TabManager {
                 const level = tab.session.cycleThinkingLevel();
                 this._emitStateChange();
                 if (level !== undefined) {
-                    this._hooks.showMessage(
+                    this._adapters.ui.showMessage(
                         t('command.thinkingChanged', { level: thinkingLevelLabel(level) }),
                     );
                 }
@@ -1323,11 +1344,11 @@ export class TabManager {
             }
             case 'name':
                 if (this._isReadOnlyLocked(tab)) {
-                    this._hooks.showMessage(t('occupancy.readOnlyBlocked'));
+                    this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
                     return true;
                 }
                 if (!args) {
-                    this._hooks.showMessage(t('slash.nameUsage'));
+                    this._adapters.ui.showMessage(t('slash.nameUsage'));
                     return true;
                 }
                 // Direct rename — dispatching 'renameSession' would also post
@@ -1340,31 +1361,31 @@ export class TabManager {
                 await this.dispatch({ type: 'getSessions' });
                 return true;
             case 'settings':
-                this._hooks.openSettings();
+                this._adapters.ui.openSettings();
                 return true;
             case 'login':
-                this._hooks.openSettings();
-                this._hooks.showMessage(t('slash.loginHint'));
+                this._adapters.ui.openSettings();
+                this._adapters.ui.showMessage(t('slash.loginHint'));
                 return true;
             case 'copy': {
                 const lastReply = extractLastAssistantText(tab.session.getMessages());
                 if (!lastReply) {
-                    this._hooks.showMessage(t('slash.copyEmpty'));
+                    this._adapters.ui.showMessage(t('slash.copyEmpty'));
                     return true;
                 }
-                await this._hooks.writeClipboard(lastReply);
-                this._hooks.showMessage(t('slash.copied'));
+                await this._adapters.ui.writeClipboard(lastReply);
+                this._adapters.ui.showMessage(t('slash.copied'));
                 return true;
             }
             case 'session':
-                this._hooks.showMessage(this._buildSessionInfo(tab));
+                this._adapters.ui.showMessage(this._buildSessionInfo(tab));
                 return true;
             case 'export': {
                 // Read-only — allowed mid-stream. Renders the serialized SDK
                 // messages to Markdown and lets the host pick a destination.
                 const messages = tab.session.getMessages();
                 if (messages.length === 0) {
-                    this._hooks.showMessage(t('export.empty'));
+                    this._adapters.ui.showMessage(t('export.empty'));
                     return true;
                 }
                 const model = tab.session.getCurrentModel();
@@ -1378,16 +1399,16 @@ export class TabManager {
                     Date.now(),
                 );
                 try {
-                    await this._hooks.exportSession?.(markdown, fileName);
+                    await this._adapters.agent.exportSession?.(markdown, fileName);
                 } catch (err) {
                     const detail = humanizeErrorMessage(err) ?? (err instanceof Error ? err.message : String(err));
-                    this._hooks.showMessage(t('export.failed', { message: detail }));
+                    this._adapters.ui.showMessage(t('export.failed', { message: detail }));
                 }
                 return true;
             }
             default: {
                 const exhaustive: never = name;
-                this._hooks.showMessage(t('slash.unsupported', { name: exhaustive }));
+                this._adapters.ui.showMessage(t('slash.unsupported', { name: exhaustive }));
                 return true;
             }
         }

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { PiSessionManager } from './pi/session';
 import { SidebarProvider } from './providers/sidebar';
-import { TabManager, type Tab, type TabFactory, type TabManagerHooks } from './providers/tab';
+import { TabManager, type Tab, type TabFactory, type TabManagerAdapters } from './providers/tab';
 import { StatusBarManager } from './providers/status-bar';
 import { SettingsPanel } from './providers/settings-panel';
 import { resolveDisplayLang } from './providers/lang';
@@ -138,16 +138,39 @@ async function resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>
             const fsPath = uriToPath(uri);
             if (!fsPath) return { status: 'invalid' };
             const rel = relativeToWorkspace(fsPath, roots);
-            if (!rel) return { status: 'invalid' };
-            // Images ride the image-attach path, not the reference path.
-            if (isImagePath(rel)) return { status: 'image' };
+            // Workspace files: return relative path for @-mention injection.
+            if (rel) {
+                if (isImagePath(rel)) return { status: 'image' };
+                try {
+                    const stat = await vscode.workspace.fs.stat(vscode.Uri.file(fsPath));
+                    if (stat.type !== vscode.FileType.File) return { status: 'invalid' };
+                } catch {
+                    return { status: 'invalid' };
+                }
+                return { status: 'file', path: rel };
+            }
+            // External files (outside workspace): read content on the host side.
+            const uriObj = vscode.Uri.file(fsPath);
+            const ext = fsPath.split('.').pop()?.toLowerCase() ?? '';
+            const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
             try {
-                const stat = await vscode.workspace.fs.stat(vscode.Uri.file(fsPath));
+                const stat = await vscode.workspace.fs.stat(uriObj);
                 if (stat.type !== vscode.FileType.File) return { status: 'invalid' };
+                if (stat.size > 5 * 1024 * 1024) return { status: 'invalid' }; // 5 MB cap
+                if (IMAGE_EXTS.has(ext)) {
+                    const bytes = await vscode.workspace.fs.readFile(uriObj);
+                    const base64 = Buffer.from(bytes).toString('base64');
+                    const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png'
+                        : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp'
+                        : ext === 'bmp' ? 'image/bmp' : 'image/png';
+                    return { status: 'external', dataUrl: `data:${mime};base64,${base64}`, name: fsPath.split(/[\\/]/).pop() };
+                }
+                const bytes = await vscode.workspace.fs.readFile(uriObj);
+                const text = new TextDecoder('utf-8').decode(bytes);
+                return { status: 'external', content: text, name: fsPath.split(/[\\/]/).pop() };
             } catch {
                 return { status: 'invalid' };
             }
-            return { status: 'file', path: rel };
         }),
     );
 }
@@ -185,31 +208,45 @@ export async function activate(context: vscode.ExtensionContext) {
             tabManagerRef?.recordFileSnapshot(tabId, filePath, content);
         });
 
-        const hooks: TabManagerHooks = {
-            post: (msg) => providerRef?.post(msg),
-            setContext: (key, value) => { void vscode.commands.executeCommand('setContext', key, value); },
-            openFile: (filePath) => {
+        const transport = {
+            post: (msg: ServerMessage) => providerRef?.post(msg),
+            setContext: (key: string, value: unknown) => { void vscode.commands.executeCommand('setContext', key, value); },
+        };
+
+        const workspace = {
+            openFile: (filePath: string) => {
                 const uri = vscode.Uri.file(filePath);
                 void vscode.workspace.openTextDocument(uri).then(
                     (doc) => vscode.window.showTextDocument(doc, { preview: true }),
                     () => { /* file may not exist */ },
                 );
             },
-            showMessage: (message) => void vscode.window.showInformationMessage(message),
-            confirmDialog: (message) => {
+            getCwd: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+            searchFiles: (query: string) => searchWorkspaceFiles(query),
+            searchSymbols: (query: string) => searchWorkspaceSymbols(query),
+            resolveMentionPath: (path: string) => resolveMentionPath(path),
+            readTextFile: (fsPath: string) => readMentionFile(fsPath),
+            resolveDroppedFiles: (uris: string[]) => resolveDroppedFiles(uris),
+        };
+
+        const ui = {
+            showMessage: (message: string) => void vscode.window.showInformationMessage(message),
+            confirmDialog: (message: string) => {
                 const yes = t('common.yes');
                 return Promise.resolve(
                     vscode.window.showWarningMessage(message, { modal: true }, yes),
                 ).then((answer): boolean => answer === yes);
             },
             openSettings: () => void vscode.commands.executeCommand('pi-agent.openSettings'),
-            writeClipboard: async (text) => {
+            writeClipboard: async (text: string) => {
                 await vscode.env.clipboard.writeText(text);
             },
-            getCwd: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
-            applyPreview: (code, lang, tabId) => applyManager.buildPreview(code, lang, tabId),
-            applyConfirm: (previewId) => applyManager.confirm(previewId),
-            applyCancel: (previewId) => applyManager.cancel(previewId),
+        };
+
+        const agent = {
+            applyPreview: (code: string, lang: string, tabId: string) => applyManager.buildPreview(code, lang, tabId),
+            applyConfirm: (previewId: string) => applyManager.confirm(previewId),
+            applyCancel: (previewId: string) => applyManager.cancel(previewId),
             getCompactionThreshold: () => {
                 const raw = Number(
                     vscode.workspace
@@ -218,12 +255,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 );
                 return Number.isFinite(raw) ? Math.max(1, Math.min(100, raw)) : 80;
             },
-            searchFiles: (query) => searchWorkspaceFiles(query),
-            searchSymbols: (query) => searchWorkspaceSymbols(query),
-            resolveMentionPath: (path) => resolveMentionPath(path),
-            readTextFile: (fsPath) => readMentionFile(fsPath),
-            resolveDroppedFiles: (uris) => resolveDroppedFiles(uris),
-            exportSession: async (content, suggestedName) => {
+            exportSession: async (content: string, suggestedName: string) => {
                 const folder = vscode.workspace.workspaceFolders?.[0];
                 const defaultUri = folder
                     ? vscode.Uri.joinPath(folder.uri, suggestedName)
@@ -245,7 +277,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     );
                 }
             },
-            notifyAgentDone: (tabName, durationSec, isTabActive) => {
+            notifyAgentDone: (tabName: string, durationSec: number, isTabActive: boolean) => {
                 if (!vscode.workspace.getConfiguration('pi-agent').get('notifyOnCompletion', true)) return;
                 if (durationSec < NOTIFY_MIN_DURATION_SEC) return;
                 if (isTabActive && vscode.window.state.focused) return;
@@ -254,6 +286,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 );
             },
         };
+
+        const adapters: TabManagerAdapters = { transport, workspace, ui, agent };
 
         const factory: TabFactory = {
             async create(): Promise<Tab> {
@@ -268,7 +302,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const lockDeps = createNodeLockDeps(
             path.join(context.globalStorageUri.fsPath, 'locks'),
         );
-        const tabManager = new TabManager(factory, hooks, globalRuleStore, lockDeps);
+        const tabManager = new TabManager(factory, adapters, globalRuleStore, lockDeps);
         tabManagerRef = tabManager;
         // T16: SDK loading + session creation run off the activation critical
         // path; consumers (webview, commands) await initialize() themselves.

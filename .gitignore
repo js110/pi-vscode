@@ -11,4 +11,5 @@ design-qa.md
 .cache
 .github
 skills-lock.json
+.env
 

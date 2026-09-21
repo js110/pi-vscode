@@ -237,6 +237,19 @@ function handleMessage(msg: ServerMessage): void {
                 for (const result of msg.results) {
                     if (result.status === 'file' && result.path) {
                         insertMentionTokenAtCursor(result.path);
+                    } else if (result.status === 'external') {
+                        if (result.dataUrl && state.supportsImages && !state.isStreaming) {
+                            if (state.pendingImages.length < MAX_IMAGES_PER_PROMPT) {
+                                state.pendingImages.push(result.dataUrl);
+                                updateImageChips();
+                            }
+                        } else if (result.content && !state.isStreaming) {
+                            state.pendingAttachments.push({
+                                name: result.name ?? 'dropped-file',
+                                content: normalizeAttachContent(result.content),
+                            });
+                            updateAttachChips();
+                        }
                     } else if (result.status === 'invalid') {
                         invalid++;
                     }
@@ -280,6 +293,40 @@ let historyReplacePending: { from: string | undefined; rewrite: boolean } | null
 
 // Turn currently being edited in the composer; null when not editing.
 let editingTurn: number | null = null;
+
+// Per-session recall history for the composer (Up/Down arrows browse it).
+const messageHistories = new Map<string, string[]>();
+const MAX_MESSAGE_HISTORY = 100;
+// Index into the recalled list while browsing; -1 = composer shows the draft.
+let historyCursor = -1;
+// The draft saved when browsing started; restored when arrowing past the end.
+let historyDraft = '';
+
+function currentHistory(): string[] {
+    const id = state.sessionId ?? '';
+    let list = messageHistories.get(id);
+    if (!list) {
+        list = [];
+        messageHistories.set(id, list);
+    }
+    return list;
+}
+
+function rememberMessage(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const list = currentHistory();
+    if (list[list.length - 1] === trimmed) return;
+    list.push(trimmed);
+    if (list.length > MAX_MESSAGE_HISTORY) {
+        list.splice(0, list.length - MAX_MESSAGE_HISTORY);
+    }
+}
+
+function autosizeInput(input: HTMLTextAreaElement): void {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+}
 
 function applyStateSync(s: SerializedAgentState): void {
     const prevTab = state.activeTabId;
@@ -471,6 +518,7 @@ function render(): void {
     const app = document.getElementById('app')!;
     app.innerHTML = '';
     skeletonBuilt = false;
+    historyCursor = -1;
 
     // Header: brand row (mark + name + tabs) + rail row (status chip + actions)
     const header = el('div', 'header');
@@ -1847,6 +1895,35 @@ function bindStableEvents(): void {
             }
         }
 
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            const list = currentHistory();
+            if (list.length === 0) {
+                historyCursor = -1;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (historyCursor === -1) {
+                    historyDraft = input.value;
+                    historyCursor = list.length - 1;
+                } else if (historyCursor > 0) {
+                    historyCursor--;
+                }
+                input.value = list[historyCursor];
+                autosizeInput(input);
+                input.setSelectionRange(input.value.length, input.value.length);
+            } else if (historyCursor !== -1) {
+                e.preventDefault();
+                if (historyCursor >= list.length - 1) {
+                    historyCursor = -1;
+                    input.value = historyDraft;
+                } else {
+                    historyCursor++;
+                    input.value = list[historyCursor];
+                }
+                autosizeInput(input);
+                input.setSelectionRange(input.value.length, input.value.length);
+            }
+        }
+
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (state.isStreaming) {
@@ -1862,6 +1939,7 @@ function bindStableEvents(): void {
                     } else {
                         vscode.postMessage({ type: 'queueMessage', text });
                     }
+                    rememberMessage(text);
                     input.value = '';
                     input.style.height = 'auto';
                 }
@@ -1882,8 +1960,11 @@ function bindStableEvents(): void {
 
     input?.addEventListener('input', () => {
         if (!input) return;
-        input.style.height = 'auto';
-        input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+        if (historyCursor !== -1) {
+            historyCursor = -1;
+            historyDraft = input.value;
+        }
+        autosizeInput(input);
         updateSlashMenu(input);
         updateMentionMenu(input);
     });
@@ -2242,6 +2323,7 @@ function sendMessage(): void {
         updateScrollButton();
         historyReplacePending = { from: state.sessionId, rewrite: true };
         vscode.postMessage({ type: 'replayTurn', turn, text: replayText, images });
+        rememberMessage(replayText);
         return;
     }
     const text = input.value.trim();
@@ -2263,6 +2345,7 @@ function sendMessage(): void {
             return;
         }
         vscode.postMessage({ type: 'queueMessage', text });
+        rememberMessage(text);
         input.value = '';
         input.style.height = 'auto';
         userHasScrolled = false;
@@ -2278,6 +2361,7 @@ function sendMessage(): void {
     updateAttachChips();
     userHasScrolled = false;
     updateScrollButton();
+    rememberMessage(text);
     vscode.postMessage({
         type: 'prompt',
         text,
