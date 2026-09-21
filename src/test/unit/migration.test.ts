@@ -33,6 +33,16 @@ describe('upgrade/rollback data compatibility (AC-OP-04)', () => {
         expect(API_KEY_PREFIX).toBe('pi-agent.apiKey.');
     });
 
+    it('activates on startup so the first panel open is not paying SDK init', () => {
+        // With no activationEvents VS Code falls back to implicit
+        // onView activation: the SDK import (~1s) + resourceLoader.reload
+        // (~0.5s) would serialize in front of the first panel open, which is
+        // exactly the "model picker takes forever on first load" regression.
+        // onStartupFinished lets the background tabManager.initialize() warm
+        // the session while the window is still starting up.
+        expect(pkg.activationEvents).toContain('onStartupFinished');
+    });
+
     describe('parseGlobalRules initializes empty and never throws on old data', () => {
         it('returns empty for absent / null / non-array state', () => {
             expect(parseGlobalRules(undefined)).toEqual([]);
