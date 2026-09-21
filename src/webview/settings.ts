@@ -80,6 +80,11 @@ function render(data: SettingsData): void {
             { value: 'medium', label: t('settings.think.medium') },
             { value: 'high', label: t('settings.think.high') },
         ], t('settings.thinkingLevelDesc')),
+        buildSelect('cacheWarming', t('settings.cacheWarming'), data.cacheWarming, [
+            { value: 'off', label: t('settings.warm.off') },
+            { value: 'streaming', label: t('settings.warm.streaming') },
+            { value: 'idle', label: t('settings.warm.idle') },
+        ], t('settings.cacheWarmingDesc')),
     ]));
 
     container.appendChild(buildSection(t('settings.section.tools'), [

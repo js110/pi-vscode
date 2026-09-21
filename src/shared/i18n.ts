@@ -250,6 +250,22 @@ const EN = {
     'common.yes': 'Yes',
     'init.failed': 'Pi Agent failed to initialize: {message}',
 
+    // Prompt-cache warming footer chip (SDK 0.86+)
+    'warm.state.inactive': 'warm off',
+    'warm.state.scheduled': 'will warm',
+    'warm.state.refreshing': 'warming…',
+    'warm.savings': '~{amount} saved per cache refresh',
+    'warm.scheduledAt': 'next warm at {time}',
+
+    // One-click bug-report summary (SDK 0.86+)
+    'diagnostic.generating': 'Generating diagnostic summary…',
+    'diagnostic.busy': 'Pi is still working on the last turn — wait for it to finish first.',
+    'diagnostic.failed': 'Failed to generate diagnostic summary: {message}',
+    'diagnostic.cancelled': 'Diagnostic summary cancelled.',
+    'diagnostic.empty': 'Pi produced no summary content.',
+    'diagnostic.noSession': 'No active Pi session.',
+    'diagnostic.unsupported': 'The installed Pi SDK does not support diagnostic summaries.',
+
     // Status bar open-panel entry (the secondary-sidebar container has no activity-bar icon)
     'statusBar.openPanel': 'Open Pi Agent panel',
     'occupancy.occupied': 'This session is open in another VS Code window. It is read-only here.',
@@ -313,6 +329,11 @@ const EN = {
     'settings.sessionPathDesc': 'Custom path for session data. Leave empty for the default workspace .pi/ directory.',
     'settings.contextWarning': 'Context Usage Warning',
     'settings.contextWarningDesc': 'Warn when context usage exceeds {n}% of the context window.',
+    'settings.cacheWarming': 'Cache warming mode',
+    'settings.cacheWarmingDesc': 'Keep the prompt cache warm to cut latency and cost on long turns. Mirrors Pi\'s global cache-warming setting; applied only when explicitly set, so a mode configured through Pi\'s CLI is never overridden.',
+    'settings.warm.off': 'Off',
+    'settings.warm.streaming': 'Streaming',
+    'settings.warm.idle': 'Idle',
     'settings.section.skills': 'Skills',
     'settings.skillsLoading': 'Loading skills...',
     'settings.skillsEmpty': 'No skills found. Place <code>SKILL.md</code> files in <code>~/.pi/agent/skills/</code> or <code>.pi/skills/</code> in your workspace.',
@@ -572,10 +593,26 @@ const ZH: Record<TextKey, string> = {
     'err.config': 'Pi 配置缺失或无法读取，请求无法开始。请打开设置面板检查提供者与模型。',
     'err.unknown': 'Pi 遇到意外错误，本轮已停止——上下文已保留。可重试；若反复出现，请查看 Pi Agent 输出通道。详情：{message}',
 
-    // 宿主命令提示（T17 残留文案收口）
+// 宿主命令提示（T17 残留文案收口）
     'command.thinkingChanged': '思考级别：{level}',
     'common.yes': '是',
     'init.failed': 'Pi Agent 初始化失败：{message}',
+
+    // 提示词缓存预热 footer 指示器（SDK 0.86+）
+    'warm.state.inactive': '未预热',
+    'warm.state.scheduled': '将预热',
+    'warm.state.refreshing': '预热中…',
+    'warm.savings': '每次缓存刷新节省 ~{amount}',
+    'warm.scheduledAt': '下次预热 {time}',
+
+    // 一键 Bug 诊断摘要（SDK 0.86+）
+    'diagnostic.generating': '正在生成诊断摘要…',
+    'diagnostic.busy': 'Pi 仍在处理上一轮任务，请先等待完成。',
+    'diagnostic.failed': '生成诊断摘要失败：{message}',
+    'diagnostic.cancelled': '已取消生成诊断摘要。',
+    'diagnostic.empty': 'Pi 未生成摘要内容。',
+    'diagnostic.noSession': '没有活跃的 Pi 会话。',
+    'diagnostic.unsupported': '当前安装的 Pi SDK 不支持诊断摘要。',
 
     // 状态栏打开面板入口（次侧边栏容器没有活动栏图标）
     'statusBar.openPanel': '打开 Pi Agent 面板',
@@ -637,6 +674,11 @@ const ZH: Record<TextKey, string> = {
     'settings.sessionPathDesc': '会话数据的自定义路径。留空使用工作区默认的 .pi/ 目录。',
     'settings.contextWarning': '上下文用量警告',
     'settings.contextWarningDesc': '当上下文用量超过上下文窗口的 {n}% 时发出警告。',
+    'settings.cacheWarming': '缓存预热模式',
+    'settings.cacheWarmingDesc': '保持提示词缓存预热，以降低长对话的延迟与成本。对应 Pi 的全局缓存预热设置；仅在显式设置时才生效，因此通过 Pi CLI 配置的模式不会被覆盖。',
+    'settings.warm.off': '关闭',
+    'settings.warm.streaming': '流式',
+    'settings.warm.idle': '空闲',
     'settings.section.skills': '技能',
     'settings.skillsLoading': '正在加载技能...',
     'settings.skillsEmpty': '未找到技能。请将 <code>SKILL.md</code> 放在 <code>~/.pi/agent/skills/</code> 或工作区的 <code>.pi/skills/</code> 中。',

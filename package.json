@@ -99,6 +99,10 @@
         "command": "pi-agent.generateCommitMessage",
         "title": "Pi: Generate Commit Message",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "pi-agent.generateDiagnosticSummary",
+        "title": "Pi: Generate Diagnostic Summary"
       }
     ],
     "keybindings": [
@@ -257,6 +261,21 @@
           "type": "boolean",
           "default": true,
           "description": "Show a notification when the agent finishes a turn (only when the window is unfocused or the tab runs in the background, and the turn took at least 5 seconds)"
+        },
+        "pi-agent.cacheWarming": {
+          "type": "string",
+          "default": "streaming",
+          "enum": [
+            "off",
+            "streaming",
+            "idle"
+          ],
+          "enumDescriptions": [
+            "Disable prompt-cache warming entirely",
+            "Keep one cache entry warm while a turn streams (Pi's native default)",
+            "Also warm the cache while the agent is idle"
+          ],
+          "description": "Pi prompt-cache warming mode. Applies Pi's global cache-warming setting; only applied when explicitly set here, so a mode you configured through Pi's CLI is never overridden."
         }
       }
     }

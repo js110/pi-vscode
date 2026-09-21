@@ -49,6 +49,17 @@ const pkgVersion = (() => {
 
 const missing = [];
 
+function versionAtLeast(installed, min) {
+    const pa = String(installed).split('.').map(Number);
+    const pb = String(min).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const da = pa[i] ?? 0;
+        const db = pb[i] ?? 0;
+        if (da !== db) return da > db;
+    }
+    return true;
+}
+
 function checkExport(name) {
     if (sdk?.[name] === undefined) { missing.push(`export: ${name}`); }
 }
@@ -85,9 +96,19 @@ checkStatic('ModelRuntime', 'create');
 ['setRuntimeApiKey', 'removeRuntimeApiKey'].forEach((m) => checkProto('ModelRuntime', m));
 checkProto('DefaultResourceLoader', 'reload');
 
+// --- Version-gated APIs (cache warming, SDK 0.86.0+) ---
+// The pinned bundled copy (0.84.4) predates cache warming, and the extension
+// feature-detects every one of these at runtime (src/pi/session.ts), so a
+// missing API is only a hard error once Pi ships >= 0.86.0 — the canary run
+// will catch a rename/removal on the next SDK bump.
+if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '0.86.0')) {
+    ['getCacheWarmingMode', 'setCacheWarmingMode'].forEach((m) => checkProto('SettingsManager', m));
+}
+
 // AgentSession instance methods cannot be checked without creating a live
 // session (needs a model); they are covered by `npm run typecheck` (SDK .d.ts)
-// and the unit tests, which build a real session.
+// and the unit tests, which build a real session. Its cache-warming and
+// bug-report APIs are feature-detected in src/pi/session.ts.
 
 if (missing.length) {
     console.error(`Pi SDK API audit (installed version ${pkgVersion}): ${missing.length} missing API(s):`);

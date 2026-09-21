@@ -7,6 +7,28 @@ export interface ContextUsageInfo {
     percent: number | null;
 }
 
+/** Cache-warming mode mirror of Pi's CACHE_WARMING_MODES. */
+export type CacheWarmingMode = 'off' | 'streaming' | 'idle';
+
+/** The warm/stop decision Pi's cache warmer reached for a turn, surfaced
+ *  from the emitCacheWarmingDecision extension hook (mirrors the SDK event). */
+export interface CacheWarmingDecisionInfo {
+    phase: 'streaming' | 'idle';
+    warmCost: number;
+    missCost: number;
+    continuationProbability: number;
+    expectedSavings: number;
+    economicsAvailable: boolean;
+    action: 'warm' | 'stop';
+}
+
+/** Runtime status snapshot of Pi's cache warmer (mirrors the SDK getter). */
+export interface CacheWarmingStatusInfo {
+    state: 'inactive' | 'scheduled' | 'refreshing';
+    reason?: string;
+    nextWarmAt?: number;
+}
+
 export interface SettingsData {
     apiProvider: string;
     apiKeySet: boolean;
@@ -18,6 +40,9 @@ export interface SettingsData {
     autoSaveSessions: boolean;
     sessionStoragePath: string;
     contextUsageWarningThreshold: number;
+    /** Effective cache-warming mode (VS Code config; Pi's native default is
+     *  "streaming" and is only overridden here when explicitly set). */
+    cacheWarming: string;
 }
 
 export interface ToolCallPendingInfo {
@@ -93,6 +118,8 @@ export interface SerializedAgentState {
     compactionPrompt?: number | null;
     supportsImages?: boolean;
     occupancy?: SessionOccupancy;
+    cacheWarmingStatus?: CacheWarmingStatusInfo;
+    cacheWarmingDecision?: CacheWarmingDecisionInfo;
 }
 
 export interface ModelInfo {

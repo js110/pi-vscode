@@ -18,7 +18,7 @@ import { getModelRuntime } from './pi/auth';
 import { getModelRegistry, findConfiguredModel } from './pi/models';
 import { setLang, t, thinkingLevelLabel } from './shared/i18n';
 import { humanizeErrorMessage } from './shared/error-copy';
-import { setSdkProbeCacheDir } from './pi/compat';
+import { setSdkProbeCacheDir, getSdkSource } from './pi/compat';
 import { fuzzyFilterFiles, MAX_MENTION_RESULTS } from './shared/mention';
 import {
     buildSelectionPrompt,
@@ -43,6 +43,33 @@ function formatDurationSec(durationSec: number): string {
     const total = Math.max(1, Math.round(durationSec));
     if (total < 60) return `${total}s`;
     return `${Math.floor(total / 60)}m ${total % 60}s`;
+}
+
+/** Markdown preamble for the bug-report summary (SDK copy/version first —
+ *  that's what a maintainer needs to reproduce). */
+function buildDiagnosticMarkdown(manager: TabManager, summary: string): string {
+    const session = manager.activeTab?.session;
+    const src = getSdkSource();
+    const sdkLine = src
+        ? `Pi SDK: ${src.source} v${src.version}${src.reason ? ` (bundled fallback: ${src.reason})` : ''}`
+        : 'Pi SDK: unknown';
+    const model = session?.getCurrentModel();
+    const modelLine = model ? `${model.provider}/${model.id}` : 'none';
+    const sessionName = session?.getSessionName();
+    const sessionPath = session?.getCurrentSessionPath();
+    return [
+        `# Pi Diagnostic Summary`,
+        '',
+        `- Generated: ${new Date().toLocaleString()}`,
+        `- Model: ${modelLine}`,
+        `- Session: ${sessionName ?? 'Untitled'}${sessionPath ? `\`${sessionPath}\`` : ''}`,
+        `- ${sdkLine}`,
+        '',
+        '---',
+        '',
+        summary,
+        '',
+    ].join('\n');
 }
 
 // ── @-mention workspace glue (AC-FN-21/22) ──
@@ -458,6 +485,47 @@ export async function activate(context: vscode.ExtensionContext) {
                 void commitMessage.generateIntoInputBox(target);
             }),
 
+            vscode.commands.registerCommand('pi-agent.generateDiagnosticSummary', async () => {
+                const manager = tabManagerRef;
+                if (!manager) return;
+                if (manager.activeTab && manager.isTabStreaming(manager.activeTab.id)) {
+                    vscode.window.showWarningMessage(t('diagnostic.busy'));
+                    return;
+                }
+                const controller = new AbortController();
+                let summary: string | undefined;
+                try {
+                    summary = await vscode.window.withProgress(
+                        {
+                            location: vscode.ProgressLocation.Notification,
+                            title: t('diagnostic.generating'),
+                            cancellable: true,
+                        },
+                        (_progress, token) => {
+                            token.onCancellationRequested(() => controller.abort());
+                            return manager.generateDiagnosticSummary({ signal: controller.signal });
+                        },
+                    );
+                } catch (err: any) {
+                    if (controller.signal.aborted || err?.name === 'AbortError') {
+                        vscode.window.showInformationMessage(t('diagnostic.cancelled'));
+                    } else {
+                        const text = humanizeErrorMessage(err) ?? err?.message ?? String(err);
+                        vscode.window.showErrorMessage(t('diagnostic.failed', { message: text }));
+                    }
+                    return;
+                }
+                if (!summary || !summary.trim()) {
+                    vscode.window.showInformationMessage(t('diagnostic.empty'));
+                    return;
+                }
+                const doc = await vscode.workspace.openTextDocument({
+                    content: buildDiagnosticMarkdown(manager, summary),
+                    language: 'markdown',
+                });
+                await vscode.window.showTextDocument(doc, { preview: true });
+            }),
+
             vscode.commands.registerCommand('pi-agent.openSettings', () => {
                 SettingsPanel.show(
                     context.extensionUri,
@@ -481,6 +549,23 @@ export async function activate(context: vscode.ExtensionContext) {
                     sidebarProvider.post({ type: 'langChanged', lang });
                     SettingsPanel.notifyLanguage(lang);
                     statusBar.refresh();
+                }
+                if (e.affectsConfiguration('pi-agent.cacheWarming')) {
+                    // Only an explicitly-set value may override Pi's native
+                    // mode (the SDK default or a CLI-set one survives resets).
+                    const inspected = vscode.workspace
+                        .getConfiguration('pi-agent')
+                        .inspect<string>('cacheWarming');
+                    if (
+                        inspected?.globalValue !== undefined ||
+                        inspected?.workspaceValue !== undefined ||
+                        inspected?.workspaceFolderValue !== undefined
+                    ) {
+                        const mode = vscode.workspace
+                            .getConfiguration('pi-agent')
+                            .get<string>('cacheWarming', 'streaming');
+                        tabManagerRef?.setCacheWarmingMode(mode);
+                    }
                 }
             }),
         );

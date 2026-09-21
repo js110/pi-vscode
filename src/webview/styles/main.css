@@ -1403,6 +1403,26 @@ kbd {
     font-variant-numeric: tabular-nums;
 }
 
+/* Cache-warming indicator (SDK 0.86+): a footer-context-style pill that
+   lights up with the accent color while a refresh runs. */
+.warm-chip {
+    font-size: var(--fs-micro);
+    padding: 2px 9px;
+    background: var(--surface-strong);
+    color: var(--muted);
+    border-radius: 100px;
+    line-height: 1.3;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    cursor: default;
+}
+.warm-chip-active {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 .abort-btn {
     background: none;
     border: 1px solid var(--hairline);

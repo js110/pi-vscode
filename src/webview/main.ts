@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo } from '../shared/protocol';
 import { buildOccupancyBannerHtml } from './render/occupancy';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { normalizeImageFile } from './image-resize';
@@ -59,6 +59,8 @@ const state: {
     mentions: string[];
     selection: SelectionContextInfo | null;
     occupancy: SessionOccupancy | null;
+    cacheWarmingStatus?: CacheWarmingStatusInfo;
+    cacheWarmingDecision?: CacheWarmingDecisionInfo;
     /** assetId → dataUrl, fed by stateSync.images (T16 image separation). */
     imageCache: Record<string, string>;
 } = {
@@ -352,6 +354,8 @@ function applyStateSync(s: SerializedAgentState): void {
     state.compactionPrompt = s.compactionPrompt ?? null;
     state.supportsImages = s.supportsImages ?? false;
     state.occupancy = s.occupancy ?? null;
+    state.cacheWarmingStatus = s.cacheWarmingStatus ?? state.cacheWarmingStatus;
+    state.cacheWarmingDecision = s.cacheWarmingDecision ?? state.cacheWarmingDecision;
     if (!state.supportsImages && state.pendingImages.length > 0) {
         // The model can switch under attached images; drop them rather than
         // delivering to a text-only model.
@@ -772,6 +776,39 @@ function updateStatusChip(): void {
     chip.title = t('header.readyTitle', { providers: cfg.providers.length, models: cfg.models.length });
 }
 
+/** Footer chip for Pi's cache warmer (SDK 0.86+): state label, plus the
+ *  estimated per-refresh saving while a refresh is in flight. */
+function buildWarmChipHtml(): string {
+    const status = state.cacheWarmingStatus;
+    if (!status) return '';
+    const decision = state.cacheWarmingDecision;
+    let label: string;
+    let title: string;
+    switch (status.state) {
+        case 'refreshing':
+            label = t('warm.state.refreshing');
+            title = decision?.economicsAvailable && decision.expectedSavings != null
+                ? t('warm.savings', { amount: formatUsd(decision.expectedSavings) })
+                : label;
+            break;
+        case 'scheduled':
+            label = t('warm.state.scheduled');
+            title = status.nextWarmAt
+                ? t('warm.scheduledAt', { time: new Date(status.nextWarmAt).toLocaleTimeString() })
+                : label;
+            break;
+        default:
+            label = t('warm.state.inactive');
+            title = label;
+            break;
+    }
+    return `<span class="warm-chip${status.state === 'refreshing' ? ' warm-chip-active' : ''}" title="${escAttr(title)}">${escHtml(label)}</span>`;
+}
+
+function formatUsd(value: number): string {
+    return `$${value.toFixed(2)}`;
+}
+
 function updateInputArea(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (input) {
@@ -822,6 +859,7 @@ function updateInputArea(): void {
         <div class="cstrip-left">
             <span class="footer-model" title="${escHtml(t('models.selectPlaceholder'))}">${escHtml(modelName)}</span>
             ${meterHtml}
+            ${buildWarmChipHtml()}
         </div>
         <div class="cstrip-right">
         ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}

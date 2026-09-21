@@ -157,6 +157,8 @@ type TabState = Tab & {
     imageData: Map<string, string>;
     /** Wall-clock duration of the last finished turn, for the completion notify. */
     lastTurnDurationSec: number;
+    /** Latest Pi cache-warming decision (SDK 0.86+; absent on older copies). */
+    cacheWarmingDecision?: import('../shared/protocol').CacheWarmingDecisionInfo;
 };
 
 export class TabManager {
@@ -236,6 +238,27 @@ export class TabManager {
     isReadOnlyLocked(): boolean {
         const tab = this._tabs.get(this._activeTabId);
         return tab?.lock ? tab.lock.occupancy !== 'none' : false;
+    }
+
+    /** Apply a VS Code-configured cache-warming mode to the active session
+     *  (SDK 0.86+; silently ignored on older copies without the API). */
+    setCacheWarmingMode(mode: string): void {
+        const tab = this._tabs.get(this._activeTabId);
+        if (tab) {
+            tab.session.setCacheWarmingMode(mode);
+            this._emitStateChange();
+        }
+    }
+
+    /** Active-session bug-report summary (the CLI's /bug assist). Rejects
+     *  while a turn is streaming and when the installed SDK lacks the API. */
+    async generateDiagnosticSummary(options: { hint?: string; signal: AbortSignal }): Promise<string> {
+        await this.initialize();
+        const tab = this._tabs.get(this._activeTabId);
+        if (!tab) { throw new Error(t('diagnostic.noSession')); }
+        if (tab.isStreaming) { throw new Error(t('diagnostic.busy')); }
+        if (!tab.session.summarizeForBugReport) { throw new Error(t('diagnostic.unsupported')); }
+        return tab.session.summarizeForBugReport(options);
     }
 
     /** Roll back every turn after `messageIndex` on a specific tab
@@ -363,6 +386,9 @@ export class TabManager {
         }
         state.compactionPrompt = tab.compactionPrompt;
         state.supportsImages = tab.session.supportsImages();
+        if (tab.cacheWarmingDecision) {
+            state.cacheWarmingDecision = tab.cacheWarmingDecision;
+        }
         if (tab.lock && tab.lock.occupancy !== 'none') {
             state.occupancy = tab.lock.occupancy;
         }
@@ -417,6 +443,7 @@ export class TabManager {
             imageAssets: new Map<string, string>(),
             imageData: new Map<string, string>(),
             lastTurnDurationSec: 0,
+            cacheWarmingDecision: undefined,
         };
     }
 
@@ -599,6 +626,16 @@ export class TabManager {
 
         if (event.type === 'queue_update') {
             tab.queuedMessages = [...(event.followUp ?? [])];
+        }
+
+        // Custom event from the session manager's cache-warming monitor (not
+        // part of Pi's own event stream): surface it through the state frame.
+        if (event.type === 'cache_warming_decision') {
+            tab.cacheWarmingDecision = event;
+            if (isActive) {
+                this._emitStateChange();
+            }
+            return;
         }
 
         if (!isActive && event.type === 'tool_execution_end' && event.isError) {
@@ -868,6 +905,7 @@ export class TabManager {
                 tab.compactionStage = 'none';
                 tab.compactionPrompt = null;
                 tab.name = 'New Agent';
+                tab.cacheWarmingDecision = undefined;
                 this._emitStateChange();
                 break;
             case 'loadSession':
@@ -884,6 +922,7 @@ export class TabManager {
                 tab.imageData.clear();
                 tab.compactionStage = 'none';
                 tab.compactionPrompt = null;
+                tab.cacheWarmingDecision = undefined;
                 this._resetStreaming(tab);
                 tab.messageMeta.clear();
                 this._updateTabName(tab);

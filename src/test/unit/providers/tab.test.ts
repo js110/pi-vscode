@@ -1063,3 +1063,80 @@ describe('TabManager built-in slash command dispatch', () => {
         expect(((result?.[0] as any)?.message as string)).toContain('boom');
     });
 });
+
+describe('TabManager cache warming + bug report (SDK 0.86+)', () => {
+    async function setup(overrides: Partial<Tab['session']> = {}) {
+        const tab = makeTab(overrides);
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeAdapters());
+        await manager.initialize();
+        return { tab, manager };
+    }
+
+    it('propagates a cache_warming_decision to the state frame and fires onStateChange', async () => {
+        const { manager } = await setup();
+        const listener = vi.fn();
+        manager.onStateChange(listener);
+
+        manager.activeTab!.session.events.dispatch({
+            type: 'cache_warming_decision',
+            phase: 'idle',
+            warmCost: 10,
+            missCost: 100,
+            continuationProbability: 0.5,
+            expectedSavings: 45,
+            economicsAvailable: true,
+            action: 'warm',
+        } as any);
+
+        expect(listener).toHaveBeenCalled();
+        expect(manager.getState().cacheWarmingDecision).toEqual(
+            expect.objectContaining({ action: 'warm', expectedSavings: 45 }),
+        );
+    });
+
+    it('leaves the last decision off snapshots once the session restarts', async () => {
+        const { manager } = await setup();
+        manager.activeTab!.session.events.dispatch({
+            type: 'cache_warming_decision',
+            action: 'stop',
+        } as any);
+        expect(manager.getState().cacheWarmingDecision).toBeDefined();
+
+        await manager.dispatch({ type: 'newSession' });
+        expect(manager.getState().cacheWarmingDecision).toBeUndefined();
+    });
+
+    it('setCacheWarmingMode delegates to the active session', async () => {
+        const { tab, manager } = await setup({
+            setCacheWarmingMode: vi.fn(),
+        });
+        manager.setCacheWarmingMode('idle');
+        expect(tab.session.setCacheWarmingMode).toHaveBeenCalledWith('idle');
+    });
+
+    it('generateDiagnosticSummary delegates to the session', async () => {
+        const signal = new AbortController().signal;
+        const { tab, manager } = await setup({
+            summarizeForBugReport: vi.fn(async () => '# summary'),
+        });
+        await expect(manager.generateDiagnosticSummary({ signal })).resolves.toBe('# summary');
+        expect(tab.session.summarizeForBugReport).toHaveBeenCalledWith({ signal });
+    });
+
+    it('generateDiagnosticSummary rejects while a turn is streaming', async () => {
+        const { manager } = await setup({
+            summarizeForBugReport: vi.fn(async () => '# summary'),
+        });
+        (manager.activeTab as any).isStreaming = true;
+        await expect(
+            manager.generateDiagnosticSummary({ signal: new AbortController().signal }),
+        ).rejects.toThrow(t('diagnostic.busy'));
+    });
+
+    it('generateDiagnosticSummary rejects when the installed SDK lacks the API', async () => {
+        const { manager } = await setup();
+        await expect(
+            manager.generateDiagnosticSummary({ signal: new AbortController().signal }),
+        ).rejects.toThrow(t('diagnostic.unsupported'));
+    });
+});

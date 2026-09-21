@@ -148,6 +148,7 @@ export class SettingsPanel {
             autoSaveSessions: config.get<boolean>('autoSaveSessions', true),
             sessionStoragePath: config.get<string>('sessionStoragePath', ''),
             contextUsageWarningThreshold: config.get<number>('contextUsageWarningThreshold', 80),
+            cacheWarming: config.get<string>('cacheWarming', 'streaming'),
         };
 
         this._post({ type: 'settings', data });

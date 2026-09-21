@@ -6,7 +6,7 @@ import type {
     ModelRegistry,
     ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
-import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo } from '../shared/protocol';
+import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo, CacheWarmingStatusInfo } from '../shared/protocol';
 import { API_KEY_PREFIX } from '../shared/protocol';
 import { modelSupportsImages, type ImagePayload } from '../shared/image-input';
 import { EventRouter } from './events';
@@ -85,6 +85,7 @@ export class PiSessionManager {
 
         this._applyDefaultSettings(session);
         this._installToolApprovalHook(session);
+        this._installCacheWarmingMonitor(session);
 
         const model = session.model;
         this._outputChannel.appendLine(
@@ -98,6 +99,17 @@ export class PiSessionManager {
         const thinkingLevel = config.get<string>('thinkingLevel', 'off');
         if (thinkingLevel && thinkingLevel !== 'off') {
             session.setThinkingLevel(thinkingLevel as any);
+        }
+
+        // Only an explicitly-set value overrides Pi's native mode — startup
+        // must never clobber a mode the user configured through Pi's CLI.
+        const cacheWarming = config.inspect<string>('cacheWarming');
+        if (
+            cacheWarming?.globalValue !== undefined ||
+            cacheWarming?.workspaceValue !== undefined ||
+            cacheWarming?.workspaceFolderValue !== undefined
+        ) {
+            this.setCacheWarmingMode(config.get<string>('cacheWarming', 'streaming'));
         }
 
         const defaultProvider = config.get<string>('apiProvider', '');
@@ -217,6 +229,7 @@ export class PiSessionManager {
         this._unsubscribe = session.subscribe(this.events.asSessionListener());
         this._applyDefaultSettings(session);
         this._installToolApprovalHook(session);
+        this._installCacheWarmingMonitor(session);
         this._sessionsCache.invalidate();
     }
 
@@ -253,6 +266,7 @@ export class PiSessionManager {
         this._session = session;
         this._unsubscribe = session.subscribe(this.events.asSessionListener());
         this._installToolApprovalHook(session);
+        this._installCacheWarmingMonitor(session);
         this._sessionsCache.invalidate();
     }
 
@@ -408,6 +422,78 @@ export class PiSessionManager {
         }
     }
 
+    /** Runtime cache-warmer status snapshot, or undefined when the installed
+     *  SDK predates `AgentSession.cacheWarmingStatus` (SDK 0.86+). */
+    getCacheWarmingStatus(): CacheWarmingStatusInfo | undefined {
+        const s = this._session;
+        if (!s || !('cacheWarmingStatus' in s)) { return undefined; }
+        try {
+            return (s as any).cacheWarmingStatus;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** Override Pi's native cache-warming mode (writes Pi's global setting).
+     *  Only invoked for an explicitly-set VS Code config value, so a mode the
+     *  user configured through Pi's CLI (or the SDK default "streaming") is
+     *  never clobbered at startup. */
+    setCacheWarmingMode(mode: string): void {
+        const s = this._session;
+        if (!s || !hasFunction(s, 'setCacheWarmingMode')) { return; }
+        try {
+            (s as any).setCacheWarmingMode(mode);
+        } catch (err: any) {
+            this._outputChannel.appendLine(`[pi-compat] setCacheWarmingMode failed: ${err?.message ?? err}`);
+        }
+    }
+
+    /** One-click bug-report summary — the CLI's /bug assist, exposed as an
+     *  API (SDK 0.86+; reject cleanly on older copies). */
+    async summarizeForBugReport(options: { hint?: string; signal: AbortSignal }): Promise<string> {
+        const s = this._session;
+        if (!s) { throw new Error('No active session'); }
+        if (!hasFunction(s, 'summarizeForBugReport')) {
+            throw new Error('summarizeForBugReport is not available in the installed Pi SDK');
+        }
+        return (s as any).summarizeForBugReport(options);
+    }
+
+    /** Pipe Pi's per-refresh warm/stop decision up as tab events (SDK 0.86+;
+     *  older copies simply lack the hook and nothing lights up). The original
+     *  hook still wins — ours only observes the final action. */
+    private _installCacheWarmingMonitor(session: AgentSession): void {
+        try {
+            const runner = (session as any).extensionRunner;
+            if (!runner || typeof runner.emitCacheWarmingDecision !== 'function') { return; }
+
+            const origEmit = runner.emitCacheWarmingDecision.bind(runner);
+            const self = this;
+            runner.emitCacheWarmingDecision = async (event: any) => {
+                let action: string = event?.action ?? 'stop';
+                try {
+                    const result = await origEmit(event);
+                    if (result?.action) { action = result.action; }
+                } catch { /* Pi guards its own decision; keep the event default */ }
+                try {
+                    self.events.dispatch({
+                        type: 'cache_warming_decision',
+                        phase: event?.phase,
+                        warmCost: event?.warmCost,
+                        missCost: event?.missCost,
+                        continuationProbability: event?.continuationProbability,
+                        expectedSavings: event?.expectedSavings,
+                        economicsAvailable: event?.economicsAvailable,
+                        action,
+                    } as any);
+                } catch { /* UI surfacing is best-effort */ }
+                return action;
+            };
+        } catch {
+            this._outputChannel.appendLine('Cache warming monitor: extension runner not available, skipping');
+        }
+    }
+
     getSkills(): SkillInfo[] {
         if (!this._session) return [];
         try {
@@ -546,6 +632,7 @@ export class PiSessionManager {
             sessionId: s.sessionId,
             sessionName: s.sessionName,
             contextUsage: this._getContextUsage(),
+            cacheWarmingStatus: this.getCacheWarmingStatus(),
         };
     }
 
