@@ -17,6 +17,22 @@ export const MAX_IMAGE_EDGE_PX = 2576;
 
 const JPEG_QUALITY = 0.85;
 
+const IMAGE_MIMES: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+};
+
+/** MIME for a filename extension, or null when the name is not an image. */
+export function imageMimeFromName(name: string): string | null {
+    const dot = name.lastIndexOf('.');
+    if (dot < 0) return null;
+    return IMAGE_MIMES[name.slice(dot + 1).toLowerCase()] ?? null;
+}
+
 export type NormalizeImageResult =
     | { ok: true; dataUrl: string }
     | { ok: false; reason: 'tooLarge' | 'invalid' };
@@ -37,6 +53,29 @@ function readAsDataUrl(file: Blob): Promise<string> {
     });
 }
 
+/** base64 whose payload is produced from raw bytes when the File has no MIME. */
+function bytesToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary);
+}
+
+/**
+ * Read a File into a `data:<mime>;base64,…` URL. `FileReader.readAsDataURL`
+ * keys off `file.type`, which is EMPTY for files dragged from the OS on
+ * Windows — fall back to the extension-derived MIME so those attach too.
+ */
+async function readImageAsDataUrl(file: File): Promise<string> {
+    if (file.type) return readAsDataUrl(file);
+    const mime = imageMimeFromName(file.name);
+    if (!mime) return readAsDataUrl(file);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    return `data:${mime};base64,${bytesToBase64(bytes)}`;
+}
+
 function canvasToDataUrl(canvas: HTMLCanvasElement, type: string): string | null {
     try {
         return canvas.toDataURL(type, JPEG_QUALITY);
@@ -50,7 +89,7 @@ export async function normalizeImageFile(file: File): Promise<NormalizeImageResu
     if (file.size > MAX_IMAGE_INPUT_BYTES) return { ok: false, reason: 'tooLarge' };
     if (file.size <= MAX_IMAGE_BYTES) {
         try {
-            const dataUrl = await readAsDataUrl(file);
+            const dataUrl = await readImageAsDataUrl(file);
             return dataUrl.startsWith('data:image/')
                 ? { ok: true, dataUrl }
                 : { ok: false, reason: 'invalid' };

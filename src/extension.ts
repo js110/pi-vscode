@@ -30,7 +30,7 @@ import { parseGlobalRules, type GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
 import type { DropResolveResult, MentionSymbolItem, ServerMessage } from './shared/protocol';
-import { isImagePath, relativeToWorkspace, uriToPath } from './shared/drop-files';
+import { relativeToWorkspace, uriToPath } from './shared/drop-files';
 
 let bridgeContext: BridgeContext | undefined;
 
@@ -160,14 +160,15 @@ async function readMentionFile(fsPath: string): Promise<string | null> {
 
 async function resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]> {
     const roots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
     return Promise.all(
         uris.map(async (uri): Promise<DropResolveResult> => {
             const fsPath = uriToPath(uri);
             if (!fsPath) return { status: 'invalid' };
             const rel = relativeToWorkspace(fsPath, roots);
-            // Workspace files: return relative path for @-mention injection.
-            if (rel) {
-                if (isImagePath(rel)) return { status: 'image' };
+            const ext = fsPath.split('.').pop()?.toLowerCase() ?? '';
+            if (rel && !IMAGE_EXTS.has(ext)) {
+                // Workspace files: return relative path for @-mention injection.
                 try {
                     const stat = await vscode.workspace.fs.stat(vscode.Uri.file(fsPath));
                     if (stat.type !== vscode.FileType.File) return { status: 'invalid' };
@@ -176,23 +177,22 @@ async function resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>
                 }
                 return { status: 'file', path: rel };
             }
-            // External files (outside workspace): read content on the host side.
-            const uriObj = vscode.Uri.file(fsPath);
-            const ext = fsPath.split('.').pop()?.toLowerCase() ?? '';
-            const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
+            // Images (workspace or external) and external files: read the
+            // content on the host side and return it to the webview. Workspace
+            // images land here too so they attach as thumbnail chips instead
+            // of falling through an unhandled 'image' status.
             try {
-                const stat = await vscode.workspace.fs.stat(uriObj);
+                const stat = await vscode.workspace.fs.stat(vscode.Uri.file(fsPath));
                 if (stat.type !== vscode.FileType.File) return { status: 'invalid' };
                 if (stat.size > 5 * 1024 * 1024) return { status: 'invalid' }; // 5 MB cap
+                const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(fsPath));
                 if (IMAGE_EXTS.has(ext)) {
-                    const bytes = await vscode.workspace.fs.readFile(uriObj);
                     const base64 = Buffer.from(bytes).toString('base64');
                     const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png'
                         : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp'
                         : ext === 'bmp' ? 'image/bmp' : 'image/png';
                     return { status: 'external', dataUrl: `data:${mime};base64,${base64}`, name: fsPath.split(/[\\/]/).pop() };
                 }
-                const bytes = await vscode.workspace.fs.readFile(uriObj);
                 const text = new TextDecoder('utf-8').decode(bytes);
                 return { status: 'external', content: text, name: fsPath.split(/[\\/]/).pop() };
             } catch {

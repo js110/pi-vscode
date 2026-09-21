@@ -1,7 +1,7 @@
 import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo } from '../shared/protocol';
 import { buildOccupancyBannerHtml } from './render/occupancy';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
-import { normalizeImageFile } from './image-resize';
+import { normalizeImageFile, imageMimeFromName } from './image-resize';
 import { matchesModelFilter } from '../shared/model-filter';
 import { rankSlashMenuItems } from '../shared/slash-commands';
 import { t, setLang, type TextKey } from '../shared/i18n';
@@ -238,6 +238,10 @@ function handleMessage(msg: ServerMessage): void {
                 let invalid = 0;
                 for (const result of msg.results) {
                     if (result.status === 'file' && result.path) {
+                        insertMentionTokenAtCursor(result.path);
+                    } else if (result.status === 'image' && result.path) {
+                        // Defensive: pre-unification hosts may still answer
+                        // workspace images with this status.
                         insertMentionTokenAtCursor(result.path);
                     } else if (result.status === 'external') {
                         if (result.dataUrl && state.supportsImages && !state.isStreaming) {
@@ -2414,14 +2418,23 @@ let imageReadGeneration = 0;
 /** Route picked/ dragged/ pasted files: images keep the image pipeline,
  *  non-image files are read as text and appended to the prompt. */
 function addAttachments(files: File[]): void {
-    const images = files.filter((f) => f.type.startsWith('image/'));
-    const others = files.filter((f) => !f.type.startsWith('image/'));
+    const images = files.filter(isImageFile);
+    const others = files.filter((f) => !isImageFile(f));
     if (images.length > 0) {
         addImageFiles(images);
     }
     if (others.length > 0) {
         void addTextAttachments(others);
     }
+}
+
+/**
+ * OS-dragged files on Windows arrive with an EMPTY `type`; fall back to the
+ * filename so images still ride the attach path instead of the text one.
+ */
+function isImageFile(file: File): boolean {
+    if (file.type.startsWith('image/')) return true;
+    return imageMimeFromName(file.name) !== null;
 }
 
 /** Read non-image files as text and pin them to the composer (if readable). */
@@ -2461,7 +2474,7 @@ function addImageFiles(files: File[]): void {
         showNotice(t('image.queueUnsupported'));
         return;
     }
-    const candidates = files.filter((f) => f.type.startsWith('image/'));
+    const candidates = files.filter(isImageFile);
     const slots = MAX_IMAGES_PER_PROMPT - state.pendingImages.length;
     if (candidates.length > slots) {
         showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }), ERROR_HINT_MS);
