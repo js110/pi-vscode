@@ -1047,6 +1047,7 @@ describe('TabManager built-in slash command dispatch', () => {
         );
         expect((result?.[0] as any)?.ok).toBe(false);
         expect((result?.[0] as any)?.message).toBe(t('compact.nothingToCompact'));
+        expect((result?.[0] as any)?.benign).toBe(true);
     });
 
     it('includes the underlying detail for real compaction failures', async () => {
@@ -1061,6 +1062,7 @@ describe('TabManager built-in slash command dispatch', () => {
         );
         expect((result?.[0] as any)?.ok).toBe(false);
         expect(((result?.[0] as any)?.message as string)).toContain('boom');
+        expect((result?.[0] as any)?.benign).toBe(false);
     });
 });
 

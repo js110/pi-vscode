@@ -4,8 +4,6 @@ A first-class VS Code sidebar for the Pi coding agent. The extension reuses Pi's
 
 The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetaphor/pi-vscode-extension). The IDE bridge is derived from [pithings/pi-vscode](https://github.com/pithings/pi-vscode). Both upstream projects are MIT licensed; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-![Pi for VS Code](screenshot.png)
-
 ## What works
 
 - Sidebar chat with streamed text, thinking blocks, and expandable tool calls.

@@ -33,9 +33,9 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
-  "contributes": {
+"contributes": {
     "viewsContainers": {
-      "activitybar": [
+      "secondarySidebar": [
         {
           "id": "pi-agent",
           "title": "Pi Agent",

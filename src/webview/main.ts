@@ -217,8 +217,12 @@ function handleMessage(msg: ServerMessage): void {
         }
         case 'compactionResult':
             state.compactionBusy = false;
-            if (!msg.ok) {
-                showError(msg.message ?? t('compact.failed'));
+            if (msg.ok) {
+                showNotice(t('compact.done'));
+            } else if (msg.benign) {
+                showNotice(msg.message ?? t('compact.nothingToCompact'));
+            } else {
+                showError(msg.message ?? t('compact.failed'), 5000);
             }
             updateCompactionBanner();
             break;

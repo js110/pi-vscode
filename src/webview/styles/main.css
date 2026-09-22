@@ -41,6 +41,11 @@
     --btn-fg: var(--vscode-button-foreground, #ffffff);
     --btn-hover: var(--vscode-button-hoverBackground, #1177bb);
 
+    /* Native widget + list-selection surfaces (popover floats, picker highlight) */
+    --widget-bg: var(--vscode-editorWidget-background, color-mix(in srgb, var(--fg) 8%, transparent));
+    --sel-bg: var(--vscode-list-activeSelectionBackground, #04395e);
+    --sel-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
+
     /* Status */
     --error-fg: var(--vscode-errorForeground, #f48771);
     --success-fg: var(--vscode-testing-iconPassed, #73c991);
@@ -69,10 +74,10 @@
     --fs-sm: 12px;
     --fs-base: 13px;
 
-    /* Radius system */
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 14px;
+    /* Radius system — sharp prototype scale (ui/assets/tokens.css: 4/6px) */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
 
     /* Rail geometry: transcript gutter + the line position */
     --rail: 34px;
@@ -105,11 +110,11 @@ body {
     position: relative;
 }
 
-kbd {
+.kbd {
     background: var(--surface-strong);
     border: 1px solid var(--hairline);
     border-bottom-width: 2px;
-    border-radius: 5px;
+    border-radius: var(--radius-sm);
     padding: 1px 6px;
     font-size: var(--fs-xs);
     font-family: var(--font-mono);
@@ -1277,22 +1282,35 @@ kbd {
     box-shadow: none;
 }
 
-.input-container:focus-within {
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 30%, transparent);
+.input-container:focus-within .input-area {
+    border-color: var(--accent);
 }
 
 /* Drop target highlight while dragging files over the composer */
-.input-container.drag-over {
-    box-shadow: inset 0 1px 0 var(--accent), inset 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+.input-container.drag-over .input-area {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* ── Input ── */
 .input-area {
-    padding: 10px 14px 2px;
+    display: flex;
+    align-items: flex-end;
+    margin: 6px 10px 0;
+    padding: 6px 8px 6px 12px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-area:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 #input {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     background: transparent;
     color: var(--input-fg);
     border: none;
@@ -1301,7 +1319,7 @@ kbd {
     font-size: var(--fs-base);
     resize: none;
     outline: none;
-    min-height: 24px;
+    min-height: 22px;
     max-height: 200px;
     line-height: 1.5;
     scrollbar-width: none;
@@ -1425,10 +1443,10 @@ kbd {
 }
 
 .abort-btn {
-    background: none;
-    border: 1px solid var(--hairline);
-    color: var(--fg);
-    border-radius: 100px;
+    background: color-mix(in srgb, var(--error-fg) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--error-fg) 40%, transparent);
+    color: var(--error-fg);
+    border-radius: var(--radius-sm);
     padding: 5px 13px;
     cursor: pointer;
     font-size: var(--fs-sm);
@@ -1441,9 +1459,8 @@ kbd {
     transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .abort-btn:hover {
-    background: color-mix(in srgb, var(--error-fg) 12%, transparent);
-    border-color: color-mix(in srgb, var(--error-fg) 45%, transparent);
-    color: var(--error-fg);
+    background: color-mix(in srgb, var(--error-fg) 14%, transparent);
+    border-color: color-mix(in srgb, var(--error-fg) 60%, transparent);
 }
 .abort-btn .abort-glyph {
     font-size: 10px;
@@ -1454,7 +1471,7 @@ kbd {
     background: var(--accent);
     color: var(--btn-fg);
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-md);
     width: 30px;
     height: 30px;
     cursor: pointer;
@@ -1476,7 +1493,7 @@ kbd {
 .steer-btn {
     background: transparent;
     border: 1px solid var(--hairline);
-    border-radius: 50%;
+    border-radius: var(--radius-md);
     width: 30px;
     height: 30px;
     cursor: pointer;
@@ -1576,8 +1593,10 @@ kbd {
 }
 
 .compaction-banner {
-    padding: 8px 14px;
-    border-top: 1px solid color-mix(in srgb, var(--warning-fg) 45%, transparent);
+    margin: 6px 10px 0;
+    padding: 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--warning-fg) 45%, transparent);
+    border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--warning-fg) 8%, transparent);
     font-size: var(--fs-sm);
 }
@@ -1617,7 +1636,7 @@ kbd {
 }
 
 .occupancy-banner {
-    border-top-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
     background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
@@ -1625,7 +1644,7 @@ kbd {
     display: flex;
     align-items: center;
     gap: 5px;
-    margin: 4px 14px 0;
+    margin: 6px 10px 0;
     padding: 3px 8px;
     width: fit-content;
     max-width: calc(100% - 28px);
@@ -1667,7 +1686,7 @@ kbd {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    padding: 4px 14px 2px;
+    padding: 4px 10px 0;
 }
 .image-chip {
     position: relative;
@@ -1703,7 +1722,7 @@ kbd {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    padding: 4px 14px 2px;
+    padding: 4px 10px 0;
 }
 .attach-chip {
     position: relative;
@@ -1727,14 +1746,18 @@ kbd {
 /* ── Changed files section (SCM-style strip above the composer) ── */
 
 .changed-files-section {
-    border-top: 1px solid var(--hair);
+    margin: 6px 10px 0;
+    border: 1px solid var(--hair);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface-strong);
     font-size: var(--fs-sm);
 }
 .changed-files-summary {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 7px 14px;
+    padding: 7px 10px;
     cursor: pointer;
     user-select: none;
     list-style: none;
@@ -1767,7 +1790,7 @@ kbd {
     cursor: pointer;
     font-size: var(--fs-sm);
     padding: 3px 12px;
-    border-radius: 100px;
+    border-radius: var(--radius-sm);
     transition: color 0.15s, background 0.15s, border-color 0.15s;
     font-family: inherit;
 }
@@ -1780,7 +1803,7 @@ kbd {
     background: var(--accent);
     color: var(--btn-fg);
     border: none;
-    border-radius: 100px;
+    border-radius: var(--radius-sm);
     padding: 4px 14px;
     cursor: pointer;
     font-size: var(--fs-sm);
@@ -1800,7 +1823,7 @@ kbd {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 5px 14px 5px 28px;
+    padding: 5px 10px 5px 20px;
     cursor: pointer;
     transition: background 0.1s;
     color: var(--fg);
@@ -1955,7 +1978,10 @@ kbd {
 .slash-menu {
     max-height: 200px;
     overflow-y: auto;
-    border-top: 1px solid var(--hairline);
+    margin: 0 10px;
+    border: 1px solid var(--hairline);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
     background: var(--surface-strong);
 }
 .slash-item {
@@ -1966,7 +1992,8 @@ kbd {
     gap: 2px;
 }
 .slash-item:hover { background: var(--surface-hover); }
-.slash-item-active { background: var(--surface-active); }
+.slash-item-active { background: var(--sel-bg); color: var(--sel-fg); }
+.slash-item-active .slash-item-desc { color: inherit; opacity: 0.85; }
 .slash-item-name {
     font-size: var(--fs-sm);
     font-weight: 500;
@@ -1986,7 +2013,10 @@ kbd {
 .mention-menu {
     max-height: 220px;
     overflow-y: auto;
-    border-top: 1px solid var(--hairline);
+    margin: 0 10px;
+    border: 1px solid var(--hairline);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
     background: var(--surface-strong);
 }
 .mention-group {
@@ -2004,7 +2034,8 @@ kbd {
     gap: 2px;
 }
 .mention-item:hover { background: var(--surface-hover); }
-.mention-item-active { background: var(--surface-active); }
+.mention-item-active { background: var(--sel-bg); color: var(--sel-fg); }
+.mention-item-active .mention-item-desc { color: inherit; opacity: 0.85; }
 .mention-item-name {
     font-size: var(--fs-sm);
     color: var(--fg);
@@ -2209,7 +2240,7 @@ kbd {
     color: var(--success-fg);
     height: 24px;
     padding: 0 11px;
-    border-radius: 100px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: var(--fs-xs);
     font-weight: 600;
@@ -2279,9 +2310,10 @@ kbd {
 
 .tool-approval-card {
     margin: 6px 0 10px 2px;
-    border: 1px solid color-mix(in srgb, var(--warning-fg) 50%, transparent);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--accent);
     border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--warning-fg) 7%, transparent);
+    background: var(--surface-strong);
     overflow: hidden;
 }
 
@@ -2296,7 +2328,7 @@ kbd {
     word-break: break-all;
     max-height: 120px;
     overflow-y: auto;
-    border-top: 1px solid color-mix(in srgb, var(--warning-fg) 20%, transparent);
+    border-top: 1px solid var(--hairline);
     line-height: 1.5;
 }
 .approval-args:empty { display: none; }
@@ -2305,12 +2337,12 @@ kbd {
     display: flex;
     gap: 8px;
     padding: 9px 14px;
-    border-top: 1px solid color-mix(in srgb, var(--warning-fg) 20%, transparent);
+    border-top: 1px solid var(--hairline);
 }
 
 .approval-btn {
     padding: 5px 16px;
-    border-radius: 100px;
+    border-radius: var(--radius-sm);
     font-size: var(--fs-sm);
     font-family: inherit;
     cursor: pointer;
@@ -2418,9 +2450,9 @@ kbd {
     bottom: calc(100% + 4px);
     left: 8px;
     right: 8px;
-    background: var(--surface-strong);
+    background: var(--widget-bg);
     backdrop-filter: blur(8px);
-    border: 1px solid var(--hairline);
+    border: 1px solid var(--hair-strong);
     border-radius: var(--radius-md);
     max-height: 340px;
     overflow: hidden;
@@ -2510,7 +2542,11 @@ kbd {
     transition: background 0.1s;
 }
 .model-item:hover { background: var(--surface-hover); }
-.model-item.active { background: var(--surface-active); }
+.model-item.active {
+    background: var(--sel-bg);
+    color: var(--sel-fg);
+}
+.model-item.active .model-item-check { color: var(--sel-fg); }
 
 .model-item-check {
     width: 16px;
@@ -2564,7 +2600,7 @@ kbd {
     border: 1px solid var(--hairline);
     color: var(--muted);
     padding: 3px 10px;
-    border-radius: 100px;
+    border-radius: var(--radius-sm);
     font-size: var(--fs-xs);
     cursor: pointer;
     transition: background 0.15s, color 0.15s, border-color 0.15s;

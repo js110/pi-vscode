@@ -111,10 +111,6 @@ function render(data: SettingsData): void {
     skillsSection.id = 'skills-section';
     container.appendChild(skillsSection);
 
-    container.appendChild(buildSection(t('settings.section.credits'), [
-        buildCredits(),
-    ]));
-
     app.appendChild(container);
     bindEvents();
     renderSkillsSection();
@@ -259,12 +255,6 @@ function buildAuthIndicator(method: SettingsData['authMethod']): HTMLElement {
             <span>${labels[method]}</span>
         </div>
     `;
-    return row;
-}
-
-function buildCredits(): HTMLElement {
-    const row = el('div', 'setting-row');
-    row.innerHTML = `<p class="setting-description">${t('settings.credits')}</p>`;
     return row;
 }
 

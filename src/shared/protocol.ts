@@ -282,7 +282,7 @@ export type ServerMessage =
     | { type: 'langChanged'; lang: Lang }
     | { type: 'applyPreviewResult'; preview: ApplyPreviewInfo }
     | { type: 'applyResult'; previewId: string; ok: boolean; message?: string }
-    | { type: 'compactionResult'; ok: boolean; message?: string }
+    | { type: 'compactionResult'; ok: boolean; message?: string; benign?: boolean }
     | { type: 'mentionResults'; requestId: number; files: string[]; symbols: MentionSymbolItem[] }
     | { type: 'dropResolved'; requestId: number; results: DropResolveResult[] }
     | { type: 'error'; message: string };

@@ -1,5 +1,7 @@
-/* Pi for VS Code — settings. Matches the sidebar "instrument panel" theme:
-   mono = machine voice, theme-derived surfaces, small radius system. */
+/* Pi for VS Code — settings. Design language translated from the ui/
+   prototype: sharp 4px radius, hairline-separated sections, compact
+   density, dashed rule rows, crisp square buttons. All colors stay on
+   --vscode-* tokens (theme.test.ts), mono reserved for machine readouts. */
 
 :root {
     --bg: var(--vscode-editor-background, #1e1e1e);
@@ -8,6 +10,7 @@
     --faint: color-mix(in srgb, var(--fg) 42%, transparent);
     --border: var(--vscode-panel-border, #2d2d2d);
     --hairline: color-mix(in srgb, var(--fg) 10%, transparent);
+    --hairline-strong: color-mix(in srgb, var(--fg) 18%, transparent);
 
     --surface: color-mix(in srgb, var(--fg) 3%, transparent);
     --surface-strong: color-mix(in srgb, var(--fg) 6%, transparent);
@@ -34,8 +37,9 @@
     --fs-sm: 12px;
     --fs-base: 13px;
 
-    --radius-sm: 6px;
-    --radius-md: 10px;
+    /* Sharp radius, prototype scale (ui/assets/tokens.css: --proto-radius 4px). */
+    --radius-sm: 4px;
+    --radius-md: 6px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -57,18 +61,18 @@ body {
 .settings-container {
     max-width: 640px;
     margin: 0 auto;
-    padding: 32px 24px 56px;
+    padding: 24px 24px 48px;
 }
 
 .settings-header {
-    margin-bottom: 28px;
-    padding-bottom: 16px;
+    margin-bottom: 8px;
+    padding-bottom: 14px;
     border-bottom: 1px solid var(--hairline);
 }
 .settings-header h1 {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 600;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     letter-spacing: -0.01em;
 }
 .settings-header .settings-subtitle {
@@ -77,25 +81,24 @@ body {
     font-family: var(--font-mono);
 }
 
+/* Sections are hairline-stacked rows (prototype), not floating cards. */
 .settings-section {
-    margin-bottom: 32px;
+    padding: 16px 0 18px;
+    border-bottom: 1px solid var(--hairline);
 }
+.settings-section:last-child { border-bottom: none; }
 
 .section-title {
-    font-size: var(--fs-xs);
+    font-size: var(--fs-sm);
     font-weight: 600;
     color: var(--fg);
-    margin-bottom: 14px;
-    padding-bottom: 7px;
-    border-bottom: 1px solid var(--hairline);
-    font-family: var(--font-mono);
-    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--muted);
+    user-select: none;
 }
 .section-title-collapsible {
     cursor: pointer;
-    user-select: none;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -103,6 +106,7 @@ body {
 .section-title-collapsible::before {
     content: '▸';
     font-size: 10px;
+    color: var(--muted);
     transition: transform 0.15s;
 }
 .settings-section.collapsed .section-title-collapsible::before {
@@ -116,7 +120,7 @@ body {
 }
 
 .setting-row {
-    margin-bottom: 18px;
+    margin-bottom: 14px;
 }
 
 .setting-label-row {
@@ -124,6 +128,7 @@ body {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 6px;
+    gap: 10px;
 }
 .setting-label-row label {
     font-size: var(--fs-base);
@@ -134,7 +139,7 @@ body {
 .setting-description {
     font-size: var(--fs-sm);
     color: var(--muted);
-    margin-top: 4px;
+    margin-top: 5px;
     line-height: 1.55;
 }
 .setting-description a {
@@ -146,7 +151,7 @@ body {
 
 .setting-input {
     width: 100%;
-    padding: 7px 11px;
+    padding: 6px 10px;
     background: var(--input-bg);
     color: var(--input-fg);
     border: 1px solid var(--input-border);
@@ -160,7 +165,7 @@ body {
 
 .setting-select {
     width: 100%;
-    padding: 7px 11px;
+    padding: 6px 10px;
     background: var(--input-bg);
     color: var(--input-fg);
     border: 1px solid var(--input-border);
@@ -184,13 +189,15 @@ body {
 }
 .setting-range::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
     border-radius: 50%;
     background: var(--btn-bg);
     cursor: pointer;
     border: none;
+    transition: background 0.15s;
 }
+.setting-range::-webkit-slider-thumb:hover { background: var(--btn-hover); }
 
 .range-value {
     font-size: var(--fs-sm);
@@ -262,26 +269,28 @@ body {
     gap: 8px;
 }
 
+/* Status badge (prototype .badge: rounded pill on theme surface) */
 .key-status {
     font-size: var(--fs-xs);
-    padding: 2px 10px;
-    border-radius: 100px;
+    padding: 2px 9px;
+    border-radius: 9px;
     font-weight: 500;
     font-family: var(--font-mono);
+    white-space: nowrap;
 }
 .key-status.set {
     background: color-mix(in srgb, var(--success-fg) 16%, transparent);
     color: var(--success-fg);
 }
 .key-status.unset {
-    background: color-mix(in srgb, var(--error-fg) 10%, transparent);
+    background: color-mix(in srgb, var(--muted) 14%, transparent);
     color: var(--muted);
 }
 
-/* Buttons */
+/* Buttons — crisp square (prototype .btn), not pills */
 .setting-btn {
-    padding: 6px 15px;
-    border-radius: 100px;
+    padding: 5px 13px;
+    border-radius: var(--radius-sm);
     font-size: var(--fs-sm);
     font-family: inherit;
     cursor: pointer;
@@ -291,7 +300,7 @@ body {
 .setting-btn.primary { background: var(--btn-bg); color: var(--btn-fg); }
 .setting-btn.primary:hover { background: var(--btn-hover); }
 .setting-btn.secondary {
-    background: transparent;
+    background: var(--surface);
     color: var(--fg);
     border: 1px solid var(--hairline);
 }
@@ -309,7 +318,7 @@ body {
     align-items: center;
     gap: 9px;
     font-size: var(--fs-sm);
-    padding: 9px 13px;
+    padding: 8px 12px;
     border-radius: var(--radius-sm);
 }
 .auth-status.auth-ok {
@@ -322,16 +331,14 @@ body {
 }
 .auth-icon { font-size: var(--fs-base); flex-shrink: 0; }
 
-/* Skills section */
-
 /* Toast */
 .toast {
     position: fixed;
     bottom: 18px;
     left: 50%;
     transform: translateX(-50%) translateY(110px);
-    padding: 9px 20px;
-    border-radius: var(--radius-md);
+    padding: 8px 18px;
+    border-radius: var(--radius-sm);
     font-size: var(--fs-sm);
     z-index: 1000;
     transition: transform 0.3s ease;
@@ -352,8 +359,8 @@ body {
 
 /* Skill cards */
 .skill-card {
-    padding: 12px 15px;
-    margin-bottom: 9px;
+    padding: 11px 13px;
+    margin-bottom: 8px;
     background: var(--surface-strong);
     border: 1px solid var(--hairline);
     border-radius: var(--radius-md);
@@ -364,7 +371,7 @@ body {
     display: flex;
     align-items: center;
     gap: 9px;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
 }
 .skill-card-name {
     font-family: var(--font-mono);
@@ -376,7 +383,8 @@ body {
     font-size: var(--fs-micro);
     padding: 2px 7px;
     border-radius: 4px;
-    background: var(--surface-active);
+    background: var(--surface-strong);
+    border: 1px solid var(--hairline);
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -405,23 +413,21 @@ body {
     text-transform: uppercase;
 }
 
-/* Approval memory: global rule list */
-.approval-empty { font-style: italic; }
+/* Approval memory: global rule list — dashed rule rows (prototype) */
+.approval-empty { color: var(--muted); }
 .approval-rules-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-top: 8px;
+    margin-top: 2px;
 }
 .approval-rule-item {
     display: flex;
     align-items: center;
-    gap: 9px;
-    padding: 8px 12px;
-    background: var(--surface-strong);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-md);
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px dashed var(--hairline-strong);
 }
+.approval-rule-item:last-child { border-bottom: none; }
 .approval-rule-tool {
     font-family: var(--font-mono);
     font-size: var(--fs-sm);
@@ -439,9 +445,9 @@ body {
     font-family: var(--font-mono);
     white-space: nowrap;
 }
-.approval-rule-revoke { flex-shrink: 0; }
+.approval-rule-revoke { flex-shrink: 0; padding: 2px 9px; font-size: var(--fs-xs); }
 .approval-clear-row {
-    margin-top: 9px;
+    margin-top: 12px;
     display: flex;
     justify-content: flex-end;
 }

@@ -1303,10 +1303,11 @@ export class TabManager {
             // failed copy would mislead.
             const detail = err instanceof Error ? err.message : String(err);
             console.error('[pi-vscode] compaction failed:', detail);
-            const message = /Nothing to compact|session too small|Already compacted/.test(detail)
+            const benign = /Nothing to compact|session too small|Already compacted/.test(detail);
+            const message = benign
                 ? t('compact.nothingToCompact')
                 : `${t('compact.failed')} ${humanizeErrorMessage(err) ?? detail}`.trim();
-            this._adapters.transport.post({ type: 'compactionResult', ok: false, message });
+            this._adapters.transport.post({ type: 'compactionResult', ok: false, benign, message });
         }
     }
 
