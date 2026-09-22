@@ -1,13 +1,15 @@
 # Pi for VS Code
 
-A first-class VS Code sidebar for the Pi coding agent. The extension reuses Pi's SDK, model registry, authentication, sessions, skills, tools, event stream, message queues, and context compaction instead of implementing another model/agent protocol.
+> [English](README.md) | [简体中文](README.zh-CN.md)
 
-The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetaphor/pi-vscode-extension). The IDE bridge is derived from [pithings/pi-vscode](https://github.com/pithings/pi-vscode). Both upstream projects are MIT licensed; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+A first-class VS Code coding-agent panel for Pi. The extension reuses Pi's SDK, model registry, authentication, sessions, skills, tools, event stream, message queues, and context compaction instead of implementing another model/agent protocol.
+
+The panel opens in VS Code's secondary side bar (right) from the Pi icon, and can be dragged anywhere else. The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetaphor/pi-vscode-extension). The IDE bridge is derived from [pithings/pi-vscode](https://github.com/pithings/pi-vscode). Both upstream projects are MIT licensed; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## What works
 
 - Sidebar chat with streamed text, thinking blocks, and expandable tool calls.
-- Status bar entry that opens the panel from anywhere, alongside the activity bar icon.
+- Status bar entry that opens the panel from anywhere, alongside the Pi icon in the secondary side bar.
 - Multiple independent Pi sessions in tabs.
 - Pi-native model selection and thinking levels.
 - Pi-native `steer`, `followUp`, queue events, session persistence, skills, and context compaction.
@@ -33,21 +35,21 @@ The UI is derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetapho
 VS Code Webview
     │ typed postMessage protocol
     ▼
-SidebarProvider ── PiSessionManager ── @earendil-works/pi-coding-agent 0.84.x
-    │                                     │
-    │ diff/checkpoint UI                  ├─ ModelRuntime / ModelRegistry
-    │                                     ├─ SessionManager / skills / compaction
-    │                                     └─ native agent + tool event stream
+SidebarProvider ── TabManager (per-tab state) ── PiSessionManager ── Pi SDK
+                                                       ▲
+    │ diff/checkpoint (per tab)                        ├─ ModelRuntime / ModelRegistry
+    │                                                   ├─ SessionManager / skills / compaction
+    │                                                   └─ native agent + tool event stream
     ▼
 VS Code IDE bridge (127.0.0.1 + random token)
     └─ Pi extension tools backed by VS Code language/editor APIs
 ```
 
-Pi remains the backend. VS Code supplies presentation, approvals, editor state, language-service actions, and review UI.
+Pi remains the backend. VS Code supplies presentation, approvals, editor state, language-service actions, and review UI. The Pi SDK is loaded at runtime: your system-wide Pi install first when compatible, otherwise the bundled copy (see "Requirements").
 
 ## Getting started
 
-1. Open the Pi icon in the activity bar (left side) to start chatting.
+1. Open the Pi icon in the secondary side bar (right side) to start chatting.
 2. Sign in with `/login` in the chat input, or store a provider API key from the extension's settings panel.
 3. Pick a model from the model picker and prompt away. Existing Pi configuration (`~/.pi/agent`), skills, and sessions are picked up automatically.
 
