@@ -148,6 +148,7 @@ export class SettingsPanel {
             autoSaveSessions: config.get<boolean>('autoSaveSessions', true),
             sessionStoragePath: config.get<string>('sessionStoragePath', ''),
             contextUsageWarningThreshold: config.get<number>('contextUsageWarningThreshold', 80),
+            fontSize: config.get<number>('fontSize', 13),
             cacheWarming: config.get<string>('cacheWarming', 'streaming'),
         };
 
@@ -206,6 +207,7 @@ export class SettingsPanel {
             vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles', 'settings.css'),
         );
         const nonce = getNonce();
+        const fontSize = clampFontSize(vscode.workspace.getConfiguration('pi-agent').get<number>('fontSize', 13));
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -215,6 +217,7 @@ export class SettingsPanel {
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
     <link rel="stylesheet" href="${styleUri}">
+    <style>:root { --fs-base: ${fontSize}px; }</style>
     <title>Pi Agent Settings</title>
 </head>
 <body>
@@ -232,4 +235,9 @@ function getNonce(): string {
         text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+}
+
+export function clampFontSize(size: number): number {
+    if (!Number.isFinite(size)) return 13;
+    return Math.min(26, Math.max(9, Math.round(size)));
 }

@@ -244,6 +244,13 @@
           "maximum": 100,
           "description": "Show a warning when context usage exceeds this percentage of the context window"
         },
+        "pi-agent.fontSize": {
+          "type": "number",
+          "default": 13,
+          "minimum": 9,
+          "maximum": 26,
+          "description": "Font size (px) for the Pi panel. The whole type scale (labels, code blocks, metadata) scales relative to this base. Requires reloading the panel to take effect."
+        },
         "pi-agent.displayLanguage": {
           "type": "string",
           "enum": [

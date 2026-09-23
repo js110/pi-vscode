@@ -68,11 +68,13 @@
     --font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
     --font-mono: var(--vscode-editor-font-family, 'Cascadia Code', Consolas, 'Courier New', monospace);
 
-    /* Compact type scale (sidebar-tuned) */
-    --fs-micro: 10px;
-    --fs-xs: 11px;
-    --fs-sm: 12px;
-    --fs-base: 13px;
+    /* Relative type scale — base follows VS Code default (13px); the rest of
+       the ramp derives from it so `pi-agent.fontSize` scales the whole panel
+       (injected as an inline `:root { --fs-base: Npx }` override). */
+    --fs-base: var(--vscode-font-size, 13px);
+    --fs-sm: calc(var(--fs-base) - 1px);
+    --fs-xs: calc(var(--fs-base) - 2px);
+    --fs-micro: calc(var(--fs-base) - 3px);
 
     /* Radius system — sharp prototype scale (ui/assets/tokens.css: 4/6px) */
     --radius-sm: 4px;

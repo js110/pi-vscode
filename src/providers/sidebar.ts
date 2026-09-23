@@ -3,6 +3,7 @@ import type { ClientMessage, ServerMessage, SelectionContextInfo } from '../shar
 import { TabManager } from './tab';
 import { SelectionContextTracker } from './selection-context';
 import { resolveDisplayLang } from './lang';
+import { clampFontSize } from './settings-panel';
 import { t } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import { parseBuiltinSlashCommand } from '../shared/slash-commands';
@@ -160,6 +161,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         );
         const nonce = getNonce();
         const lang = resolveDisplayLang();
+        const fontSize = clampFontSize(vscode.workspace.getConfiguration('pi-agent').get<number>('fontSize', 13));
 
         return `<!DOCTYPE html>
 <html lang="${lang}">
@@ -169,6 +171,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' ${webview.cspSource};">
     <link rel="stylesheet" href="${styleUri}">
+    <style>:root { --fs-base: ${fontSize}px; }</style>
     <title>Pi Agent</title>
 </head>
 <body>

@@ -40,6 +40,8 @@ export interface SettingsData {
     autoSaveSessions: boolean;
     sessionStoragePath: string;
     contextUsageWarningThreshold: number;
+    /** Panel type-scale base in px; the whole ramp derives from it (Cline-style). */
+    fontSize: number;
     /** Effective cache-warming mode (VS Code config; Pi's native default is
      *  "streaming" and is only overridden here when explicitly set). */
     cacheWarming: string;

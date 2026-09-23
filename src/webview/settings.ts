@@ -87,6 +87,11 @@ function render(data: SettingsData): void {
         ], t('settings.cacheWarmingDesc')),
     ]));
 
+    container.appendChild(buildSection(t('settings.section.appearance'), [
+        buildRange('fontSize', t('settings.fontSize'), data.fontSize, 9, 26,
+            t('settings.fontSizeDesc'), 'px'),
+    ]));
+
     container.appendChild(buildSection(t('settings.section.tools'), [
         buildToggle('autoApproveTools', t('settings.autoApprove'), data.autoApproveTools,
             t('settings.autoApproveDesc')),
@@ -189,14 +194,14 @@ function buildToggle(key: string, label: string, value: boolean, description: st
     return row;
 }
 
-function buildRange(key: string, label: string, value: number, min: number, max: number, description: string): HTMLElement {
+function buildRange(key: string, label: string, value: number, min: number, max: number, description: string, unit = '%'): HTMLElement {
     const row = el('div', 'setting-row');
     row.innerHTML = `
         <div class="setting-label-row">
             <label for="setting-${key}">${escHtml(label)}</label>
-            <span class="range-value" id="range-val-${key}">${value}%</span>
+            <span class="range-value" id="range-val-${key}">${value}${unit}</span>
         </div>
-        <input type="range" id="setting-${key}" class="setting-range" data-key="${key}" min="${min}" max="${max}" value="${value}">
+        <input type="range" id="setting-${key}" class="setting-range" data-key="${key}" data-unit="${unit}" min="${min}" max="${max}" value="${value}">
         <p class="setting-description">${escHtml(description)}</p>
     `;
     return row;
@@ -396,9 +401,10 @@ function bindEvents(): void {
     document.querySelectorAll('.setting-range').forEach((range) => {
         range.addEventListener('input', () => {
             const key = (range as HTMLInputElement).dataset.key!;
+            const unit = (range as HTMLInputElement).dataset.unit ?? '%';
             const value = parseInt((range as HTMLInputElement).value, 10);
             const label = document.getElementById(`range-val-${key}`);
-            if (label) label.textContent = `${value}%`;
+            if (label) label.textContent = `${value}${unit}`;
         });
         range.addEventListener('change', () => {
             const key = (range as HTMLInputElement).dataset.key!;
