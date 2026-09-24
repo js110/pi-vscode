@@ -114,6 +114,12 @@
         "mac": "cmd+shift+l"
       },
       {
+        "command": "pi-agent.focusChat",
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "when": "!pi-agent.inlinePending"
+      },
+      {
         "command": "pi-agent.newChat",
         "key": "ctrl+shift+n",
         "mac": "cmd+shift+n"
