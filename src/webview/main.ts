@@ -2716,6 +2716,8 @@ function renderSlashMenu(menu: HTMLElement): void {
             selectSlashItem(idx);
         });
     });
+
+    scrollActiveIntoView(menu, '.slash-item-active');
 }
 
 function selectSlashItem(index: number): void {
@@ -2848,6 +2850,13 @@ function renderMentionMenu(): void {
         });
     });
     menu.style.display = '';
+
+    scrollActiveIntoView(menu, '.mention-item-active');
+}
+
+/** Scroll the menu's own scroll container just enough to reveal the item. */
+function scrollActiveIntoView(menu: HTMLElement, selector: string): void {
+    menu.querySelector(selector)?.scrollIntoView({ block: 'nearest' });
 }
 
 function renderMentionItem(item: MentionMenuItem, i: number): string {
