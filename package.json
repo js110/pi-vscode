@@ -33,7 +33,7 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
-"contributes": {
+  "contributes": {
     "viewsContainers": {
       "secondarySidebar": [
         {
@@ -302,7 +302,7 @@
     "test:all": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.84.4",
+    "@earendil-works/pi-coding-agent": "^0.87.1",
     "highlight.js": "^11.12.0",
     "marked": "^18.0.11"
   },
