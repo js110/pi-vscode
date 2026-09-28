@@ -1412,6 +1412,8 @@ body {
     gap: 8px;
     min-width: 0;
     flex: 1;
+    flex-wrap: nowrap;
+    overflow: hidden;
 }
 
 .cstrip-right {
@@ -1462,7 +1464,8 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    flex-shrink: 0;
+    flex-shrink: 1;
+    min-width: 0;
     user-select: none;
 }
 .meter-track {
@@ -1486,6 +1489,8 @@ body {
     white-space: nowrap;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Cache-warming indicator (SDK 0.86+): a footer-context-style pill that

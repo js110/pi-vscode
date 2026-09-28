@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 
 suite('Extension', () => {
     test('extension is present and activates', async () => {
-        const ext = vscode.extensions.getExtension('local.pi-vscode');
+        const ext = vscode.extensions.getExtension('jiangsheng666.piByue');
         assert.ok(ext, 'Extension should be installed');
         await ext.activate();
         assert.ok(ext.isActive, 'Extension should be active');

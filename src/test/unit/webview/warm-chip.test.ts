@@ -90,7 +90,7 @@ describe('cache warming footer chip (real main.ts), ' + __filename.split(/[\\/]/
         expect(chip?.getAttribute('title')).toContain('$0.53');
     });
 
-    it('renders the inactive pill when warming is off', async () => {
+    it('renders no chip while warming is idle (footer stays uncluttered)', async () => {
         installHarness({ state: 'inactive' }, undefined);
 
         vi.resetModules();
@@ -98,10 +98,9 @@ describe('cache warming footer chip (real main.ts), ' + __filename.split(/[\\/]/
         await nextFrame();
         await nextFrame();
 
-        const chip = document.querySelector('.warm-chip');
-        expect(chip, 'inactive status still renders a pill').not.toBeNull();
-        expect(chip?.textContent).toBe('warm off');
-        expect(chip?.getAttribute('class')).not.toContain('warm-chip-active');
+        // The idle "warm off" pill is noise in the footer's narrowest slot and
+        // crowded the transport buttons, so an inactive warmer renders nothing.
+        expect(document.querySelector('.warm-chip')).toBeNull();
     });
 
     it('renders no chip when the SDK does not expose cache warming', async () => {

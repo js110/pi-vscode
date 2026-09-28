@@ -16,7 +16,7 @@ const EN = {
     // Welcome
     'welcome.title': 'Pi Agent',
     'welcome.hint': 'Type <kbd>/</kbd> for commands and skills',
-    'welcome.hintShort': '<kbd>/</kbd> skills&nbsp;&nbsp;<kbd>@</kbd> mention&nbsp;&nbsp;<kbd>Ctrl</kbd>+<kbd>L</kbd> focus',
+    'welcome.hintShort': '<kbd>/</kbd> skills&nbsp;&nbsp;<kbd>@</kbd> mention',
 
     // Header / tabs
     'header.ready': 'Ready',
@@ -243,7 +243,6 @@ const EN = {
     'init.failed': 'Pi Agent failed to initialize: {message}',
 
     // Prompt-cache warming footer chip (SDK 0.86+)
-    'warm.state.inactive': 'warm off',
     'warm.state.scheduled': 'will warm',
     'warm.state.refreshing': 'warming…',
     'warm.savings': '~{amount} saved per cache refresh',
@@ -399,7 +398,7 @@ export const TEXT_KEYS: TextKey[] = Object.keys(EN) as TextKey[];
 const ZH: Record<TextKey, string> = {
     'welcome.title': 'Pi Agent',
     'welcome.hint': '输入 <kbd>/</kbd> 查看命令与技能',
-    'welcome.hintShort': '<kbd>/</kbd> 技能&nbsp;&nbsp;<kbd>@</kbd> 引用&nbsp;&nbsp;<kbd>Ctrl</kbd>+<kbd>L</kbd> 聚焦',
+    'welcome.hintShort': '<kbd>/</kbd> 技能&nbsp;&nbsp;<kbd>@</kbd> 引用',
 
     'header.ready': '就绪',
     'header.readyTitle': '已检测到 Pi 配置——{providers} 个提供者，{models} 个模型',
@@ -610,7 +609,6 @@ const ZH: Record<TextKey, string> = {
     'init.failed': 'Pi Agent 初始化失败：{message}',
 
     // 提示词缓存预热 footer 指示器（SDK 0.86+）
-    'warm.state.inactive': '未预热',
     'warm.state.scheduled': '将预热',
     'warm.state.refreshing': '预热中…',
     'warm.savings': '每次缓存刷新节省 ~{amount}',

@@ -34,6 +34,7 @@ const BUILTIN_COMMAND_DEFS = [
     { name: 'name', description: 'Set session display name', support: 'native' },
     { name: 'session', description: 'Show session info and stats', support: 'native' },
     { name: 'changelog', description: 'Show changelog entries', support: 'unsupported' },
+    { name: 'bug', description: 'Report a Pi bug', support: 'unsupported' },
     { name: 'hotkeys', description: 'Show all keyboard shortcuts', support: 'unsupported' },
     { name: 'fork', description: 'Create a new fork from a previous user message', support: 'unsupported' },
     { name: 'clone', description: 'Duplicate the current session at the current position', support: 'unsupported' },

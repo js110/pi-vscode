@@ -845,9 +845,9 @@ function buildWarmChipHtml(): string {
                 : label;
             break;
         default:
-            label = t('warm.state.inactive');
-            title = label;
-            break;
+            // Idle warmer renders nothing: the "warm off" pill is pure noise
+            // in the footer's narrowest slot and crowded the transport buttons.
+            return '';
     }
     return `<span class="warm-chip${status.state === 'refreshing' ? ' warm-chip-active' : ''}" title="${escAttr(title)}">${escHtml(label)}</span>`;
 }
