@@ -51,6 +51,17 @@ window.addEventListener('message', (event) => {
 function render(data: SettingsData): void {
     const app = document.getElementById('settings-app')!;
     app.innerHTML = '';
+    document.documentElement.dataset.skin = data.skin;
+    // The custom image var may start absent (another skin was active when
+    // the shell was built) — keep it in sync on every render so switching
+    // the dropdown to "custom" shows the image immediately.
+    const rootStyle = document.documentElement.style;
+    if (data.customSkinUrl) {
+        rootStyle.setProperty('--custom-skin-image', `url("${data.customSkinUrl.replace(/["\\]/g, '')}")`);
+    } else {
+        rootStyle.removeProperty('--custom-skin-image');
+    }
+    rootStyle.setProperty('--custom-skin-opacity', (Math.min(80, Math.max(5, data.customSkinOpacity ?? 40)) / 100).toFixed(2));
 
     const container = el('div', 'settings-container');
 
@@ -88,6 +99,19 @@ function render(data: SettingsData): void {
     ]));
 
     container.appendChild(buildSection(t('settings.section.appearance'), [
+        buildSelect('skin', t('settings.skin'), data.skin, [
+            { value: 'default', label: t('settings.skin.default') },
+            { value: 'aurora', label: t('settings.skin.aurora') },
+            { value: 'graphite', label: t('settings.skin.graphite') },
+            { value: 'sunset', label: t('settings.skin.sunset') },
+            // Only selectable once an image actually exists.
+            ...(data.customSkinUrl ? [{ value: 'custom', label: t('settings.skin.custom') }] : []),
+        ], t('settings.skinDesc')),
+        buildCustomSkinRow(data),
+        ...(data.customSkinUrl
+            ? [buildRange('customSkinOpacity', t('settings.customSkinOpacity'), data.customSkinOpacity, 5, 80,
+                t('settings.customSkinOpacityDesc'), '%')]
+            : []),
         buildRange('fontSize', t('settings.fontSize'), data.fontSize, 9, 26,
             t('settings.fontSizeDesc'), 'px'),
     ]));
@@ -203,6 +227,29 @@ function buildRange(key: string, label: string, value: number, min: number, max:
         </div>
         <input type="range" id="setting-${key}" class="setting-range" data-key="${key}" data-unit="${unit}" min="${min}" max="${max}" value="${value}">
         <p class="setting-description">${escHtml(description)}</p>
+    `;
+    return row;
+}
+
+function buildCustomSkinRow(data: SettingsData): HTMLElement {
+    const row = el('div', 'setting-row');
+    const preview = data.customSkinUrl
+        ? `<div class="skin-preview"><img src="${escAttr(data.customSkinUrl)}" alt="${escAttr(t('settings.skin.customImage'))}"></div>`
+        : '';
+    row.innerHTML = `
+        <div class="setting-label-row">
+            <label>${escHtml(t('settings.skin.customImage'))}</label>
+        </div>
+        ${preview}
+        <div class="skin-actions">
+            <button class="setting-btn secondary" id="btn-upload-skin">${escHtml(
+                data.customSkinUrl ? t('settings.skin.replace') : t('settings.skin.upload'),
+            )}</button>
+            ${data.customSkinUrl
+                ? `<button class="setting-btn danger" id="btn-remove-skin">${escHtml(t('settings.remove'))}</button>`
+                : ''}
+        </div>
+        <p class="setting-description">${escHtml(t('settings.skin.customDesc'))}</p>
     `;
     return row;
 }
@@ -448,6 +495,13 @@ function bindEvents(): void {
     const keybindingsLink = document.getElementById('btn-open-keybindings');
     keybindingsLink?.addEventListener('click', (e) => {
         e.preventDefault();
+    });
+
+    document.getElementById('btn-upload-skin')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'setCustomSkin' });
+    });
+    document.getElementById('btn-remove-skin')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'clearCustomSkin' });
     });
 }
 

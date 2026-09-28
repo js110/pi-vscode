@@ -3,7 +3,9 @@ import type { ClientMessage, ServerMessage, SelectionContextInfo } from '../shar
 import { TabManager } from './tab';
 import { SelectionContextTracker } from './selection-context';
 import { resolveDisplayLang } from './lang';
-import { clampFontSize } from './settings-panel';
+import { clampFontSize, clampOpacity } from './settings-panel';
+import { effectiveSkin, type SkinId } from '../shared/skins';
+import { customSkinPathSync } from '../utils/custom-skin';
 import { t } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import { parseBuiltinSlashCommand } from '../shared/slash-commands';
@@ -23,6 +25,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         extensionUri: vscode.Uri,
         tabManager: TabManager,
         private _selectionTracker?: SelectionContextTracker,
+        /** globalStorage subdir holding the uploaded custom-skin image. */
+        private _storageDir?: string,
     ) {
         this._extensionUri = extensionUri;
         this._tabManager = tabManager;
@@ -44,7 +48,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [this._extensionUri],
+            localResourceRoots: [
+                this._extensionUri,
+                ...(this._storageDir ? [vscode.Uri.file(this._storageDir)] : []),
+            ],
         };
 
         webviewView.webview.html = this._getHtml(webviewView.webview);
@@ -80,6 +87,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     post(message: ServerMessage): void {
         this._view?.webview.postMessage(message);
+    }
+
+    /** Config change on `pi-agent.skin` (or a new upload): push the effective
+     *  skin to the open chat webview so it swaps `data-skin` without a reload. */
+    async notifySkinChanged(): Promise<void> {
+        const { skin, customSkinUrl } = this._resolveSkin(this._view?.webview);
+        const opacity = clampOpacity(
+            vscode.workspace.getConfiguration('pi-agent').get<number>('customSkinOpacity', 40),
+        );
+        this.post({ type: 'skinChanged', skin, customSkinUrl, customSkinOpacity: opacity });
+    }
+
+    /** Effective skin for the shell: configured value, minus a `custom` that
+     *  has no image on disk. Sync (fs probe) — called while building HTML. */
+    private _resolveSkin(webview?: vscode.Webview): { skin: SkinId; customSkinUrl?: string } {
+        const configured = vscode.workspace.getConfiguration('pi-agent').get<string>('skin', 'default');
+        const customPath = this._storageDir ? customSkinPathSync(this._storageDir) : undefined;
+        const skin = effectiveSkin(configured, !!customPath);
+        const customSkinUrl = skin === 'custom' && customPath && webview
+            ? webview.asWebviewUri(vscode.Uri.file(customPath)).toString()
+            : undefined;
+        return { skin, customSkinUrl };
     }
 
     private async _handleMessage(msg: ClientMessage): Promise<void> {
@@ -159,19 +188,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const styleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles', 'main.css')
         );
+        const skinsUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles', 'skins.css')
+        );
         const nonce = getNonce();
         const lang = resolveDisplayLang();
         const fontSize = clampFontSize(vscode.workspace.getConfiguration('pi-agent').get<number>('fontSize', 13));
+        const opacity = (clampOpacity(vscode.workspace.getConfiguration('pi-agent').get<number>('customSkinOpacity', 40)) / 100).toFixed(2);
+        const { skin, customSkinUrl } = this._resolveSkin(webview);
+        const skinVars = customSkinUrl
+            ? ` --custom-skin-image: url("${customSkinUrl.replace(/["\\]/g, '')}");`
+            : '';
 
         return `<!DOCTYPE html>
-<html lang="${lang}">
+<html lang="${lang}" data-skin="${skin}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' ${webview.cspSource};">
     <link rel="stylesheet" href="${styleUri}">
-    <style>:root { --fs-base: ${fontSize}px; }</style>
+    <link rel="stylesheet" href="${skinsUri}">
+    <style>:root { --fs-base: ${fontSize}px; --custom-skin-opacity: ${opacity};${skinVars} }</style>
     <title>Pi Agent</title>
 </head>
 <body>

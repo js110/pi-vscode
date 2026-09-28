@@ -106,12 +106,14 @@ describe('renderMarkdown', () => {
 });
 
 describe('buildWelcome', () => {
-    it('builds a welcome panel with headline + suggestion items', () => {
+    it('builds a one-statement welcome panel ("Just do it.")', () => {
         const node = buildWelcome();
         expect(node.className).toContain('welcome');
-        expect(node.querySelector('.welcome-title')?.textContent).toBe('Chat with Pi about your codebase');
-        const items = node.querySelectorAll('.wi[data-suggestion]');
-        expect(items.length).toBe(4);
+        expect(node.querySelector('.w-statement .ws-a')?.textContent).toBe('Just');
+        expect(node.querySelector('.w-statement .ws-b')?.textContent).toBe('do it.');
+        // The old feature cards are gone for good.
+        expect(node.querySelectorAll('.wi').length).toBe(0);
+        expect(node.querySelector('.w-hint')).toBeTruthy();
     });
 });
 

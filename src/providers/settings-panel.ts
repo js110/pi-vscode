@@ -5,6 +5,9 @@ import type { GlobalRuleStore } from '../pi/approval-memory';
 import { discoverSkills, resolveAgentDir } from '../pi/skills';
 import { resolveDisplayLang } from './lang';
 import { humanizeErrorMessage } from '../shared/error-copy';
+import { effectiveSkin } from '../shared/skins';
+import { customSkinPathSync, saveCustomSkin, clearCustomSkin } from '../utils/custom-skin';
+import { t } from '../shared/i18n';
 
 export class SettingsPanel {
     private static _instance: SettingsPanel | undefined;
@@ -14,6 +17,11 @@ export class SettingsPanel {
     private _globalRules: GlobalRuleStore;
     private _disposables: vscode.Disposable[] = [];
     private _onCredentialChange?: (provider: string, key?: string) => Promise<void>;
+    /** globalStorage subdir for the uploaded custom-skin image. */
+    private _storageDir?: string;
+    /** Notified after any custom-skin file change (upload/clear), even when
+     *  the `pi-agent.skin` config value itself doesn't change. */
+    private _onSkinChange?: () => void;
 
     private constructor(
         panel: vscode.WebviewPanel,
@@ -21,13 +29,24 @@ export class SettingsPanel {
         secrets: vscode.SecretStorage,
         globalRules: GlobalRuleStore,
         onCredentialChange?: (provider: string, key?: string) => Promise<void>,
+        storageDir?: string,
+        onSkinChange?: () => void,
     ) {
         this._panel = panel;
         this._extensionUri = extensionUri;
         this._secrets = secrets;
         this._globalRules = globalRules;
         this._onCredentialChange = onCredentialChange;
+        this._storageDir = storageDir;
+        this._onSkinChange = onSkinChange;
 
+        this._panel.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [
+                extensionUri,
+                ...(this._storageDir ? [vscode.Uri.file(this._storageDir)] : []),
+            ],
+        };
         this._panel.webview.html = this._getHtml();
 
         this._panel.webview.onDidReceiveMessage(
@@ -56,6 +75,8 @@ export class SettingsPanel {
         secrets: vscode.SecretStorage,
         globalRules: GlobalRuleStore,
         onCredentialChange?: (provider: string, key?: string) => Promise<void>,
+        storageDir?: string,
+        onSkinChange?: () => void,
     ): void {
         if (SettingsPanel._instance) {
             SettingsPanel._instance._panel.reveal(vscode.ViewColumn.One);
@@ -73,7 +94,9 @@ export class SettingsPanel {
             },
         );
 
-        SettingsPanel._instance = new SettingsPanel(panel, extensionUri, secrets, globalRules, onCredentialChange);
+        SettingsPanel._instance = new SettingsPanel(
+            panel, extensionUri, secrets, globalRules, onCredentialChange, storageDir, onSkinChange,
+        );
     }
 
     private async _handleMessage(msg: SettingsClientMessage): Promise<void> {
@@ -85,6 +108,31 @@ export class SettingsPanel {
                     break;
                 case 'updateSetting':
                     await this._updateSetting(msg.key, msg.value);
+                    break;
+                case 'setCustomSkin': {
+                    if (!this._storageDir) {
+                        this._post({ type: 'error', message: t('settings.skin.unavailable') });
+                        break;
+                    }
+                    const picks = await vscode.window.showOpenDialog({
+                        canSelectMany: false,
+                        title: t('settings.skin.dialogTitle'),
+                        filters: { Images: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
+                    });
+                    if (!picks?.[0]) break;
+                    await saveCustomSkin(this._storageDir, picks[0].fsPath);
+                    await vscode.workspace.getConfiguration('pi-agent')
+                        .update('skin', 'custom', vscode.ConfigurationTarget.Global);
+                    await this._sendSettings();
+                    this._onSkinChange?.();
+                    break;
+                }
+                case 'clearCustomSkin':
+                    if (this._storageDir) await clearCustomSkin(this._storageDir);
+                    await vscode.workspace.getConfiguration('pi-agent')
+                        .update('skin', 'default', vscode.ConfigurationTarget.Global);
+                    await this._sendSettings();
+                    this._onSkinChange?.();
                     break;
                 case 'setApiKey':
                     await this._secrets.store(`${API_KEY_PREFIX}${msg.provider}`, msg.key);
@@ -136,6 +184,7 @@ export class SettingsPanel {
         }
 
         const authMethod = this._detectAuthMethod(provider, apiKeySet);
+        const customPath = this._storageDir ? customSkinPathSync(this._storageDir) : undefined;
 
         const data: SettingsData = {
             apiProvider: provider,
@@ -149,6 +198,13 @@ export class SettingsPanel {
             sessionStoragePath: config.get<string>('sessionStoragePath', ''),
             contextUsageWarningThreshold: config.get<number>('contextUsageWarningThreshold', 80),
             fontSize: config.get<number>('fontSize', 13),
+            skin: effectiveSkin(config.get<string>('skin', 'default'), !!customPath),
+            // Preview whenever an image exists, even if it isn't the active
+            // skin — so the user can switch back to it.
+            customSkinUrl: customPath
+                ? this._panel.webview.asWebviewUri(vscode.Uri.file(customPath)).toString()
+                : undefined,
+            customSkinOpacity: config.get<number>('customSkinOpacity', 40),
             cacheWarming: config.get<string>('cacheWarming', 'streaming'),
         };
 
@@ -206,18 +262,29 @@ export class SettingsPanel {
         const styleUri = this._panel.webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles', 'settings.css'),
         );
+        const skinsUri = this._panel.webview.asWebviewUri(
+            vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles', 'skins.css'),
+        );
         const nonce = getNonce();
         const fontSize = clampFontSize(vscode.workspace.getConfiguration('pi-agent').get<number>('fontSize', 13));
+        const configuredSkin = vscode.workspace.getConfiguration('pi-agent').get<string>('skin', 'default');
+        const customPath = this._storageDir ? customSkinPathSync(this._storageDir) : undefined;
+        const skin = effectiveSkin(configuredSkin, !!customPath);
+        const customVar = skin === 'custom' && customPath
+            ? ` --custom-skin-image: url("${this._panel.webview.asWebviewUri(vscode.Uri.file(customPath)).toString().replace(/["\\]/g, '')}");`
+            : '';
+        const skinOpacity = (clampOpacity(vscode.workspace.getConfiguration('pi-agent').get<number>('customSkinOpacity', 40)) / 100).toFixed(2);
 
         return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-skin="${skin}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+          content="default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; img-src ${this._panel.webview.cspSource} data:; script-src 'nonce-${nonce}';">
     <link rel="stylesheet" href="${styleUri}">
-    <style>:root { --fs-base: ${fontSize}px; }</style>
+    <link rel="stylesheet" href="${skinsUri}">
+    <style>:root { --fs-base: ${fontSize}px; --custom-skin-opacity: ${skinOpacity};${customVar} }</style>
     <title>Pi Agent Settings</title>
 </head>
 <body>
@@ -240,4 +307,10 @@ function getNonce(): string {
 export function clampFontSize(size: number): number {
     if (!Number.isFinite(size)) return 13;
     return Math.min(26, Math.max(9, Math.round(size)));
+}
+
+/** Custom-skin backdrop strength, 5–80 (percent). */
+export function clampOpacity(value: number): number {
+    if (!Number.isFinite(value)) return 40;
+    return Math.min(80, Math.max(5, Math.round(value)));
 }

@@ -42,6 +42,12 @@ export interface SettingsData {
     contextUsageWarningThreshold: number;
     /** Panel type-scale base in px; the whole ramp derives from it (Cline-style). */
     fontSize: number;
+    /** Active skin id (see shared/skins.ts). */
+    skin: string;
+    /** Webview URI of the uploaded custom-skin image, when one exists. */
+    customSkinUrl?: string;
+    /** Backdrop strength of the uploaded image, 5–80 (percent). */
+    customSkinOpacity: number;
     /** Effective cache-warming mode (VS Code config; Pi's native default is
      *  "streaming" and is only overridden here when explicitly set). */
     cacheWarming: string;
@@ -233,7 +239,11 @@ export type SettingsClientMessage =
     | { type: 'getSkills' }
     | { type: 'getApprovalRules' }
     | { type: 'revokeApprovalRule'; tool: string }
-    | { type: 'clearApprovalRules' };
+    | { type: 'clearApprovalRules' }
+    /** Open the OS picker and store the chosen image as the custom skin. */
+    | { type: 'setCustomSkin' }
+    /** Delete the uploaded image and fall back to the default skin. */
+    | { type: 'clearCustomSkin' };
 
 // Extension -> Webview messages
 export interface MentionSymbolItem {
@@ -282,6 +292,8 @@ export type ServerMessage =
     | { type: 'skills'; skills: SkillInfo[]; commands?: CommandInfo[] }
     | { type: 'configState'; config: PiConfigSnapshot }
     | { type: 'langChanged'; lang: Lang }
+    /** The user picked another skin; swap `data-skin` without reloading. */
+    | { type: 'skinChanged'; skin: string; customSkinUrl?: string; customSkinOpacity?: number }
     | { type: 'applyPreviewResult'; preview: ApplyPreviewInfo }
     | { type: 'applyResult'; previewId: string; ok: boolean; message?: string }
     | { type: 'compactionResult'; ok: boolean; message?: string; benign?: boolean }

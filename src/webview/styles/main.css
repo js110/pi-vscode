@@ -2089,67 +2089,35 @@ body {
     margin-bottom: 18px;
 }
 
-.welcome-title {
-    font-size: 17px;
-    font-weight: 620;
-    letter-spacing: -0.02em;
-    margin-bottom: 8px;
-}
-
-.welcome-subtitle {
-    font-size: var(--fs-sm);
-    color: var(--muted);
-    margin-bottom: 22px;
-    max-width: 300px;
-    line-height: 1.55;
-}
-
-.w-items {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    width: 100%;
-    max-width: 420px;
-    margin-bottom: 22px;
-}
-
-.wi {
+/* One statement, two-line lockup. clamp() keeps the statement proportional
+   to the panel width instead of overflowing or shrinking to nothing. */
+.w-statement {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    text-align: left;
-    padding: 12px 13px;
-    border: 1px solid var(--hair);
-    border-radius: var(--radius-md);
-    background: var(--tint);
-    color: var(--fg);
-    font-family: inherit;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    align-items: center;
+    gap: 1px;
+    font-weight: 760;
+    font-size: clamp(26px, 8.5vw, 44px);
+    letter-spacing: -0.045em;
+    line-height: 1.04;
+    margin-bottom: clamp(16px, 4vh, 26px);
 }
-.wi:hover {
-    background: var(--tint-strong);
-    border-color: var(--hair-strong);
+.w-statement .ws-a { color: var(--fg); }
+.w-statement .ws-b {
+    background: linear-gradient(97deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--vscode-charts-purple, var(--accent))));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
 }
-.wi:active { transform: translateY(1px); }
-
-.wi-ic {
-    font-size: 14px;
-    color: var(--accent);
-    line-height: 1;
-    margin-bottom: 4px;
-}
-
-.wi-t {
-    font-size: var(--fs-sm);
-    font-weight: 600;
-}
-
-.wi-d {
-    font-size: var(--fs-xs);
-    color: var(--muted);
-    line-height: 1.45;
+/* Brush underline: a skewed rounded stroke, gradient-faded to the right. */
+.w-statement::after {
+    content: '';
+    width: clamp(56px, 24%, 104px);
+    height: clamp(4px, 1.2vh, 6px);
+    margin-top: clamp(6px, 1.6vh, 10px);
+    border-radius: 3px;
+    transform: rotate(-1.6deg);
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 30%, transparent));
 }
 
 .w-hint {
@@ -2165,10 +2133,6 @@ body {
     font-size: var(--fs-xs);
     font-family: var(--font-mono);
     color: var(--fg);
-}
-
-@media (max-width: 340px) {
-    .w-items { grid-template-columns: 1fr; }
 }
 
 /* ───────────────────────── Checkpoint rollback ───────────────────────── */

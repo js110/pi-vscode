@@ -358,7 +358,10 @@ export async function activate(context: vscode.ExtensionContext) {
             (message) => void vscode.window.showInformationMessage(message),
         );
 
-        const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager, selectionTracker);
+        // Uploaded custom-skin image lives in global storage (survives
+        // extension updates, which wipe the install dir).
+        const skinStorageDir = path.join(context.globalStorageUri.fsPath, 'skin');
+        const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager, selectionTracker, skinStorageDir);
         providerRef = sidebarProvider;
 
         const commitMessage = new CommitMessageManager({
@@ -391,6 +394,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('pi-agent.chat', sidebarProvider),
+            // Skin changes (and the custom-image strength slider) repaint
+            // the open chat webview in place.
+            vscode.workspace.onDidChangeConfiguration((e) => {
+                if (e.affectsConfiguration('pi-agent.skin') || e.affectsConfiguration('pi-agent.customSkinOpacity')) {
+                    void sidebarProvider.notifySkinChanged();
+                }
+            }),
             vscode.workspace.registerTextDocumentContentProvider('pi-diff', diffContentProvider),
             tabManager,
             statusBar,
@@ -539,6 +549,10 @@ export async function activate(context: vscode.ExtensionContext) {
                             await runtime.removeRuntimeApiKey(provider);
                         }
                     },
+                    skinStorageDir,
+                    // Upload/clear may not change the config value (re-upload
+                    // while already on custom), so notify directly too.
+                    () => void sidebarProvider.notifySkinChanged(),
                 );
             }),
 

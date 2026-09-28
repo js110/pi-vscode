@@ -1,0 +1,132 @@
+/* ────────────────────────────────────────────────────────────
+   Pi skins — linked after main.css / settings.css so these rules win.
+
+   Two layers per skin:
+     1. palette — `html[data-skin=…]` re-points a few shared tokens
+        (accent, hairlines, tints) via color-mix of --vscode-* tokens.
+     2. art     — a decorative gradient painted into a pseudo-element on
+        the shell (#app / #settings-app). Every gradient is defined in
+        percentages and generated at the element's own box size: the
+        browser repaints it on every resize, so it can never stretch,
+        squash, or distort. Grids use absolute px stops inside an
+        auto-sized layer, which keeps cells uniform at any panel size.
+
+   Every colour is a var()/color-mix of --vscode-* tokens (theme.test
+   forbids bare colours), so each skin follows the active light/dark
+   theme instead of flattening it to one palette.
+   ──────────────────────────────────────────────────────────── */
+
+/* ── Palette ─────────────────────────────────────────────── */
+
+/* Aurora: accent shifted toward the cyan end of the charts ramp. */
+html[data-skin="aurora"] {
+    --accent: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 66%, var(--vscode-charts-cyan, #3794ff));
+}
+
+/* Graphite: stronger structure — hairlines and panels read crisper. */
+html[data-skin="graphite"] {
+    --hair: color-mix(in srgb, var(--fg) 15%, transparent);
+    --hair-strong: color-mix(in srgb, var(--fg) 26%, transparent);
+    --hairline: color-mix(in srgb, var(--fg) 13%, transparent);
+    --hairline-strong: color-mix(in srgb, var(--fg) 21%, transparent);
+    --tint: color-mix(in srgb, var(--fg) 6%, transparent);
+    --tint-strong: color-mix(in srgb, var(--fg) 10%, transparent);
+    --surface: color-mix(in srgb, var(--fg) 4%, transparent);
+    --surface-strong: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+/* Sunset: accent warmed toward the orange side. */
+html[data-skin="sunset"] {
+    --accent: color-mix(in srgb, var(--vscode-charts-orange, #ce9178) 45%, var(--vscode-focusBorder, #3794ff));
+}
+
+/* ── Art layer hosts ─────────────────────────────────────── */
+/* isolation traps the z-index:-1 layer inside the shell, so it paints
+   above the body background but beneath all content. */
+
+html[data-skin="aurora"] #app,
+html[data-skin="graphite"] #app,
+html[data-skin="sunset"] #app,
+html[data-skin="custom"] #app,
+html[data-skin="aurora"] #settings-app,
+html[data-skin="graphite"] #settings-app,
+html[data-skin="sunset"] #settings-app,
+html[data-skin="custom"] #settings-app {
+    position: relative;
+    isolation: isolate;
+}
+
+html[data-skin="aurora"] #app::before,
+html[data-skin="graphite"] #app::before,
+html[data-skin="sunset"] #app::before,
+html[data-skin="custom"] #app::before,
+html[data-skin="aurora"] #settings-app::before,
+html[data-skin="graphite"] #settings-app::before,
+html[data-skin="sunset"] #settings-app::before,
+html[data-skin="custom"] #settings-app::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* ── Art: aurora (soft accent glows bleeding from the edges) ── */
+
+html[data-skin="aurora"] #app::before,
+html[data-skin="aurora"] #settings-app::before {
+    background:
+        radial-gradient(88% 44% at 6% -8%, color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 20%, transparent), transparent 72%),
+        radial-gradient(72% 36% at 102% 2%, color-mix(in srgb, var(--vscode-charts-purple, #c586c0) 17%, transparent), transparent 70%),
+        radial-gradient(100% 46% at 52% 110%, color-mix(in srgb, var(--vscode-charts-cyan, #3794ff) 13%, transparent), transparent 74%);
+}
+
+/* ── Art: graphite (drafting grid — major 32px, minor 8px) ── */
+
+html[data-skin="graphite"] #app::before,
+html[data-skin="graphite"] #settings-app::before {
+    background-image:
+        repeating-linear-gradient(0deg, color-mix(in srgb, var(--fg) 7%, transparent) 0 1px, transparent 1px 32px),
+        repeating-linear-gradient(90deg, color-mix(in srgb, var(--fg) 7%, transparent) 0 1px, transparent 1px 32px),
+        repeating-linear-gradient(0deg, color-mix(in srgb, var(--fg) 3%, transparent) 0 1px, transparent 1px 8px),
+        repeating-linear-gradient(90deg, color-mix(in srgb, var(--fg) 3%, transparent) 0 1px, transparent 1px 8px);
+}
+
+/* ── Art: sunset (warm wash across the top, cooler corners) ── */
+
+html[data-skin="sunset"] #app::before,
+html[data-skin="sunset"] #settings-app::before {
+    background:
+        radial-gradient(125% 52% at 50% -14%, color-mix(in srgb, var(--vscode-charts-orange, #ce9178) 17%, transparent), transparent 68%),
+        radial-gradient(85% 36% at 2% 104%, color-mix(in srgb, var(--vscode-charts-yellow, #dcdcaa) 11%, transparent), transparent 70%),
+        radial-gradient(75% 32% at 102% 102%, color-mix(in srgb, var(--vscode-charts-red, #f48771) 9%, transparent), transparent 72%);
+}
+
+/* ── Art: custom (user-uploaded image) ──────────────────────
+   `cover` scales the image uniformly and crops the overflow — the
+   aspect ratio is never touched, so any panel size crops instead of
+   stretching. The layer sits at low opacity behind the UI, with a
+   vertical mask fading the top and bottom edges out so the image
+   dissolves into the theme background rather than hard-cutting.
+
+   Two safeguards keep conversation readable with ANY image:
+     • a theme-surface wash (scrim) on top of the picture — text and
+       bubbles always paint above both, so even a white-on-white image
+       stays behind a contrast floor;
+     • --custom-skin-opacity (Settings > Appearance slider, 5–80%)
+       dims the whole layer so a busy image can be pushed way down.
+   --custom-skin-image / --custom-skin-opacity are injected as inline
+   vars by the extension (absent when no upload exists). */
+
+html[data-skin="custom"] #app::before,
+html[data-skin="custom"] #settings-app::before {
+    background-image:
+        linear-gradient(180deg, color-mix(in srgb, var(--bg) 45%, transparent), color-mix(in srgb, var(--bg) 45%, transparent)),
+        var(--custom-skin-image, none);
+    background-size: cover;
+    opacity: var(--custom-skin-opacity, 0.4);
+    -webkit-mask-image: linear-gradient(180deg, transparent, black 14%, black 86%, transparent);
+    mask-image: linear-gradient(180deg, transparent, black 14%, black 86%, transparent);
+}

@@ -2,7 +2,7 @@
   "name": "pi-vscode",
   "displayName": "Pi for VS Code",
   "description": "A first-class VS Code interface powered by the native Pi coding agent SDK.",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -256,6 +256,26 @@
           "minimum": 9,
           "maximum": 26,
           "description": "Font size (px) for the Pi panel. The whole type scale (labels, code blocks, metadata) scales relative to this base. Requires reloading the panel to take effect."
+        },
+        "pi-agent.skin": {
+          "type": "string",
+          "enum": ["default", "aurora", "graphite", "sunset", "custom"],
+          "enumDescriptions": [
+            "Follow the VS Code theme exactly, no decoration.",
+            "Aurora — soft accent glows bleeding in from the panel edges.",
+            "Graphite — fine drafting grid with slightly stronger hairlines.",
+            "Sunset — warm gradient wash across the top of the panel.",
+            "Custom — an image you uploaded in Settings > Appearance."
+          ],
+          "default": "default",
+          "description": "Panel skin: colour accents plus a decorative background layer. Gradient skins repaint at any panel size; the custom skin cover-crops your image, so neither ever stretches or distorts."
+        },
+        "pi-agent.customSkinOpacity": {
+          "type": "number",
+          "default": 40,
+          "minimum": 5,
+          "maximum": 80,
+          "description": "How strongly the uploaded custom-skin image tints the panel, as a percentage. Lower it when the image's colours are close to the text colour and conversation becomes hard to read — the message text always paints above the backdrop."
         },
         "pi-agent.displayLanguage": {
           "type": "string",

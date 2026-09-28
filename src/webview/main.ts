@@ -4,7 +4,7 @@ import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { normalizeImageFile, imageMimeFromName } from './image-resize';
 import { matchesModelFilter } from '../shared/model-filter';
 import { rankSlashMenuItems } from '../shared/slash-commands';
-import { t, setLang, type TextKey } from '../shared/i18n';
+import { t, setLang } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
 import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
@@ -182,6 +182,21 @@ function handleMessage(msg: ServerMessage): void {
                 showModelPicker();
             }
             break;
+        case 'skinChanged': {
+            // Swap the shell attribute; skins.css repaints the art layer live.
+            document.documentElement.dataset.skin = msg.skin;
+            // Refresh the custom image var: set on upload/replace, dropped
+            // when cleared or when `custom` degraded to the default skin.
+            const rootStyle = document.documentElement.style;
+            if (msg.customSkinUrl) {
+                rootStyle.setProperty('--custom-skin-image', `url("${msg.customSkinUrl.replace(/["\\]/g, '')}")`);
+            } else {
+                rootStyle.removeProperty('--custom-skin-image');
+            }
+            const opacity = msg.customSkinOpacity ?? 40;
+            rootStyle.setProperty('--custom-skin-opacity', (Math.min(80, Math.max(5, opacity)) / 100).toFixed(2));
+            break;
+        }
         case 'langChanged': {
             setLang(msg.lang);
             closeModelPicker();
@@ -707,7 +722,6 @@ async function updateMessages(): Promise<void> {
     bindCodeBlockActions();
     bindCheckpointButtons();
     bindMessageActionButtons();
-    bindWelcomeSuggestions();
     bindRedoButtons();
     bindDiffButtons();
     bindToolClickable();
@@ -2236,29 +2250,6 @@ function bindMessageActionButtons(): void {
             const msg = turn >= 1 ? findUserMessageByTurn(turn) : null;
             if (!msg) return;
             enterEditMode(turn, extractText(msg), extractUserMessageImages(msg));
-        });
-    });
-}
-
-/** Welcome suggestion buttons prefill the composer with a starter prompt.
- *  While streaming the text is queued on Enter instead (follow-up path). */
-function bindWelcomeSuggestions(): void {
-    document.querySelectorAll('.welcome .wi:not([data-bound])').forEach((btn) => {
-        btn.setAttribute('data-bound', '1');
-        btn.addEventListener('click', () => {
-            const key = (btn as HTMLElement).dataset.suggestion;
-            if (!key) return;
-            const prompt = t(`welcome.${key}.prompt` as TextKey);
-            const input = document.getElementById('input') as HTMLTextAreaElement | null;
-            if (input) {
-                input.value = prompt;
-                input.style.height = 'auto';
-            }
-            if (state.isStreaming || !input) {
-                input?.focus();
-                return;
-            }
-            sendMessage();
         });
     });
 }

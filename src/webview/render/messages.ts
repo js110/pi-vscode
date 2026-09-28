@@ -15,7 +15,7 @@
 // markdown renderer's block-id counter), and it is keyed by element so it
 // disappears with the node.
 import type { FileChangeInfo, ApprovalScope, ToolCallPendingInfo, ApplyPreviewInfo, PiConfigSnapshot } from '../../shared/protocol';
-import { t, type TextKey } from '../../shared/i18n';
+import { t } from '../../shared/i18n';
 import { isDangerousTool } from '../../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../../shared/stream-blocks';
 import {
@@ -158,29 +158,17 @@ export function reconcileStreamingText(textEl: HTMLElement, text: string): void 
 
 // ── Static view builders ──
 
-/** Welcome suggestions: key feeds `welcome.<key>.title/.desc/.prompt`. */
-const WELCOME_SUGGESTIONS = [
-    { key: 'sug1', icon: '✳' },
-    { key: 'sug2', icon: '▤' },
-    { key: 'sug3', icon: '◈' },
-    { key: 'sug4', icon: '↯' },
-];
-
+/** Welcome: one statement, set as a two-line lockup — "Just" in the panel
+ *  foreground, "do it." in the accent gradient with a brush underline.
+ *  Pure typography: no feature cards to grow stale. */
 export function buildWelcome(): HTMLElement {
     const w = el('div', 'welcome');
-    const items = WELCOME_SUGGESTIONS.map(
-        (s) => `
-        <button class="wi" type="button" data-suggestion="${s.key}">
-            <span class="wi-ic">${s.icon}</span>
-            <span class="wi-t">${escHtml(t(`welcome.${s.key}.title` as TextKey))}</span>
-            <span class="wi-d">${escHtml(t(`welcome.${s.key}.desc` as TextKey))}</span>
-        </button>`,
-    ).join('');
     w.innerHTML = `
         <div class="w-pi">&pi;</div>
-        <div class="welcome-title">${escHtml(t('welcome.headline'))}</div>
-        <div class="welcome-subtitle">${escHtml(t('welcome.subtitle'))}</div>
-        <div class="w-items">${items}</div>
+        <div class="w-statement">
+            <span class="ws-a">Just</span>
+            <span class="ws-b">do it.</span>
+        </div>
         <div class="w-hint">${t('welcome.hintShort')}</div>
     `;
     return w;
