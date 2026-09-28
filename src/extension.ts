@@ -6,6 +6,7 @@ import { TabManager, type Tab, type TabFactory, type TabManagerAdapters } from '
 import { StatusBarManager } from './providers/status-bar';
 import { SettingsPanel } from './providers/settings-panel';
 import { resolveDisplayLang } from './providers/lang';
+import { extractAssistantText } from './utils/assistant-text';
 
 import { DiffManager, DiffContentProvider } from './providers/diff';
 import { CheckpointManager } from './providers/checkpoint';
@@ -344,7 +345,9 @@ export async function activate(context: vscode.ExtensionContext) {
                     },
                     { role: 'user', content: transcript },
                 ] as any, {} as any);
-                const raw = String(reply ?? '').trim();
+                // completeSimple resolves to an AssistantMessage whose text
+                // lives in content[] text blocks, not a plain string.
+                const raw = extractAssistantText(reply).trim();
                 const cleaned = raw.replace(/^["'“”«»「」]+|["'“”«»「」]+$/g, '').trim();
                 const short = cleaned.split(/\s+/).slice(0, 10).join(' ');
                 return short.length > 0 ? short.slice(0, 100) : undefined;

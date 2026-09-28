@@ -98,6 +98,7 @@ const state: {
 let sessionSearchQuery = '';
 let sessionSearchTimer = 0;
 let fullSessionList: any[] = [];
+let currentSessionId: string | undefined;
 
 // ── Message handling ──
 
@@ -148,7 +149,13 @@ function handleMessage(msg: ServerMessage): void {
             break;
         case 'sessions':
             if (!sessionSearchQuery) fullSessionList = msg.sessions;
-            renderSessionList(msg.sessions, msg.currentSessionId);
+            currentSessionId = msg.currentSessionId ?? currentSessionId;
+            // Refresh only when the user already opened the panel; a
+            // background 'sessions' push (e.g. auto-rename after a turn)
+            // must never mount it on its own.
+            if (document.getElementById('session-panel')) {
+                renderSessionList(msg.sessions, msg.currentSessionId);
+            }
             break;
         case 'hunksApplied':
             if (msg.ok) {
@@ -1784,6 +1791,14 @@ function updateFooterModel(): void {
 
 // ── Session list ──
 
+/** User-opened session panel: show cached data (if any) and refresh. */
+function openSessionList(): void {
+    if (!document.getElementById('session-panel')) {
+        renderSessionList(fullSessionList, currentSessionId);
+    }
+    vscode.postMessage({ type: 'getSessions' });
+}
+
 function renderSessionList(sessions: any[], currentId?: string): void {
     let panel = document.getElementById('session-panel');
     if (!panel) {
@@ -2107,7 +2122,7 @@ function bindStableEvents(): void {
     });
 
     newTabBtn?.addEventListener('click', () => vscode.postMessage({ type: 'createTab' }));
-    sessionsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'getSessions' }));
+    sessionsBtn?.addEventListener('click', () => openSessionList());
     settingsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
 
     const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
