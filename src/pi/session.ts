@@ -289,6 +289,11 @@ export class PiSessionManager {
         return this._session?.sessionName;
     }
 
+    /** Drop the cached session list (used after a session file is deleted). */
+    invalidateSessionsCache(): void {
+        this._sessionsCache.invalidate();
+    }
+
     getContextUsage(): ContextUsageInfo | undefined {
         return this._getContextUsage();
     }

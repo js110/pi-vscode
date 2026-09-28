@@ -158,6 +158,10 @@ export interface SessionInfo {
     name?: string;
     path: string;
     lastModified?: number;
+    /** Session pinned to the top of the panel by the user. */
+    pinned?: boolean;
+    /** Content-match excerpt when this list is a full-text search result. */
+    snippet?: string;
 }
 
 export type ConfigStatus = 'not-found' | 'ok' | 'partial' | 'error';
@@ -200,6 +204,9 @@ export type ClientMessage =
     | { type: 'loadSession'; sessionPath: string }
     | { type: 'renameSession'; name: string; sessionPath?: string }
     | { type: 'getSessions' }
+    | { type: 'deleteSession'; sessionPath: string }
+    | { type: 'togglePinSession'; sessionPath: string }
+    | { type: 'searchSessions'; query: string }
     | { type: 'getState' }
     | { type: 'approveToolCall'; toolCallId: string }
     | { type: 'rejectToolCall'; toolCallId: string }
@@ -207,6 +214,7 @@ export type ClientMessage =
     | { type: 'openFile'; filePath: string }
     | { type: 'openDiff'; filePath: string; toolCallId: string }
     | { type: 'undoFileChange'; filePath: string; toolCallId: string }
+    | { type: 'applyHunks'; filePath: string; toolCallId: string; hunkIndices: number[] }
     | { type: 'restoreCheckpoint'; messageIndex: number }
     | { type: 'redoCheckpoint' }
     | { type: 'confirmAction'; action: string; message: string; payload?: any }
@@ -283,6 +291,8 @@ export type ServerMessage =
     | { type: 'models'; models: ModelInfo[]; current?: ModelInfo; thinkingLevel?: string; availableThinkingLevels?: string[]; supportsThinking?: boolean }
     | { type: 'modelChanged'; model: ModelInfo; thinkingLevel?: string }
     | { type: 'sessions'; sessions: SessionInfo[]; currentSessionId?: string }
+    /** User applied a subset of a diff's hunks in the chat panel. */
+    | { type: 'hunksApplied'; toolCallId: string; ok: boolean; message?: string }
     | { type: 'sessionChanged'; sessionId: string }
     | { type: 'fileChange'; change: FileChangeInfo }
     | { type: 'confirmResult'; action: string; confirmed: boolean; payload?: any }

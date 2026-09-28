@@ -22,10 +22,13 @@ import { setSdkProbeCacheDir, getSdkSource } from './pi/compat';
 import { fuzzyFilterFiles, MAX_MENTION_RESULTS } from './shared/mention';
 import {
     buildSelectionPrompt,
+    buildFilesPrompt,
     isSelectionTooLarge,
+    languageIdForPath,
     selectionLineRange,
     MAX_SELECTION_CHARS,
 } from './providers/send-to-pi';
+import { createSessionPins } from './utils/session-pins';
 import { parseGlobalRules, type GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
@@ -312,6 +315,40 @@ export async function activate(context: vscode.ExtensionContext) {
                     t('notify.done', { name: tabName, duration: formatDurationSec(durationSec) }),
                 );
             },
+            autoNameSession: async (transcript: string) => {
+                const registry = await getModelRegistry();
+                const runtime = await getModelRuntime();
+                const sessionModel = tabManagerRef?.activeTab?.session.session?.model as
+                    | { provider?: string; id?: string }
+                    | undefined;
+                const cfg = vscode.workspace.getConfiguration('pi-agent');
+                const configured = findConfiguredModel(
+                    registry,
+                    cfg.get<string>('apiProvider', ''),
+                    cfg.get<string>('defaultModel', ''),
+                );
+                const model =
+                    (sessionModel
+                        ? findConfiguredModel(registry, sessionModel.provider ?? '', sessionModel.id ?? '')
+                        : undefined)
+                    ?? configured
+                    ?? runtime.getAvailableSnapshot()[0];
+                if (!model) return undefined;
+                const reply = await runtime.completeSimple(model as any, [
+                    {
+                        role: 'system',
+                        content:
+                            'You summarize conversations into short chat titles. Reply with ONLY a ' +
+                            'concise title (2-10 words) in the same language as the conversation. It must ' +
+                            'describe the task being worked on. No quotes, no prefix, no period at the end.',
+                    },
+                    { role: 'user', content: transcript },
+                ] as any, {} as any);
+                const raw = String(reply ?? '').trim();
+                const cleaned = raw.replace(/^["'“”«»「」]+|["'“”«»「」]+$/g, '').trim();
+                const short = cleaned.split(/\s+/).slice(0, 10).join(' ');
+                return short.length > 0 ? short.slice(0, 100) : undefined;
+            },
         };
 
         const adapters: TabManagerAdapters = { transport, workspace, ui, agent };
@@ -329,7 +366,10 @@ export async function activate(context: vscode.ExtensionContext) {
         const lockDeps = createNodeLockDeps(
             path.join(context.globalStorageUri.fsPath, 'locks'),
         );
-        const tabManager = new TabManager(factory, adapters, globalRuleStore, lockDeps);
+        const sessionPins = createSessionPins(
+            path.join(context.globalStorageUri.fsPath, 'session-pins.json'),
+        );
+        const tabManager = new TabManager(factory, adapters, globalRuleStore, lockDeps, sessionPins);
         tabManagerRef = tabManager;
         // T16: SDK loading + session creation run off the activation critical
         // path; consumers (webview, commands) await initialize() themselves.
@@ -489,6 +529,52 @@ export async function activate(context: vscode.ExtensionContext) {
 
             vscode.commands.registerCommand('pi-agent.focusChat', () => {
                 vscode.commands.executeCommand('pi-agent.chat.focus');
+            }),
+
+            vscode.commands.registerCommand('pi-agent.sendFilesToPi', async (arg?: unknown) => {
+                let uris: vscode.Uri[] = [];
+                if (Array.isArray(arg)) {
+                    uris = arg.filter((u): u is vscode.Uri => u instanceof vscode.Uri);
+                } else if (arg instanceof vscode.Uri) {
+                    uris = [arg];
+                }
+                if (uris.length === 0) {
+                    vscode.window.showInformationMessage(t('sendFiles.noFiles'));
+                    return;
+                }
+                if (uris.length > 10) {
+                    uris = uris.slice(0, 10);
+                    vscode.window.showWarningMessage(t('sendFiles.tooMany', { n: 10 }));
+                }
+                const files: { displayPath: string; languageId: string; content: string }[] = [];
+                for (const uri of uris) {
+                    try {
+                        const bytes = await vscode.workspace.fs.readFile(uri);
+                        const full = Buffer.from(bytes).toString('utf-8');
+                        const content = full.length > MAX_SELECTION_CHARS
+                            ? full.slice(0, MAX_SELECTION_CHARS)
+                            : full;
+                        if (content.trim().length === 0) continue;
+                        const displayPath = vscode.workspace.asRelativePath(uri);
+                        files.push({
+                            displayPath,
+                            languageId: languageIdForPath(uri.fsPath),
+                            content,
+                        });
+                    } catch { /* unreadable file — skip */ }
+                }
+                if (files.length === 0) {
+                    vscode.window.showInformationMessage(t('sendFiles.noFiles'));
+                    return;
+                }
+                const promptText = buildFilesPrompt(files);
+                void vscode.commands.executeCommand('pi-agent.chat.focus');
+                try {
+                    await tabManagerRef?.sendToPi(promptText);
+                } catch (err) {
+                    const text = humanizeErrorMessage(err);
+                    if (text) vscode.window.showErrorMessage(text);
+                }
             }),
 
             vscode.commands.registerCommand('pi-agent.generateCommitMessage', (target?: unknown) => {

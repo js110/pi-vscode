@@ -9,6 +9,7 @@ import type {
     MentionSymbolItem,
     ServerMessage,
     SerializedAgentState,
+    SessionInfo,
     TabInfo,
 } from '../shared/protocol';
 import { DiffManager } from './diff';
@@ -37,6 +38,10 @@ import {
 import { collectAndReplaceImages } from '../shared/message-assets';
 import { buildSessionMarkdown, suggestedExportFileName } from '../shared/session-export';
 import { SessionLockManager, LOCK_HEARTBEAT_MS, type SessionLockDeps } from '../pi/session-lock';
+import { parseUnifiedHunks, applyHunkSelection, applyHunkSelectionToNew } from '../shared/unified-hunks';
+import type { SessionPins } from '../utils/session-pins';
+import { inMemorySessionPins } from '../utils/session-pins';
+import { probeSessionFile, readSessionChunk, findSnippet, trashSessionFile } from '../utils/session-files';
 
 export interface Tab {
     id: string;
@@ -85,6 +90,11 @@ export interface AgentCapabilities {
     exportSession?(content: string, suggestedName: string): Promise<void>;
     /** OS-level turn-completion notification; the host decides when it fires. */
     notifyAgentDone?(tabName: string, durationSec: number, isTabActive: boolean): void;
+    /**
+     * Generate a short conversation title from a session transcript. Optional —
+     * when absent the auto-naming feature stays off.
+     */
+    autoNameSession?(transcript: string): Promise<string | undefined>;
 }
 
 /** All adapter seams the TabManager depends on. */
@@ -157,6 +167,10 @@ type TabState = Tab & {
     imageData: Map<string, string>;
     /** Wall-clock duration of the last finished turn, for the completion notify. */
     lastTurnDurationSec: number;
+    /** Set while the auto-naming model call is in flight (dedup). */
+    autoNaming: boolean;
+    /** Set once a generated title has been written for this session. */
+    autoNamed: boolean;
     /** Latest Pi cache-warming decision (SDK 0.86+; absent on older copies). */
     cacheWarmingDecision?: import('../shared/protocol').CacheWarmingDecisionInfo;
 };
@@ -175,6 +189,7 @@ export class TabManager {
         private _adapters: TabManagerAdapters,
         private _globalRules: GlobalRuleStore = inMemoryGlobalRuleStore(),
         private _lockDeps?: SessionLockDeps,
+        private _pins: SessionPins = inMemorySessionPins(),
     ) {
         if (this._lockDeps) {
             this._heartbeatTimer = setInterval(() => {
@@ -443,6 +458,8 @@ export class TabManager {
             imageAssets: new Map<string, string>(),
             imageData: new Map<string, string>(),
             lastTurnDurationSec: 0,
+            autoNaming: false,
+            autoNamed: false,
             cacheWarmingDecision: undefined,
         };
     }
@@ -622,6 +639,7 @@ export class TabManager {
                 tab.hasNotification = true;
             }
             this._adapters.agent.notifyAgentDone?.(tab.name, tab.lastTurnDurationSec, isActive);
+            void this._maybeAutoName(tab);
         }
 
         if (event.type === 'queue_update') {
@@ -706,6 +724,105 @@ export class TabManager {
         if (sessionName && tab.name !== sessionName) {
             tab.name = sessionName;
         }
+    }
+
+    /** After a finished turn, ask the host model to summarize the session into
+     *  a short title. Best-effort: never blocks the turn or signs the session. */
+    private async _maybeAutoName(tab: TabState): Promise<void> {
+        if (!this._adapters.agent.autoNameSession) return;
+        if (tab.autoNaming || tab.autoNamed) return;
+        if (tab.session.getSessionName()) return;
+        if (!tab.session.getCurrentSessionPath()) return;
+
+        let messages: any[];
+        try {
+            messages = tab.session.getMessages();
+        } catch {
+            return;
+        }
+        if (!messages || messages.length < 2) return;
+
+        let transcript: string;
+        try {
+            const model = tab.session.getCurrentModel();
+            transcript = buildSessionMarkdown(messages, {
+                name: tab.name,
+                model: model ? (model.name ?? model.id) : undefined,
+                exportedAtMs: Date.now(),
+            });
+        } catch {
+            return;
+        }
+
+        tab.autoNaming = true;
+        try {
+            const name = await this._adapters.agent.autoNameSession(transcript.slice(0, 16_000));
+            if (!name || this._tabs.get(tab.id) !== tab) return;
+            if (tab.session.getSessionName()) return;
+            tab.session.setSessionName(name);
+            tab.autoNamed = true;
+            this._updateTabName(tab);
+            this._emitStateChange();
+            const currentId = tab.session.getSessionId();
+            const sessions = await this._listSessions(tab);
+            this._adapters.transport.post({ type: 'sessions', sessions, currentSessionId: currentId });
+        } catch {
+            // non-critical: the session keeps its default name
+        } finally {
+            tab.autoNaming = false;
+        }
+    }
+
+    /** Session list with the user's pinned flags attached. */
+    private async _listSessions(tab: TabState): Promise<SessionInfo[]> {
+        const sessions = await tab.session.getSessions();
+        const pinned = await this._pins.load();
+        return sessions.map((s: SessionInfo) => ({
+            ...s,
+            pinned: pinned.has(s.path),
+        }));
+    }
+
+    /** Full-text search over session names and file contents (capped). */
+    private async _searchSessions(
+        tab: TabState,
+        query: string,
+    ): Promise<SessionInfo[]> {
+        const q = query.toLowerCase();
+        const all = await tab.session.getSessions();
+        if (all.length === 0) return [];
+        const pinned = await this._pins.load();
+        const hit = new Set<string>();
+        const results: SessionInfo[] = [];
+
+        // Name matches are free and most useful.
+        for (const s of all) {
+            if ((s.name ?? '').toLowerCase().includes(q)) {
+                hit.add(s.path);
+                results.push({ ...s, pinned: pinned.has(s.path) });
+                if (results.length >= 50) return results;
+            }
+        }
+
+        // Then scan file contents, oldest sessions first, capped by bytes and count.
+        let scanned = 0;
+        const byDate = [...all].sort(
+            (a, b) => (a.lastModified ?? 0) - (b.lastModified ?? 0),
+        );
+        for (const s of byDate) {
+            if (results.length >= 50) break;
+            if (hit.has(s.path)) continue;
+            if (scanned >= 200) break;
+            scanned++;
+            const probe = await probeSessionFile(s.path);
+            if (!probe || probe.sizeBytes > 2 * 1024 * 1024) continue;
+            const chunk = await readSessionChunk(s.path, 512 * 1024);
+            const snippet = findSnippet(chunk, q);
+            if (snippet !== undefined) {
+                results.push({ ...s, pinned: pinned.has(s.path), snippet });
+            }
+        }
+        return results;
     }
 
     async dispatch(msg: ClientMessage): Promise<void> {
@@ -952,15 +1069,84 @@ export class TabManager {
                     this._updateTabName(tab);
                 }
                 this._emitStateChange();
-                const sessions = await tab.session.getSessions();
+                const sessions = await this._listSessions(tab);
                 const currentId = tab.session.getSessionId();
                 this._adapters.transport.post({ type: 'sessions', sessions, currentSessionId: currentId });
                 break;
             }
             case 'getSessions': {
-                const sessions = await tab.session.getSessions();
+                const sessions = await this._listSessions(tab);
                 const currentId = tab.session.getSessionId();
                 this._adapters.transport.post({ type: 'sessions', sessions, currentSessionId: currentId });
+                break;
+            }
+            case 'deleteSession': {
+                const targetPath = msg.sessionPath;
+                const all = await tab.session.getSessions();
+                const info = all.find((s) => s.path === targetPath);
+                const shown = info?.name || targetPath.split(/[\\/]/).pop() || targetPath;
+                const yes = await this._adapters.ui.confirmDialog(
+                    t('sessions.deleteConfirm', { name: shown }),
+                );
+                if (!yes) break;
+                for (const [tabId, t] of [...this._tabs]) {
+                    if (t.session.getCurrentSessionPath() === targetPath) {
+                        await this._closeTab(tabId);
+                    }
+                }
+                if (this._tabs.size === 0) {
+                    await this.initialize();
+                }
+                this._pins.set(targetPath, false);
+                try {
+                    await trashSessionFile(targetPath);
+                } catch (err) {
+                    // A live SDK session can still hold the file (Windows rename
+                    // fails with EPERM/EBUSY) or the path may already be gone.
+                    // Keep the entry listed rather than surfacing a hard failure.
+                    console.warn(`deleteSession: could not trash ${targetPath}`, err);
+                }
+                const surviving = this._tabs.get(this._activeTabId);
+                if (surviving) {
+                    surviving.session.invalidateSessionsCache();
+                    const sessions = await this._listSessions(surviving);
+                    this._adapters.transport.post({
+                        type: 'sessions',
+                        sessions,
+                        currentSessionId: surviving.session.getSessionId(),
+                    });
+                }
+                break;
+            }
+            case 'togglePinSession': {
+                const pinned = await this._pins.load();
+                await this._pins.set(msg.sessionPath, !pinned.has(msg.sessionPath));
+                const sessions = await this._listSessions(tab);
+                const currentId = tab.session.getSessionId();
+                this._adapters.transport.post({ type: 'sessions', sessions, currentSessionId: currentId });
+                break;
+            }
+            case 'searchSessions': {
+                const query = (msg.query ?? '').trim();
+                const sessions = query
+                    ? await this._searchSessions(tab, query)
+                    : await this._listSessions(tab);
+                const currentId = tab.session.getSessionId();
+                this._adapters.transport.post({ type: 'sessions', sessions, currentSessionId: currentId });
+                break;
+            }
+            case 'applyHunks': {
+                const result = await tab.diffManager.applyHunks(
+                    msg.filePath,
+                    msg.toolCallId,
+                    msg.hunkIndices,
+                );
+                this._adapters.transport.post({
+                    type: 'hunksApplied',
+                    toolCallId: msg.toolCallId,
+                    ok: result.ok,
+                    message: result.message,
+                });
                 break;
             }
             case 'refreshConfig': {

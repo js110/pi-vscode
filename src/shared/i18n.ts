@@ -141,6 +141,9 @@ const EN = {
     'sessions.noMatch': 'No matching sessions',
     'sessions.search': 'Search sessions...',
     'sessions.close': 'Close',
+    'sessions.pinTitle': 'Pin / unpin this session',
+    'sessions.deleteTitle': 'Delete this session',
+    'sessions.deleteConfirm': 'Delete session "{name}"? Its file moves to a local .pi-session-trash folder.',
 
     // Code block
     'code.copy': 'Copy',
@@ -207,6 +210,9 @@ const EN = {
     'sendToPi.intro': 'Here is a code selection from `{path}:{range}`:',
     'sendToPi.noSelection': 'Select some code in the editor first.',
     'sendToPi.tooLarge': 'The selection is too large to send (max {n} characters).',
+    'sendFiles.intro': 'Here {n} file(s) from the explorer:',
+    'sendFiles.noFiles': 'No readable files selected.',
+    'sendFiles.tooMany': 'Too many files selected — sending the first {n}.',
 
     // @-mention
     'mention.deleted': 'Referenced file no longer exists: {path}',
@@ -278,6 +284,17 @@ const EN = {
 
     // Diff card
     'diff.new': 'NEW',
+    'diff.hunkTitle': 'Diff chunk of this file',
+    'diff.applySelected': 'Apply selected',
+    'diff.applying': 'Applying...',
+    'diff.applied': 'Partial changes applied.',
+    'diff.applyFailed': 'Could not apply the selected changes.',
+    'diff.noChange': 'This change is no longer tracked.',
+    'diff.noOriginal': 'Missing the original content — cannot partially apply.',
+    'diff.noHunks': 'Could not parse the diff into chunks.',
+    'diff.noHunksSelected': 'Select at least one change chunk.',
+    'diff.writeFailed': 'Could not write the file.',
+    'diff.fileDrifted': 'The file has changed since this edit. Undo the change, then apply the chunks again.',
 
     // Settings panel
     'settings.title': 'Pi Agent Settings',
@@ -495,6 +512,9 @@ const ZH: Record<TextKey, string> = {
     'sessions.noMatch': '没有匹配的会话',
     'sessions.search': '搜索会话...',
     'sessions.close': '关闭',
+    'sessions.pinTitle': '置顶 / 取消置顶该会话',
+    'sessions.deleteTitle': '删除该会话',
+    'sessions.deleteConfirm': '删除会话「{name}」？其文件将移至本地 .pi-session-trash 目录。',
 
     'code.copy': '复制',
     'code.copied': '已复制！',
@@ -558,6 +578,9 @@ const ZH: Record<TextKey, string> = {
     'sendToPi.intro': '这是 `{path}:{range}` 处的选区代码：',
     'sendToPi.noSelection': '请先在编辑器中选中代码。',
     'sendToPi.tooLarge': '选区过大，无法发送（上限 {n} 字符）。',
+    'sendFiles.intro': '以下是来自资源管理器的 {n} 个文件：',
+    'sendFiles.noFiles': '没有可读取的已选文件。',
+    'sendFiles.tooMany': '选择的文件过多，将发送前 {n} 个。',
     // @-mention
     'mention.deleted': '引用的文件已不存在：{path}',
     'mention.noResults': '没有匹配的文件或符号',
@@ -626,6 +649,17 @@ const ZH: Record<TextKey, string> = {
     'inline.statusTitle': '评审行内编辑：保留或回滚本轮全部修改',
 
     'diff.new': '新建',
+    'diff.hunkTitle': '该文件的改动块',
+    'diff.applySelected': '应用所选',
+    'diff.applying': '应用中…',
+    'diff.applied': '已部分应用所选改动。',
+    'diff.applyFailed': '无法应用所选改动。',
+    'diff.noChange': '该改动已不再被追踪。',
+    'diff.noOriginal': '缺少原始内容，无法部分应用。',
+    'diff.noHunks': '无法将 diff 解析为改动块。',
+    'diff.noHunksSelected': '请至少勾选一个改动块。',
+    'diff.writeFailed': '写入文件失败。',
+    'diff.fileDrifted': '该编辑之后文件已发生变化。请先撤销该改动，再重新应用所选改动块。',
 
     'settings.title': 'Pi Agent 设置',
     'settings.section.api': 'API 连接',

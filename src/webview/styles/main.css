@@ -296,21 +296,16 @@ body {
     height: 14px;
 }
 
+/* Streaming status dot — static on purpose: a constantly spinning
+   circle is distracting in peripheral vision. An accent dot signals
+   "this session is working" without any motion. */
 .tab-spinner {
     display: inline-block;
-    width: 10px;
-    height: 10px;
-    border: 2px solid var(--hairline);
-    border-top-color: var(--accent);
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    animation: tab-spin 0.7s linear infinite;
+    background: var(--accent);
 }
-.tab-active .tab-spinner {
-    border-color: color-mix(in srgb, var(--fg) 24%, transparent);
-    border-top-color: var(--accent);
-}
-
-@keyframes tab-spin { to { transform: rotate(360deg); } }
 
 .tab-name {
     overflow: hidden;
@@ -403,6 +398,27 @@ body {
     border-left-color: var(--accent);
 }
 .session-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-item-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.session-item-snippet {
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.session-item-actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
 .session-empty { padding: 16px; text-align: center; color: var(--muted); font-size: var(--fs-sm); }
 
 .session-search {
@@ -434,7 +450,9 @@ body {
 }
 .session-search input::placeholder { color: var(--faint); }
 
-.session-item-rename {
+.session-item-rename,
+.session-item-pin,
+.session-item-delete {
     flex-shrink: 0;
     background: none;
     border: none;
@@ -447,8 +465,14 @@ body {
     opacity: 0;
     transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
-.session-item:hover .session-item-rename { opacity: 1; }
+.session-item:hover .session-item-rename,
+.session-item:hover .session-item-delete,
+.session-item:hover .session-item-pin { opacity: 1; }
 .session-item-rename:hover { color: var(--accent); background: var(--surface-strong); }
+.session-item-pin { opacity: 0.7; }
+.session-item-pin[data-pinned="1"] { opacity: 1; color: var(--accent); }
+.session-item-pin:hover { color: var(--accent); background: var(--surface-strong); }
+.session-item-delete:hover { color: var(--danger); background: var(--surface-strong); }
 .session-item-rename-input {
     flex: 1;
     min-width: 0;
@@ -1218,6 +1242,46 @@ body {
 .diff-view::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
 
 .apply-preview-card .diff-view { border-bottom: 1px solid var(--hairline); }
+
+.hunk-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 8px;
+    border-top: 1px solid var(--hairline);
+}
+.hunk-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-strong);
+    user-select: none;
+}
+.hunk-row:hover { color: var(--fg); }
+.hunk-row input { accent-color: var(--accent); cursor: pointer; }
+.hunk-header { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.hunk-apply-row {
+    display: flex;
+    padding: 0 8px 6px;
+}
+.btn-apply-hunks {
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--fg);
+    background: var(--surface-strong);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.btn-apply-hunks:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn-apply-hunks:disabled { opacity: 0.55; cursor: default; }
 
 .diff-line {
     padding: 0 10px;

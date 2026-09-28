@@ -15,6 +15,7 @@
 // markdown renderer's block-id counter), and it is keyed by element so it
 // disappears with the node.
 import type { FileChangeInfo, ApprovalScope, ToolCallPendingInfo, ApplyPreviewInfo, PiConfigSnapshot } from '../../shared/protocol';
+import { parseUnifiedHunks } from '../../shared/unified-hunks';
 import { t } from '../../shared/i18n';
 import { isDangerousTool } from '../../shared/tool-safety';
 import { splitStreamBlocks, computeUnchangedPrefix } from '../../shared/stream-blocks';
@@ -226,10 +227,35 @@ export function buildDiffCard(change: FileChangeInfo, msg?: any): HTMLElement {
         </div>
     `;
 
-    if (change.diff) {
+if (change.diff) {
         const diffView = el('div', 'diff-view');
         diffView.innerHTML = renderDiffLines(change.diff);
+
         card.appendChild(diffView);
+
+        const { hunks } = parseUnifiedHunks(change.diff);
+        if (hunks.length > 0) {
+            const hunkBar = el('div', 'hunk-toolbar');
+            hunkBar.innerHTML = hunks
+                .map(
+                    (h, i) => `
+                        <label class="hunk-row" title="${escHtml(t('diff.hunkTitle'))}">
+                            <input type="checkbox" class="hunk-check" data-hunk="${i}" checked>
+                            <code class="hunk-header">@@ -${h.oldStart},${h.oldCount} @@</code>
+                        </label>
+                    `,
+                )
+                .join('');
+            const applyRow = el('div', 'hunk-apply-row');
+            const applyBtn = el('button', 'btn-apply-hunks') as HTMLButtonElement;
+            applyBtn.type = 'button';
+            applyBtn.dataset.filepath = change.filePath;
+            applyBtn.dataset.toolcallid = change.toolCallId;
+            applyBtn.textContent = t('diff.applySelected');
+            applyRow.appendChild(applyBtn);
+            card.appendChild(hunkBar);
+            card.appendChild(applyRow);
+        }
     }
 
     wrapper.appendChild(card);

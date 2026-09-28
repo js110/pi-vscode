@@ -93,7 +93,8 @@ checkStatic('ModelRuntime', 'create');
 
 // --- Instance methods (checked on prototypes, no instantiation needed) ---
 ['getAvailable', 'find'].forEach((m) => checkProto('ModelRegistry', m));
-['setRuntimeApiKey', 'removeRuntimeApiKey'].forEach((m) => checkProto('ModelRuntime', m));
+['setRuntimeApiKey', 'removeRuntimeApiKey', 'completeSimple', 'getAvailableSnapshot']
+    .forEach((m) => checkProto('ModelRuntime', m));
 checkProto('DefaultResourceLoader', 'reload');
 
 // --- Version-gated APIs (cache warming, SDK 0.86.0+) ---
@@ -108,7 +109,9 @@ if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '0.86.0')) {
 // AgentSession instance methods cannot be checked without creating a live
 // session (needs a model); they are covered by `npm run typecheck` (SDK .d.ts)
 // and the unit tests, which build a real session. Its cache-warming and
-// bug-report APIs are feature-detected in src/pi/session.ts.
+// bug-report APIs are feature-detected in src/pi/session.ts. The `model`
+// property read in src/extension.ts (auto-naming) is also typecheck-covered —
+// its class getter dereferences session state, so it can't be probed here.
 
 if (missing.length) {
     console.error(`Pi SDK API audit (installed version ${pkgVersion}): ${missing.length} missing API(s):`);

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
     buildSelectionPrompt,
+    buildFilesPrompt,
+    languageIdForPath,
     isSelectionTooLarge,
     selectionLineRange,
     MAX_SELECTION_CHARS,
@@ -89,5 +91,31 @@ describe('isSelectionTooLarge', () => {
     it('is false within the cap and true beyond it', () => {
         expect(isSelectionTooLarge('x'.repeat(MAX_SELECTION_CHARS))).toBe(false);
         expect(isSelectionTooLarge('x'.repeat(MAX_SELECTION_CHARS + 1))).toBe(true);
+    });
+});
+
+describe('buildFilesPrompt', () => {
+    it('bundles several files with headers and fenced contents', () => {
+        const text = buildFilesPrompt([
+            { displayPath: 'src/a.ts', languageId: 'typescript', content: 'const a = 1;' },
+            { displayPath: 'src/b.json', languageId: 'json', content: '{"k":1}' },
+        ]);
+        expect(text).toContain('src/a.ts');
+        expect(text).toContain('```typescript\nconst a = 1;\n```');
+        expect(text).toContain('src/b.json');
+        expect(text).toContain('```json\n{"k":1}\n```');
+    });
+});
+
+describe('languageIdForPath', () => {
+    it('maps common extensions to language ids', () => {
+        expect(languageIdForPath('/x/src/a.tsx')).toBe('tsx');
+        expect(languageIdForPath('C:\\proj\\main.go')).toBe('go');
+        expect(languageIdForPath('notes.md')).toBe('markdown');
+    });
+
+    it('returns an empty string for unknown extensions', () => {
+        expect(languageIdForPath('file.unknownext')).toBe('');
+        expect(languageIdForPath('README')).toBe('');
     });
 });

@@ -6,6 +6,7 @@ import type { FileChangeInfo } from '../shared/protocol';
 import type { CheckpointManager } from './checkpoint';
 import { computeUnifiedDiff } from '../utils/diff';
 import { resolveWorkspacePath } from '../utils/paths';
+import { parseUnifiedHunks, applyHunkSelection, applyHunkSelectionToNew } from '../shared/unified-hunks';
 
 interface PendingEdit {
     toolCallId: string;
@@ -190,6 +191,118 @@ export class DiffManager implements vscode.Disposable {
                 await vscode.window.showTextDocument(doc, { preview: true });
             } catch { /* file may have been deleted */ }
         }
+    }
+
+    /**
+     * Apply only the selected hunks of a tool's diff to disk (per-hunk partial
+     * application from the chat panel). The rebuild is anchored to the content
+     * captured at the tool's start, so the selection always derives from that
+     * same base. If anything else has since touched the file (a later turn, an
+     * earlier partial apply, or a manual edit), we refuse rather than clobber
+     * it — the panel can't rebase hunks onto unknown content. Writes the file,
+     * then records a new file-change entry so rollback/checkpoint bookkeeping
+     * stays intact (repeated applications replace that synthetic entry).
+     */
+    async applyHunks(
+        filePath: string,
+        toolCallId: string,
+        hunkIndices: number[],
+    ): Promise<{ ok: boolean; message?: string }> {
+        const absPath = this._resolveFilePath(filePath);
+        const change = this._fileChanges.find(
+            (c) => this._resolveFilePath(c.filePath) === absPath && c.toolCallId === toolCallId,
+        );
+        if (!change) {
+            return { ok: false, message: 'diff.noChange' };
+        }
+        const original = this._originalContents.get(absPath);
+        if (!change.isNew && (original === undefined || original === null)) {
+            return { ok: false, message: 'diff.noOriginal' };
+        }
+
+        if (!change.diff) {
+            return { ok: false, message: 'diff.noHunks' };
+        }
+        const { hunks } = parseUnifiedHunks(change.diff);
+        if (hunks.length === 0) {
+            return { ok: false, message: 'diff.noHunks' };
+        }
+        const selected = new Set<number>(
+            hunkIndices.filter((i) => i >= 0 && i < hunks.length),
+        );
+        if (selected.size === 0) {
+            return { ok: false, message: 'diff.noHunksSelected' };
+        }
+
+        // Refuse when the file on disk isn't the untouched original or this
+        // tool's full result (trailing-newline normalized) — a drifted file
+        // can't be safely rebased onto `original`.
+        const all = new Set(hunks.map((_, i) => i));
+        const fullResult = change.isNew
+            ? applyHunkSelectionToNew(hunks, all)
+            : applyHunkSelection(original as string, hunks, all);
+        const norm = (s: string) => (s.endsWith('\n') ? s.slice(0, -1) : s);
+        let diskContent: string | null = null;
+        try {
+            diskContent = fs.readFileSync(absPath, 'utf-8');
+        } catch { /* missing file counts as untouched */ }
+        if (diskContent !== null) {
+            const untouched = change.isNew
+                ? norm(diskContent) === ''
+                : original !== undefined && original !== null && norm(diskContent) === norm(original);
+            if (!untouched && norm(diskContent) !== norm(fullResult)) {
+                return { ok: false, message: 'diff.fileDrifted' };
+            }
+        }
+
+        const result = change.isNew
+            ? applyHunkSelectionToNew(hunks, selected)
+            : applyHunkSelection(original as string, hunks, selected);
+
+        try {
+            fs.writeFileSync(absPath, result, 'utf-8');
+        } catch (err: unknown) {
+            return { ok: false, message: err instanceof Error ? err.message : 'diff.writeFailed' };
+        }
+
+        // Record the partial application as its own change so the original
+        // diff + rollback snapshot remain valid. Replace any earlier synthetic
+        // entry for this file so repeated applications don't accumulate dupes.
+        const partialToolCallId = `${toolCallId}|hunks`;
+        const existingPartial = this._fileChanges.findIndex(
+            (c) => this._resolveFilePath(c.filePath) === absPath && c.toolCallId === partialToolCallId,
+        );
+        let diffText = '';
+        let addedLines = 0;
+        let removedLines = 0;
+        if (original !== null && original !== undefined) {
+            const { diff, stats } = computeUnifiedDiff(original, result, change.filePath);
+            diffText = diff;
+            addedLines = stats.added;
+            removedLines = stats.removed;
+        } else {
+            const lines = result.split('\n');
+            addedLines = lines.length;
+            diffText = lines.map((l) => `+${l}`).join('\n');
+        }
+        const partialChange: FileChangeInfo = {
+            filePath: change.filePath,
+            toolCallId: partialToolCallId,
+            toolName: 'edit',
+            isNew: change.isNew,
+            diff: diffText,
+            addedLines,
+            removedLines,
+            turnIndex: change.turnIndex,
+        };
+        if (existingPartial >= 0) {
+            this._fileChanges[existingPartial] = partialChange;
+        } else {
+            this._fileChanges.push(partialChange);
+        }
+        this._pruneCaches();
+        this._emitFileChange(partialChange);
+        return { ok: true };
     }
 
     async undoFileChange(filePath: string, _toolCallId: string): Promise<void> {

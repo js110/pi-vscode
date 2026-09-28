@@ -4,7 +4,7 @@ import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { normalizeImageFile, imageMimeFromName } from './image-resize';
 import { matchesModelFilter } from '../shared/model-filter';
 import { rankSlashMenuItems } from '../shared/slash-commands';
-import { t, setLang } from '../shared/i18n';
+import { t, setLang, type TextKey } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
 import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
@@ -96,6 +96,8 @@ const state: {
 };
 
 let sessionSearchQuery = '';
+let sessionSearchTimer = 0;
+let fullSessionList: any[] = [];
 
 // ── Message handling ──
 
@@ -145,7 +147,29 @@ function handleMessage(msg: ServerMessage): void {
             updateFooterModel();
             break;
         case 'sessions':
+            if (!sessionSearchQuery) fullSessionList = msg.sessions;
             renderSessionList(msg.sessions, msg.currentSessionId);
+            break;
+        case 'hunksApplied':
+            if (msg.ok) {
+                showToast({
+                    containerId: 'messages',
+                    className: 'notice-toast',
+                    message: t('diff.applied'),
+                    durationMs: 4000,
+                });
+                scrollToBottom();
+            } else {
+                const known: readonly string[] = [
+                    'diff.noChange', 'diff.noOriginal', 'diff.noHunks',
+                    'diff.noHunksSelected', 'diff.writeFailed', 'diff.fileDrifted',
+                    'diff.applyFailed',
+                ];
+                const key = (
+                    msg.message && known.includes(msg.message) ? msg.message : 'diff.applyFailed'
+                ) as TextKey;
+                showError(t(key), ERROR_HINT_MS);
+            }
             break;
         case 'fileChange':
             state.fileChanges.push(msg.change);
@@ -724,6 +748,7 @@ async function updateMessages(): Promise<void> {
     bindMessageActionButtons();
     bindRedoButtons();
     bindDiffButtons();
+    bindHunkApplyButtons();
     bindToolClickable();
 
     // The first content render happens asynchronously (after the markdown
@@ -1102,6 +1127,7 @@ function bindQueuedItemEvents(section: HTMLElement): void {
     section.querySelectorAll('.queued-edit-input').forEach((input) => {
         input.addEventListener('keydown', (e) => {
             const ke = e as KeyboardEvent;
+            if (ke.isComposing || ke.keyCode === 229) return;
             const idx = parseInt((input as HTMLElement).dataset.index ?? '-1', 10);
             if (ke.key === 'Enter') {
                 ke.preventDefault();
@@ -1256,6 +1282,7 @@ function renderInlineFileChange(change: FileChangeInfo): void {
     }
 
     bindDiffButtons();
+    bindHunkApplyButtons();
     scrollToBottom();
 }
 
@@ -1784,9 +1811,19 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     }
 
     const query = (sessionSearchQuery ?? '').toLowerCase();
+    // Full-text results arrive pre-filtered (name or snippet); sort only the
+    // full list. Pinned sessions always lead, then newest first.
+    const sorted = query
+        ? sessions
+        : [...sessions].sort((a, b) => {
+              const pa = a.pinned ? 1 : 0;
+              const pb = b.pinned ? 1 : 0;
+              if (pa !== pb) return pb - pa;
+              return (b.lastModified ?? 0) - (a.lastModified ?? 0);
+          });
     const filtered = query
-        ? sessions.filter((s) => (s.name ?? s.id ?? '').toLowerCase().includes(query))
-        : sessions;
+        ? sorted.filter((s) => (s.name ?? s.id ?? '').toLowerCase().includes(query) || s.snippet)
+        : sorted;
 
     panel.innerHTML = `
         <div class="session-header">
@@ -1802,10 +1839,20 @@ function renderSessionList(sessions: any[], currentId?: string): void {
                 ? `<div class="session-empty">${escHtml(t('sessions.noMatch'))}</div>`
                 : filtered.map(s => {
                     const name = s.name ?? s.id ?? '';
+                    const snippet = s.snippet
+                        ? `<div class="session-item-snippet">${escHtml(s.snippet)}</div>`
+                        : '';
                     return `
                         <div class="session-item ${s.id === currentId ? 'active' : ''}" data-path="${escAttr(s.path)}">
-                            <span class="session-item-name" title="${escAttr(name)}">${escHtml(name)}</span>
-                            <button class="session-item-rename" title="${escHtml(t('header.renameSession'))}">✎</button>
+                            <div class="session-item-main">
+                                <span class="session-item-name" title="${escAttr(name)}">${escHtml(name)}</span>
+                                ${snippet}
+                            </div>
+                            <div class="session-item-actions">
+                                <button class="session-item-pin" title="${escHtml(t('sessions.pinTitle'))}" data-pinned="${s.pinned ? '1' : '0'}">${s.pinned ? '📌' : '·'}</button>
+                                <button class="session-item-rename" title="${escHtml(t('header.renameSession'))}">✎</button>
+                                <button class="session-item-delete" title="${escHtml(t('sessions.deleteTitle'))}">🗑</button>
+                            </div>
                         </div>
                     `;
                 }).join('')}
@@ -1816,9 +1863,37 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     const searchInput = document.getElementById('session-search-input') as HTMLInputElement | null;
     searchInput?.addEventListener('input', () => {
         sessionSearchQuery = searchInput.value;
-        renderSessionList(sessions, currentId);
+        renderSessionList(sessionSearchQuery ? sessions : fullSessionList, currentId);
+        clearTimeout(sessionSearchTimer);
+        const q = searchInput.value.trim();
+        sessionSearchTimer = window.setTimeout(() => {
+            vscode.postMessage(
+                q ? { type: 'searchSessions', query: q } : { type: 'getSessions' },
+            );
+        }, 250);
         const input = document.getElementById('session-search-input') as HTMLInputElement | null;
         if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    });
+
+    panel.querySelectorAll('.session-item-pin').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = (btn.closest('.session-item') as HTMLElement | null);
+            const sessionPath = item?.dataset.path;
+            if (sessionPath) {
+                vscode.postMessage({ type: 'togglePinSession', sessionPath });
+            }
+        });
+    });
+    panel.querySelectorAll('.session-item-delete').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = (btn.closest('.session-item') as HTMLElement | null);
+            const sessionPath = item?.dataset.path;
+            if (sessionPath) {
+                vscode.postMessage({ type: 'deleteSession', sessionPath });
+            }
+        });
     });
 
     panel.querySelectorAll('.session-item').forEach((item) => {
@@ -1869,6 +1944,7 @@ function renderSessionList(sessions: any[], currentId?: string): void {
             };
             input.addEventListener('keydown', (e) => {
                 e.stopPropagation();
+                if ((e as KeyboardEvent).isComposing || (e as KeyboardEvent).keyCode === 229) return;
                 if (e.key === 'Enter') { commit(); }
                 else if (e.key === 'Escape') { cancel(); }
             });
@@ -1903,6 +1979,7 @@ function bindStableEvents(): void {
     const settingsBtn = document.getElementById('btn-settings');
 
     input?.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.keyCode === 229) return;
         if (isMentionMenuVisible()) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -2307,6 +2384,33 @@ function bindDiffButtons(): void {
             if (filePath && toolCallId) {
                 vscode.postMessage({ type: 'openDiff', filePath, toolCallId });
             }
+        });
+    });
+}
+
+function bindHunkApplyButtons(): void {
+    document.querySelectorAll('.btn-apply-hunks:not([data-bound])').forEach((btn) => {
+        const applyBtn = btn as HTMLButtonElement;
+        applyBtn.setAttribute('data-bound', '1');
+        applyBtn.addEventListener('click', () => {
+            const card = applyBtn.closest('.diff-card') as HTMLElement | null;
+            const filePath = applyBtn.dataset.filepath;
+            const toolCallId = applyBtn.dataset.toolcallid;
+            if (!card || !filePath || !toolCallId) return;
+            const checks = card.querySelectorAll<HTMLInputElement>('.hunk-check');
+            const indices = [...checks]
+                .filter((c) => c.checked)
+                .map((c) => parseInt(c.dataset.hunk ?? '-1', 10))
+                .filter((i) => i >= 0);
+            if (indices.length === 0) return;
+            applyBtn.disabled = true;
+            applyBtn.textContent = t('diff.applying');
+            vscode.postMessage({
+                type: 'applyHunks',
+                filePath,
+                toolCallId,
+                hunkIndices: indices,
+            });
         });
     });
 }

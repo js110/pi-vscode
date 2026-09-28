@@ -172,6 +172,20 @@ describe('buildDiffCard', () => {
         expect(node.querySelector('.diff-view')).not.toBeNull();
     });
 
+    it('renders per-hunk checkboxes and an apply button for a multi-hunk diff', () => {
+        const node = buildDiffCard({
+            ...change,
+            diff: '@@ -1,2 +1,3 @@\n 0\n-1\n+TWO\n 3\n@@ -5,1 +6,1 @@\n-6\n+eight',
+        });
+        const applyBtn = node.querySelector('.btn-apply-hunks') as HTMLButtonElement;
+        expect(applyBtn).not.toBeNull();
+        expect(applyBtn.dataset.filepath).toBe('src/a.ts');
+        expect(applyBtn.dataset.toolcallid).toBe('tc1');
+        const rows = node.querySelectorAll('.hunk-row input[type="checkbox"]');
+        expect(rows.length).toBe(2);
+        expect(rows[0] instanceof HTMLInputElement).toBe(true);
+    });
+
     it('appends a timestamp footer from the message', () => {
         const node = buildDiffCard(change, { timestamp: 1234567890 });
         expect(node.querySelector('.tool-footer')?.textContent).toBeTruthy();

@@ -86,6 +86,10 @@
         "title": "Pi: Send Selection to Pi"
       },
       {
+        "command": "pi-agent.sendFilesToPi",
+        "title": "Pi: Send File(s) to Pi"
+      },
+      {
         "command": "pi-agent.inlineChat",
         "title": "Pi: Edit with Pi (Inline)"
       },
@@ -148,6 +152,13 @@
       }
     ],
     "menus": {
+      "explorer/context": [
+        {
+          "command": "pi-agent.sendFilesToPi",
+          "when": "explorerResourceIsFolder == false",
+          "group": "9_pi-agent"
+        }
+      ],
       "editor/context": [
         {
           "command": "pi-agent.sendToPi",

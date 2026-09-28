@@ -50,3 +50,34 @@ export function buildSelectionPrompt(ctx: SelectionContext): string {
     const fence = fenceFor(ctx.code);
     return `${intro}\n\n${fence}${ctx.languageId}\n${ctx.code}\n${fence}`;
 }
+
+export interface FileContext {
+    displayPath: string;
+    languageId: string;
+    content: string;
+}
+
+/** Explorer multi-select entry: bundle several files into one prompt. */
+export function buildFilesPrompt(files: FileContext[]): string {
+    const intro = t('sendFiles.intro', { n: files.length });
+    const parts = files.map((f) => {
+        const fence = fenceFor(f.content);
+        return `### ${f.displayPath}\n${fence}${f.languageId}\n${f.content}\n${fence}`;
+    });
+    return `${intro}\n\n${parts.join('\n\n')}`;
+}
+
+const EXT_LANG: Record<string, string> = {
+    '.ts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.jsx': 'jsx',
+    '.py': 'python', '.json': 'json', '.md': 'markdown', '.go': 'go',
+    '.rs': 'rust', '.java': 'java', '.c': 'c', '.cpp': 'cpp', '.h': 'c',
+    '.html': 'html', '.css': 'css', '.yml': 'yaml', '.yaml': 'yaml',
+    '.sh': 'bash', '.xml': 'xml', '.sql': 'sql', '.kt': 'kotlin', '.swift': 'swift',
+};
+
+/** Cheap language hint for files opened outside the editor (sends nothing
+ *  heavier than a filename extension lookup through the panel). */
+export function languageIdForPath(filePath: string): string {
+    const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+    return EXT_LANG[ext] ?? '';
+}
