@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo, QueuedMessage } from '../shared/protocol';
 import { buildOccupancyBannerHtml } from './render/occupancy';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { normalizeImageFile, imageMimeFromName } from './image-resize';
@@ -11,7 +11,7 @@ import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultTex
 import { looksBinary, normalizeAttachContent, MAX_ATTACH_FILE_BYTES, type AttachFileEntry } from '../shared/attach';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
-import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown } from './render/messages';
+import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown, setAvatarImages } from './render/messages';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -46,7 +46,7 @@ const state: {
     activeTabId: string;
     skills: SkillInfo[];
     commands: CommandInfo[];
-    queuedMessages: string[];
+    queuedMessages: QueuedMessage[];
     config?: PiConfigSnapshot;
     approvalTraces: Map<string, ApprovalScope>;
     pendingApprovals: ToolCallPendingInfo[];
@@ -226,6 +226,13 @@ function handleMessage(msg: ServerMessage): void {
             }
             const opacity = msg.customSkinOpacity ?? 40;
             rootStyle.setProperty('--custom-skin-opacity', (Math.min(80, Math.max(5, opacity)) / 100).toFixed(2));
+            break;
+        }
+        case 'avatarChanged': {
+            // Uploaded/cleared in the settings panel: swap the rail markers
+            // and user chips by re-rendering the message tree.
+            setAvatarImages({ pi: msg.piAvatarUrl, user: msg.userAvatarUrl });
+            void updateMessages();
             break;
         }
         case 'langChanged': {
@@ -493,8 +500,23 @@ function handleAgentEvent(event: any): void {
             }
             // Don't clear isStreaming yet — wait for agent_settled
             clearStreamingState();
-            dismissSteerToast();
             clearStreamingRegion();
+            break;
+        case 'message_start':
+            if (event.message?.role === 'assistant') {
+                // One live bubble per assistant message (CLI parity): the
+                // previous message's text must not bleed into this one.
+                clearStreamingState();
+                resetStreamingBubble();
+            }
+            break;
+        case 'message_end':
+            if (event.message?.role === 'assistant') {
+                // The finished message is now history — the live bubble stands
+                // down so the answer isn't rendered twice.
+                clearStreamingState();
+                resetStreamingBubble();
+            }
             break;
         case 'auto_retry_start':
             showRetryPlaceholder(event.attempt, event.maxAttempts, event.delayMs, event.errorMessage);
@@ -505,7 +527,6 @@ function handleAgentEvent(event: any): void {
         case 'agent_settled':
             state.isStreaming = false;
             clearStreamingState();
-            dismissSteerToast();
             removeRetryPlaceholder();
             clearStreamingRegion();
             updateInputArea();
@@ -534,7 +555,6 @@ function handleStreamingDelta(ae: any): void {
             break;
         case 'thinking_delta':
             state.streamingThinking += ae.delta ?? '';
-            dismissSteerToast();
             break;
         case 'thinking_end':
             state.isThinking = false;
@@ -546,7 +566,6 @@ function handleStreamingDelta(ae: any): void {
             break;
         case 'text_delta':
             state.streamingText += ae.delta ?? '';
-            dismissSteerToast();
             break;
         case 'text_end':
             break;
@@ -899,15 +918,9 @@ function updateInputArea(): void {
         return `<span class="footer-context" title="${escAttr(t('input.contextWindowTooltip', { window: windowK }))}">${escHtml(windowK)}</span>`;
     })();
 
-    const steerBtnHtml = state.isStreaming
-        ? `<button id="btn-steer" class="steer-btn" title="${escHtml(t('input.steer'))}"><svg class="steer-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6l4-4 4 4M4 10l4 4 4-4"/></svg></button>`
-        : '';
-
     // Always visible (like the paperclip in Copilot/Claude Code): attaching on a
     // non-vision model surfaces image.unsupported instead of hiding the affordance.
-    const attachBtnHtml = !state.isStreaming
-        ? `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.2l-5.3 5.3a3.4 3.4 0 0 1-4.8-4.8l5.4-5.4a2.3 2.3 0 0 1 3.2 3.2L6.6 10.9a1.15 1.15 0 0 1-1.6-1.6l4.9-4.9"/></svg></button>`
-        : '';
+    const attachBtnHtml = `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.2l-5.3 5.3a3.4 3.4 0 0 1-4.8-4.8l5.4-5.4a2.3 2.3 0 0 1 3.2 3.2L6.6 10.9a1.15 1.15 0 0 1-1.6-1.6l4.9-4.9"/></svg></button>`;
 
     footer.innerHTML = `
         <div class="cstrip-left">
@@ -917,9 +930,8 @@ function updateInputArea(): void {
         </div>
         <div class="cstrip-right">
         ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}
-        ${steerBtnHtml}
         ${attachBtnHtml}
-        <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.queueSend') : t('input.send'))}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.steer') : t('input.send'))}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
     `;
 
@@ -927,25 +939,9 @@ function updateInputArea(): void {
     const sendBtn = document.getElementById('btn-send');
     sendBtn?.addEventListener('click', () => {
         if (state.isStreaming) {
-            const text = input?.value.trim();
-            if (text) {
-                vscode.postMessage({ type: 'queueMessage', text });
-                if (input) { input.value = ''; input.style.height = 'auto'; }
-            } else {
-                vscode.postMessage({ type: 'abort' });
-            }
+            sendWhileStreaming(false, { allowAbort: true });
         } else {
             sendMessage();
-        }
-    });
-
-    const steerBtn = document.getElementById('btn-steer');
-    steerBtn?.addEventListener('click', () => {
-        const text = input?.value.trim();
-        if (text) {
-            vscode.postMessage({ type: 'steer', text });
-            if (input) { input.value = ''; input.style.height = 'auto'; }
-            showSteerToast(text);
         }
     });
 
@@ -983,6 +979,8 @@ function updateQueuedMessageBanner(): void {
     section.open = true;
 
     const count = state.queuedMessages.length;
+    const kindLabel = (kind: QueuedMessage['kind']) =>
+        `<span class="queued-item-kind queued-item-kind-${kind}">${escHtml(t(kind === 'steer' ? 'queue.kindSteer' : 'queue.kindFollowUp'))}</span>`;
     section.innerHTML = `
         <summary class="queued-summary">
             <span class="queued-chevron">&#9656;</span>
@@ -992,15 +990,15 @@ function updateQueuedMessageBanner(): void {
             ${state.queuedMessages.map((msg, i) => {
                 if (i === queuedEditingIndex) {
                     return `<div class="queued-item queued-item-editing" data-index="${i}">
-                        <span class="queued-item-icon">&#9675;</span>
-                        <input class="queued-edit-input" data-index="${i}" type="text" value="${escAttr(msg)}">
+                        ${kindLabel(msg.kind)}
+                        <input class="queued-edit-input" data-index="${i}" type="text" value="${escAttr(msg.text)}">
                         <button class="queued-edit-save" data-index="${i}" title="${escHtml(t('queue.save'))}">&#10003;</button>
                         <button class="queued-edit-cancel" data-index="${i}" title="${escHtml(t('queue.cancel'))}">&#10005;</button>
                     </div>`;
                 }
                 return `<div class="queued-item" data-index="${i}">
-                    <span class="queued-item-icon">&#9675;</span>
-                    <span class="queued-item-text">${escHtml(msg)}</span>
+                    ${kindLabel(msg.kind)}
+                    <span class="queued-item-text">${escHtml(msg.text)}</span>
                     <span class="queued-item-actions">
                         <button class="queued-item-btn queued-item-edit" data-index="${i}" title="${escHtml(t('queue.edit'))}"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/></svg></button>
                         <button class="queued-item-btn queued-item-delete" data-index="${i}" title="${escHtml(t('queue.remove'))}"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M5.5 4V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1M6 7v4M8 7v4M10 7v4M4 4l.7 9.1a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4"/></svg></button>
@@ -1152,40 +1150,10 @@ function bindQueuedItemEvents(section: HTMLElement): void {
         });
     });
 }
-function showSteerToast(text: string): void {
-    const existing = document.getElementById('steer-toast');
-    if (existing) existing.remove();
-
-    const container = document.querySelector('.input-container');
-    if (!container) return;
-
-    const toast = el('div', 'steer-toast');
-    toast.id = 'steer-toast';
-    toast.innerHTML = `
-        <span class="steer-toast-indicator"></span>
-        <span class="steer-toast-label">${escHtml(t('stream.steering'))}</span>
-        <span class="steer-toast-text">${escHtml(truncate(text, 80))}</span>
-    `;
-
-    const inputArea = container.querySelector('.input-area');
-    if (inputArea) {
-        container.insertBefore(toast, inputArea);
-    } else {
-        container.appendChild(toast);
-    }
-}
-
 function clearStreamingState(): void {
     state.streamingText = '';
     state.streamingThinking = '';
     state.isThinking = false;
-}
-
-function dismissSteerToast(): void {
-    const toast = document.getElementById('steer-toast');
-    if (!toast) return;
-    toast.classList.add('steer-toast-fade');
-    setTimeout(() => toast.remove(), 300);
 }
 
 // ── Changed Files section ──
@@ -1356,7 +1324,8 @@ function renderStreamingContent(): void {
     removePreparingPlaceholder();
 
     if (!container.querySelector(':scope > .message')) {
-        container.innerHTML = '';
+        // Tool cards already in the region are this run's progress, and the
+        // bubble trails them — append instead of wiping.
         container.appendChild(buildStreamingSkeleton());
     }
 
@@ -1381,6 +1350,25 @@ function clearStreamingRegion(): void {
     const container = document.getElementById('streaming-message');
     if (!container) return;
     container.innerHTML = '';
+}
+
+/**
+ * Empties the live assistant bubble and moves it below the tool cards of the
+ * assistant messages that already ended, so the running message always reads
+ * last. Tool cards stay: they are the run's progress, not its text.
+ */
+function resetStreamingBubble(): void {
+    const container = document.getElementById('streaming-message');
+    if (!container) return;
+    const bubble = container.querySelector(':scope > .message') as HTMLElement | null;
+    if (!bubble) return;
+    const textEl = bubble.querySelector('#streaming-text') as HTMLElement | null;
+    if (textEl) reconcileStreamingText(textEl, '');
+    const thinkingEl = bubble.querySelector('#streaming-thinking') as HTMLElement | null;
+    if (thinkingEl) {
+        updateStreamingThinking(thinkingEl, { thinking: '', isThinking: false, durationSec: 0 });
+    }
+    container.appendChild(bubble);
 }
 
 // ── Tool rendering ──
@@ -2083,18 +2071,9 @@ function bindStableEvents(): void {
                     showError(t('edit.blockedStreaming'), ERROR_HINT_MS);
                     return;
                 }
-                const text = input.value.trim();
-                if (text) {
-                    if (e.ctrlKey || e.metaKey) {
-                        vscode.postMessage({ type: 'steer', text });
-                        showSteerToast(text);
-                    } else {
-                        vscode.postMessage({ type: 'queueMessage', text });
-                    }
-                    rememberMessage(text);
-                    input.value = '';
-                    input.style.height = 'auto';
-                }
+                // CLI parity: Enter steers the run in flight, Ctrl/Cmd+Enter
+                // defers the message to the end of it.
+                sendWhileStreaming(e.ctrlKey || e.metaKey);
             } else {
                 sendMessage();
             }
@@ -2462,6 +2441,53 @@ function bindChangedFileItems(): void {
     });
 }
 
+/**
+ * Submit while a run is in flight. Mirrors the CLI: `queue` false steers the
+ * run in flight (Pi picks the message up after the current tool batch),
+ * `queue` true defers it until the run finishes. An empty composer is a
+ * no-op unless `allowAbort` turns the send button into a stop button.
+ */
+function sendWhileStreaming(queue: boolean, opts: { allowAbort?: boolean } = {}): void {
+    const input = document.getElementById('input') as HTMLTextAreaElement | null;
+    if (!input) return;
+    const text = input.value.trim();
+    const hasImages = state.pendingImages.length > 0;
+    if (!text && !hasImages) {
+        if (opts.allowAbort) vscode.postMessage({ type: 'abort' });
+        return;
+    }
+    // Text attachments need the host to read the file, which only happens on
+    // the prompt path — keep the draft instead of dropping the context.
+    if (state.pendingAttachments.length > 0) {
+        showError(t('attach.streamingUnsupported'), ERROR_HINT_MS);
+        return;
+    }
+    // A queue entry without text can never drain: the SDK dequeues by
+    // matching the user message text, so it would park forever.
+    if (!text && hasImages) {
+        showError(t('image.queueNeedsText'), ERROR_HINT_MS);
+        return;
+    }
+    if (hasImages && !state.supportsImages) {
+        showError(t('image.unsupported'), ERROR_HINT_MS);
+        return;
+    }
+    const images = hasImages ? [...state.pendingImages] : undefined;
+    if (queue) {
+        vscode.postMessage({ type: 'queueMessage', text, images });
+    } else {
+        vscode.postMessage({ type: 'steer', text, images });
+    }
+    imageReadGeneration++;
+    input.value = '';
+    input.style.height = 'auto';
+    state.pendingImages = [];
+    updateImageChips();
+    userHasScrolled = false;
+    updateScrollButton();
+    rememberMessage(text);
+}
+
 function sendMessage(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
     if (!input) return;
@@ -2482,6 +2508,12 @@ function sendMessage(): void {
         rememberMessage(replayText);
         return;
     }
+    if (state.isStreaming) {
+        // Streaming may have started after the composer was rendered — steer
+        // the run in flight instead of starting a second one.
+        sendWhileStreaming(false);
+        return;
+    }
     const text = input.value.trim();
     if (!text && state.pendingImages.length === 0 && state.pendingAttachments.length === 0) return;
     const images = state.pendingImages.length > 0 ? [...state.pendingImages] : undefined;
@@ -2492,22 +2524,6 @@ function sendMessage(): void {
     const mentions = state.mentions.filter((tok) => hasMentionToken(text, tok));
     state.mentions = [];
     hideMentionMenu();
-    if (state.isStreaming) {
-        // Images and attachments can only ride a direct prompt. Streaming may
-        // have started after they were attached (e.g. auto-compaction) —
-        // refuse and keep the draft instead of silently dropping them.
-        if (images || attachments) {
-            showError(t('image.queueUnsupported'), ERROR_HINT_MS);
-            return;
-        }
-        vscode.postMessage({ type: 'queueMessage', text });
-        rememberMessage(text);
-        input.value = '';
-        input.style.height = 'auto';
-        userHasScrolled = false;
-        updateScrollButton();
-        return;
-    }
     imageReadGeneration++;
     input.value = '';
     input.style.height = 'auto';
@@ -2582,10 +2598,6 @@ async function addTextAttachments(files: File[]): Promise<void> {
 function addImageFiles(files: File[]): void {
     if (!state.supportsImages) {
         showNotice(t('image.unsupported'));
-        return;
-    }
-    if (state.isStreaming) {
-        showNotice(t('image.queueUnsupported'));
         return;
     }
     const candidates = files.filter(isImageFile);

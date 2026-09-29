@@ -5,7 +5,7 @@ import { DiffManager } from '../../../providers/diff';
 import { CheckpointManager } from '../../../providers/checkpoint';
 import { refreshPiConfig } from '../../../pi/config';
 import { t } from '../../../shared/i18n';
-import type { DropResolveResult, PiConfigSnapshot, SerializedAgentState } from '../../../shared/protocol';
+import type { DropResolveResult, PiConfigSnapshot, QueuedMessage, SerializedAgentState } from '../../../shared/protocol';
 
 vi.mock('../../../pi/config', () => ({
     ensureConfigDiscovered: vi.fn(async () => CONFIG_SNAPSHOT),
@@ -25,6 +25,9 @@ const CONFIG_SNAPSHOT: PiConfigSnapshot = {
 
 function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
     const events = new EventRouter();
+    // Stand-in for Pi's steering + follow-up queues so the host-side queue
+    // view (and edit/remove/cancel) can be exercised end to end.
+    const queue: { text: string; kind: QueuedMessage['kind']; images?: any }[] = [];
     const session = {
         events,
         session: undefined,
@@ -51,9 +54,19 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
         newSession: vi.fn(async () => {}),
         loadSession: vi.fn(async () => {}),
         setToolApprovalHandler: () => {},
-        followUp: vi.fn(async () => {}),
-        getFollowUpMessages: () => [],
-        replaceFollowUpMessages: vi.fn(async () => {}),
+        steer: vi.fn(async (text: string, images?: any) => {
+            queue.push({ text, kind: 'steer', images });
+        }),
+        followUp: vi.fn(async (text: string, images?: any) => {
+            queue.push({ text, kind: 'followUp', images });
+        }),
+        getQueuedMessages: () => queue.map(({ text, kind }) => ({ text, kind })),
+        replaceQueuedMessages: vi.fn(async (next: QueuedMessage[]) => {
+            queue.length = 0;
+            for (const entry of next) queue.push({ text: entry.text, kind: entry.kind, images: entry.images });
+            return [];
+        }),
+        isStreaming: false,
         abort: vi.fn(async () => {}),
         showModelPicker: vi.fn(async () => {}),
         cycleThinkingLevel: () => 'off',
@@ -62,6 +75,12 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
         dispose: vi.fn(async () => {}),
         ...overrides,
     } as any;
+    // Mirror the SDK's streaming truth: agent_start ⇒ streaming until the
+    // run settles. The queue guards read the session flag, not the host's.
+    events.onAll((event: any) => {
+        if (event?.type === 'agent_start') session.isStreaming = true;
+        if (event?.type === 'agent_settled') session.isStreaming = false;
+    });
     const checkpointManager = new CheckpointManager();
     const diffManager = new DiffManager(session, checkpointManager);
     return {
@@ -518,8 +537,8 @@ describe('TabManager', () => {
         expect(tab.session.followUp).not.toHaveBeenCalled();
     });
 
-    it('sendToPi queues via followUp while the active tab is streaming', async () => {
-        const tab = makeTab({ getFollowUpMessages: () => ['look at this'] });
+    it('sendToPi steers the active tab while it is streaming', async () => {
+        const tab = makeTab();
         const manager = new TabManager({ create: vi.fn(async () => tab) }, makeAdapters());
         await manager.initialize();
 
@@ -527,8 +546,10 @@ describe('TabManager', () => {
         await manager.sendToPi('look at this');
 
         expect(tab.session.prompt).not.toHaveBeenCalled();
-        expect(tab.session.followUp).toHaveBeenCalledWith('look at this');
-        expect(manager.getState().queuedMessages).toEqual(['look at this']);
+        expect(tab.session.steer).toHaveBeenCalledWith('look at this', undefined);
+        expect(manager.getState().queuedMessages).toEqual([
+            { text: 'look at this', kind: 'steer' },
+        ]);
     });
 
     it('sendToPi resumes prompting once streaming settles', async () => {
@@ -800,7 +821,7 @@ describe('TabManager', () => {
         expect(sent).toContain('@src/a.ts:42:');
     });
 
-    it('re-checks streaming after mention expansion to avoid a double turn', async () => {
+    it('steers instead of double-turning when a run starts during mention expansion', async () => {
         const tab = makeTab();
         let release!: () => void;
         const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -823,8 +844,268 @@ describe('TabManager', () => {
         // (e.g. a queued follow-up drained first).
         manager.activeTab!.session.events.dispatch({ type: 'agent_start' } as any);
         release();
-        await expect(dispatching).rejects.toThrow(/still processing/i);
+        await dispatching;
         expect(tab.session.prompt).not.toHaveBeenCalled();
+        expect(tab.session.steer).toHaveBeenCalledWith(
+            expect.stringContaining('explain'),
+            undefined,
+        );
+        expect(manager.getState().queuedMessages).toEqual([
+            { text: expect.stringContaining('explain'), kind: 'steer' },
+        ]);
+    });
+});
+
+describe('TabManager live streaming and queue bookkeeping', () => {
+    async function setup() {
+        const tab = makeTab();
+        const factory: TabFactory = { create: vi.fn(async () => tab) };
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
+        await manager.initialize();
+        return { tab, manager };
+    }
+
+    it('clears the live bubble buffers when an assistant message starts', async () => {
+        const { tab, manager } = await setup();
+        const state = manager.activeTab as any;
+        state.agentStartTime = Date.now();
+        state.streamingText = 'stale partial';
+        state.streamingThinking = 'stale thought';
+        state.isThinking = true;
+
+        tab.session.events.dispatch({ type: 'message_start', message: { role: 'assistant' } } as any);
+        expect(manager.getState().streamingText).toBe('');
+        expect(manager.getState().streamingThinking).toBe('');
+        expect(manager.getState().isThinking).toBe(false);
+    });
+
+    it('clears the live bubble buffers when an assistant message ends', async () => {
+        const { tab, manager } = await setup();
+        const state = manager.activeTab as any;
+        state.agentStartTime = Date.now();
+        state.streamingText = 'final answer';
+        state.streamingThinking = 'thought';
+        state.isThinking = true;
+
+        tab.session.events.dispatch({ type: 'message_end', message: { role: 'assistant' } } as any);
+        expect(manager.getState().streamingText).toBe('');
+        expect(manager.getState().streamingThinking).toBe('');
+    });
+
+    it('keeps the run duration intact across assistant message boundaries', async () => {
+        const { tab, manager } = await setup();
+        const state = manager.activeTab as any;
+        state.agentStartTime = 1_000;
+        tab.session.events.dispatch({ type: 'message_start', message: { role: 'assistant' } } as any);
+        tab.session.events.dispatch({ type: 'message_end', message: { role: 'assistant' } } as any);
+        expect(state.agentStartTime).toBe(1_000);
+    });
+
+    it('does not re-book the turn the prompt already accounted for', async () => {
+        const { tab, manager } = await setup();
+        const state = manager.activeTab as any;
+        state.pendingPromptTurns = [0];
+        const startTurn = vi.spyOn(state.checkpointManager, 'startTurn');
+        const setCurrentTurn = vi.spyOn(state.diffManager, 'setCurrentTurn');
+
+        tab.session.events.dispatch({ type: 'message_start', message: { role: 'user' } } as any);
+
+        expect(state.turnCounter).toBe(0);
+        expect(startTurn).not.toHaveBeenCalled();
+        expect(setCurrentTurn).not.toHaveBeenCalled();
+        expect(state.pendingPromptTurns).toEqual([]);
+    });
+
+    it('books a fresh turn for a queued user message drained mid-run', async () => {
+        const { tab, manager } = await setup();
+        const state = manager.activeTab as any;
+        const startTurn = vi.spyOn(state.checkpointManager, 'startTurn');
+        const setCurrentTurn = vi.spyOn(state.diffManager, 'setCurrentTurn');
+
+        tab.session.events.dispatch({ type: 'message_start', message: { role: 'user' } } as any);
+
+        expect(state.turnCounter).toBe(1);
+        expect(startTurn).toHaveBeenLastCalledWith(1);
+        expect(setCurrentTurn).toHaveBeenLastCalledWith(1);
+    });
+
+    it('frees the queued user message path again after the next turn', async () => {
+        const { tab, manager } = await setup();
+        const state = manager.activeTab as any;
+        tab.session.events.dispatch({ type: 'message_start', message: { role: 'user' } } as any);
+        state.pendingPromptTurns = [1];
+        tab.session.events.dispatch({ type: 'message_start', message: { role: 'user' } } as any);
+        expect(state.turnCounter).toBe(1);
+    });
+
+    it('rethrows a queue-busy refusal on an idle session instead of parking the message', async () => {
+        // Compaction on an idle session: a follow-up parked on the queue
+        // would never drain (idle sessions do not drain queues), so the
+        // error must reach the user instead.
+        const tab = makeTab({
+            prompt: vi.fn(async () => {
+                throw new Error(
+                    'Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.',
+                );
+            }),
+        } as any);
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, makeAdapters());
+        await manager.initialize();
+
+        await expect(manager.dispatch({ type: 'prompt', text: 'while compacting' } as any)).rejects.toThrow(
+            'compaction is in progress',
+        );
+        expect(tab.session.prompt).toHaveBeenCalled();
+        expect(tab.session.followUp).not.toHaveBeenCalled();
+        expect(tab.session.steer).not.toHaveBeenCalled();
+        expect((manager.activeTab as any).queuedMessages).toEqual([]);
+    });
+
+    it('steers when a run that started mid-send refuses the prompt', async () => {
+        const tab = makeTab({
+            prompt: vi.fn(async () => {
+                // The SDK saw a run in flight between our check and this call.
+                (tab.session as any).isStreaming = true;
+                throw new Error(
+                    "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+                );
+            }),
+        } as any);
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, makeAdapters());
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'prompt', text: 'meanwhile' } as any);
+
+        expect(tab.session.steer).toHaveBeenCalledWith('meanwhile', undefined);
+        expect(tab.session.followUp).not.toHaveBeenCalled();
+        expect(manager.getState().queuedMessages).toEqual([{ text: 'meanwhile', kind: 'steer' }]);
+    });
+
+    it('sends a steer as a fresh prompt when the session is idle', async () => {
+        // An idle session never drains its queue — parking a steer there
+        // would leave it sitting until the next prompt.
+        const tab = makeTab();
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, makeAdapters());
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'steer', text: 'take over' } as any);
+
+        expect(tab.session.prompt).toHaveBeenCalledWith('take over', undefined);
+        expect(tab.session.steer).not.toHaveBeenCalled();
+        expect((manager.activeTab as any).queuedMessages).toEqual([]);
+    });
+
+    it('rejects a text-less queue entry instead of parking a ghost', async () => {
+        // The SDK dequeues by matching the user message text: an entry
+        // without text could never be removed from the queue again.
+        const tab = makeTab({ supportsImages: () => true });
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, adapters);
+        await manager.initialize();
+        tab.session.events.dispatch({ type: 'agent_start' } as any);
+
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+        await manager.dispatch({ type: 'queueMessage', text: '', images: [png] } as any);
+
+        expect(tab.session.followUp).not.toHaveBeenCalled();
+        expect(adapters.transport.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'error' }),
+        );
+        expect((manager.activeTab as any).queuedMessages).toEqual([]);
+    });
+
+    it('reports replay failures instead of silently losing edited entries', async () => {
+        const tab = makeTab();
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, adapters);
+        await manager.initialize();
+        tab.session.events.dispatch({ type: 'agent_start' } as any);
+        await manager.dispatch({ type: 'queueMessage', text: 'one' } as any);
+        // The view went stale: the entry drained before the replace ran.
+        (tab.session as any).replaceQueuedMessages = vi.fn(async () => [
+            { text: 'one', kind: 'followUp' },
+        ]);
+
+        await manager.dispatch({ type: 'editQueuedMessage', index: 0, text: 'one edited' } as any);
+
+        expect(adapters.ui.showMessage).toHaveBeenCalledWith(
+            expect.stringContaining('1'),
+        );
+    });
+
+    it('releases the turn index when a prompt fails for a real reason', async () => {
+        const tab = makeTab({
+            prompt: vi.fn(async () => {
+                throw new Error('provider exploded');
+            }),
+        } as any);
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, makeAdapters());
+        await manager.initialize();
+        const startTurn = vi.spyOn(tab.checkpointManager, 'startTurn');
+
+        await expect(manager.dispatch({ type: 'prompt', text: 'boom' } as any)).rejects.toThrow(
+            'provider exploded',
+        );
+        expect((manager.activeTab as any).turnCounter).toBe(0);
+        expect(startTurn).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps queued images attached when the queue is edited', async () => {
+        const tab = makeTab({ supportsImages: () => true });
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, makeAdapters());
+        await manager.initialize();
+        tab.session.events.dispatch({ type: 'agent_start' } as any);
+
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+        await manager.dispatch({ type: 'queueMessage', text: 'look at this', images: [png] } as any);
+
+        // The state frame is text/kind only; the payload stays host-side.
+        expect(manager.getState().queuedMessages).toEqual([{ text: 'look at this', kind: 'followUp' }]);
+        expect((manager.activeTab as any).queuedMessages[0].images).toHaveLength(1);
+
+        await manager.dispatch({ type: 'editQueuedMessage', index: 0, text: 'look at that' } as any);
+
+        expect(tab.session.replaceQueuedMessages).toHaveBeenLastCalledWith([
+            expect.objectContaining({ text: 'look at that', kind: 'followUp' }),
+        ]);
+        const queued = (manager.activeTab as any).queuedMessages;
+        expect(queued).toHaveLength(1);
+        expect(queued[0].text).toBe('look at that');
+        expect(queued[0].images).toHaveLength(1);
+    });
+
+    it('keeps the other entries intact when one is removed', async () => {
+        const tab = makeTab({ supportsImages: () => true });
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, makeAdapters());
+        await manager.initialize();
+        tab.session.events.dispatch({ type: 'agent_start' } as any);
+
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+        await manager.dispatch({ type: 'queueMessage', text: 'first', images: [png] } as any);
+        await manager.dispatch({ type: 'queueMessage', text: 'second' } as any);
+
+        await manager.dispatch({ type: 'removeQueuedMessage', index: 0 } as any);
+
+        const queued = (manager.activeTab as any).queuedMessages;
+        expect(queued.map((m: QueuedMessage) => m.text)).toEqual(['second']);
+        expect(queued[0].images).toBeUndefined();
+    });
+
+    it('clears the queue and its images on cancel', async () => {
+        const tab = makeTab({ supportsImages: () => true });
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, makeAdapters());
+        await manager.initialize();
+        tab.session.events.dispatch({ type: 'agent_start' } as any);
+
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+        await manager.dispatch({ type: 'queueMessage', text: 'first', images: [png] } as any);
+        expect((manager.activeTab as any).queuedMessages).toHaveLength(1);
+
+        await manager.dispatch({ type: 'cancelQueue' } as any);
+
+        expect(tab.session.replaceQueuedMessages).toHaveBeenLastCalledWith([]);
+        expect((manager.activeTab as any).queuedMessages).toEqual([]);
     });
 });
 
@@ -953,9 +1234,12 @@ describe('TabManager built-in slash command dispatch', () => {
 
     it('still queues plain text while streaming', async () => {
         const { tab, manager } = await setup();
-        (manager.activeTab as any).isStreaming = true;
+        tab.session.events.dispatch({ type: 'agent_start' } as any);
         await manager.dispatch({ type: 'queueMessage', text: 'hello' });
-        expect(tab.session.followUp).toHaveBeenCalledWith('hello');
+        expect(tab.session.followUp).toHaveBeenCalledWith('hello', undefined);
+        expect(manager.getState().queuedMessages).toEqual([
+            { text: 'hello', kind: 'followUp' },
+        ]);
     });
 
     it('intercepts a builtin sent through the followUp channel', async () => {
@@ -1005,9 +1289,9 @@ describe('TabManager built-in slash command dispatch', () => {
 
     it('refuses editing a queue item into a builtin command', async () => {
         const { tab, adapters, manager } = await setup();
-        (manager.activeTab as any).queuedMessages = ['hello'];
+        (manager.activeTab as any).queuedMessages = [{ text: 'hello', kind: 'steer' }];
         await manager.dispatch({ type: 'editQueuedMessage', index: 0, text: '/new' });
-        expect(tab.session.replaceFollowUpMessages).not.toHaveBeenCalled();
+        expect(tab.session.replaceQueuedMessages).not.toHaveBeenCalled();
         expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 

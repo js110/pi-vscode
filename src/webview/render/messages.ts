@@ -116,15 +116,26 @@ export function updateStreamingThinking(
     opts: { thinking: string; isThinking: boolean; durationSec: number },
 ): void {
     if (!thinkingEl) return;
+    if (!opts.thinking) {
+        thinkingEl.style.display = 'none';
+        return;
+    }
+    const details = thinkingEl as HTMLDetailsElement;
     const contentEl = thinkingEl.querySelector('.thinking-content');
     const labelEl = thinkingEl.querySelector('.thinking-label');
-    if (opts.thinking) {
-        thinkingEl.style.display = '';
-        if (contentEl) contentEl.innerHTML = renderMarkdown(opts.thinking);
-        if (labelEl) labelEl.textContent = thinkingLabel(opts.isThinking, opts.durationSec);
-        thinkingEl.classList.toggle('active', opts.isThinking);
-    } else {
-        thinkingEl.style.display = 'none';
+    thinkingEl.style.display = '';
+    if (contentEl) contentEl.innerHTML = renderMarkdown(opts.thinking);
+    if (labelEl) labelEl.textContent = thinkingLabel(opts.isThinking, opts.durationSec);
+    thinkingEl.classList.toggle('active', opts.isThinking);
+    // Track the model: expanded while it thinks, collapsed once it moves on to
+    // the answer, matching how a finished message's block renders. Only the
+    // active → finished transition collapses, so re-opening it by hand sticks.
+    if (opts.isThinking) {
+        details.open = true;
+        thinkingEl.dataset.thinkingWasActive = '1';
+    } else if (thinkingEl.dataset.thinkingWasActive === '1') {
+        thinkingEl.dataset.thinkingWasActive = '';
+        details.open = false;
     }
 }
 
@@ -363,13 +374,40 @@ export function buildMessageTree(ctx: MessageRenderState): HTMLElement[] {
     return nodes;
 }
 
+// ── Avatar images ──
+
+/** Uploaded avatar webview URIs, pushed by the host (settings panel). Empty
+ *  slots keep the default π marker / "Me" chip text. */
+export interface AvatarImages {
+    pi?: string;
+    user?: string;
+}
+
+let avatarImages: AvatarImages = {};
+
+export function setAvatarImages(next: AvatarImages): void {
+    avatarImages = { ...next };
+}
+
+/** Inline background image on a marker chip; the class switches off the
+ *  text-specific styling. Quote/backslash chars are stripped defensively —
+ *  this lands in an inline style attribute. */
+function applyAvatarImage(target: HTMLElement, url: string, imageClass: string): void {
+    target.style.backgroundImage = `url("${url.replace(/["\\]/g, '')}")`;
+    target.classList.add(imageClass);
+}
+
 /** π rail marker sitting on the gutter line, with an optional turn head.
  *  The head (who + turn number) renders only at the start of a new assistant
  *  turn; continuation blocks just get the π marker. */
 function buildTurnMarker(turnNumber: number | undefined, isTurnStart: boolean): HTMLElement {
     const holder = el('div', 'turn-marker');
     const av = el('span', 'turn-av');
-    av.textContent = 'π';
+    if (avatarImages.pi) {
+        applyAvatarImage(av, avatarImages.pi, 'turn-av-image');
+    } else {
+        av.textContent = 'π';
+    }
     holder.appendChild(av);
     if (isTurnStart) {
         const head = el('div', 'turn-head');
@@ -392,7 +430,11 @@ function buildUserHead(isStreaming: boolean): HTMLElement | null {
     if (isStreaming) return null;
     const head = el('div', 'user-head');
     const av = el('span', 'u-av');
-    av.textContent = t('msg.me');
+    if (avatarImages.user) {
+        applyAvatarImage(av, avatarImages.user, 'u-av-image');
+    } else {
+        av.textContent = t('msg.me');
+    }
     head.appendChild(av);
     return head;
 }

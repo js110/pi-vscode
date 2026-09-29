@@ -108,6 +108,8 @@ function render(data: SettingsData): void {
             ...(data.customSkinUrl ? [{ value: 'custom', label: t('settings.skin.custom') }] : []),
         ], t('settings.skinDesc')),
         buildCustomSkinRow(data),
+        buildAvatarRow('pi', data),
+        buildAvatarRow('user', data),
         ...(data.customSkinUrl
             ? [buildRange('customSkinOpacity', t('settings.customSkinOpacity'), data.customSkinOpacity, 5, 80,
                 t('settings.customSkinOpacityDesc'), '%')]
@@ -250,6 +252,32 @@ function buildCustomSkinRow(data: SettingsData): HTMLElement {
                 : ''}
         </div>
         <p class="setting-description">${escHtml(t('settings.skin.customDesc'))}</p>
+    `;
+    return row;
+}
+
+function buildAvatarRow(slot: 'pi' | 'user', data: SettingsData): HTMLElement {
+    const url = slot === 'pi' ? data.piAvatarUrl : data.userAvatarUrl;
+    const label = t(slot === 'pi' ? 'settings.avatar.pi' : 'settings.avatar.user');
+    const desc = t(slot === 'pi' ? 'settings.avatar.piDesc' : 'settings.avatar.userDesc');
+    const row = el('div', 'setting-row');
+    const preview = url
+        ? `<div class="avatar-preview"><img src="${escAttr(url)}" alt="${escAttr(label)}"></div>`
+        : '';
+    row.innerHTML = `
+        <div class="setting-label-row">
+            <label>${escHtml(label)}</label>
+        </div>
+        ${preview}
+        <div class="skin-actions">
+            <button class="setting-btn secondary" id="btn-avatar-${slot}">${escHtml(
+                url ? t('settings.avatar.replace') : t('settings.avatar.upload'),
+            )}</button>
+            ${url
+                ? `<button class="setting-btn danger" id="btn-avatar-${slot}-clear">${escHtml(t('settings.remove'))}</button>`
+                : ''}
+        </div>
+        <p class="setting-description">${escHtml(desc)}</p>
     `;
     return row;
 }
@@ -502,6 +530,18 @@ function bindEvents(): void {
     });
     document.getElementById('btn-remove-skin')?.addEventListener('click', () => {
         vscode.postMessage({ type: 'clearCustomSkin' });
+    });
+    document.getElementById('btn-avatar-pi')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'setPiAvatar' });
+    });
+    document.getElementById('btn-avatar-pi-clear')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'clearPiAvatar' });
+    });
+    document.getElementById('btn-avatar-user')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'setUserAvatar' });
+    });
+    document.getElementById('btn-avatar-user-clear')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'clearUserAvatar' });
     });
 }
 

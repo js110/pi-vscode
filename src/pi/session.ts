@@ -6,7 +6,7 @@ import type {
     ModelRegistry,
     ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
-import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo, CacheWarmingStatusInfo } from '../shared/protocol';
+import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo, CacheWarmingStatusInfo, QueuedMessage } from '../shared/protocol';
 import { API_KEY_PREFIX } from '../shared/protocol';
 import { modelSupportsImages, type ImagePayload } from '../shared/image-input';
 import { EventRouter } from './events';
@@ -137,42 +137,86 @@ export class PiSessionManager {
         }
     }
 
-    async steer(text: string): Promise<void> {
+    async steer(text: string, images?: ImagePayload[]): Promise<void> {
         if (!this._session) { throw new Error('Session not initialized'); }
         if (!hasFunction(this._session, 'steer')) {
             throw new Error("steer() is not available in the installed Pi SDK");
         }
-        await this._session.steer(text);
+        await this._session.steer(text, images && images.length > 0 ? images : undefined);
     }
 
-    async followUp(text: string): Promise<void> {
+    async followUp(text: string, images?: ImagePayload[]): Promise<void> {
         if (!this._session) { throw new Error('Session not initialized'); }
         if (!hasFunction(this._session, 'followUp')) {
             throw new Error("followUp() is not available in the installed Pi SDK");
         }
-        await this._session.followUp(text);
+        await this._session.followUp(text, images && images.length > 0 ? images : undefined);
     }
 
-    getFollowUpMessages(): string[] {
-        if (!this._session || !hasFunction(this._session, 'getFollowUpMessages')) { return []; }
-        return [...(this._session.getFollowUpMessages() ?? [])];
+    /** True while the SDK agent run (or a post-run settle) is active. */
+    get isStreaming(): boolean {
+        return this._session?.isStreaming === true;
     }
 
-    async replaceFollowUpMessages(messages: string[]): Promise<void> {
+    /**
+     * The SDK's full pending queue, steering messages first (they land
+     * earlier in the run), each tagged with how it will be delivered.
+     */
+    getQueuedMessages(): QueuedMessage[] {
+        if (!this._session) { return []; }
+        const steering = hasFunction(this._session, 'getSteeringMessages')
+            ? [...(this._session.getSteeringMessages() ?? [])]
+            : [];
+        const followUp = hasFunction(this._session, 'getFollowUpMessages')
+            ? [...(this._session.getFollowUpMessages() ?? [])]
+            : [];
+        return [
+            ...steering.map((text) => ({ text, kind: 'steer' as const })),
+            ...followUp.map((text) => ({ text, kind: 'followUp' as const })),
+        ];
+    }
+
+    /**
+     * Replace the pending queue wholesale (edit / remove / cancel). The SDK
+     * only offers `clearQueue()`, so the live queue is read first and the
+     * caller's list replayed back in, preserving each entry's delivery kind
+     * and attached images.
+     *
+     * Reconciliation is positional per kind: every requested entry consumes
+     * one live slot. Requests beyond the live count name messages that
+     * drained while the view was stale — replaying them would resurrect
+     * already-delivered messages, so they are dropped and returned as
+     * failed. Replay failures (e.g. a run starting mid-replay) are returned
+     * the same way instead of failing the whole replace.
+     */
+    async replaceQueuedMessages(messages: QueuedMessage[]): Promise<QueuedMessage[]> {
         if (!this._session) { throw new Error('Session not initialized'); }
-        if (hasFunction(this._session, 'clearQueue')) {
-            const queued = this._session.clearQueue();
-            if (hasFunction(this._session, 'steer')) {
-                for (const message of queued.steering) {
-                    await this._session.steer(message);
-                }
-            }
-            if (hasFunction(this._session, 'followUp')) {
-                for (const message of messages) {
-                    await this._session.followUp(message);
-                }
+        if (!hasFunction(this._session, 'clearQueue')) { return []; }
+        const live = this.getQueuedMessages();
+        const replay: QueuedMessage[] = [];
+        for (const kind of ['steer', 'followUp'] as const) {
+            let slots = live.filter((m) => m.kind === kind).length;
+            for (const entry of messages) {
+                if (entry.kind !== kind) continue;
+                if (slots <= 0) break;
+                slots--;
+                replay.push(entry);
             }
         }
+        this._session.clearQueue();
+        const failed: QueuedMessage[] = [];
+        for (const message of replay) {
+            try {
+                if (message.kind === 'steer') {
+                    await this.steer(message.text, message.images);
+                } else {
+                    await this.followUp(message.text, message.images);
+                }
+            } catch {
+                failed.push(message);
+            }
+        }
+        return failed;
     }
 
     async compact(customInstructions?: string): Promise<void> {

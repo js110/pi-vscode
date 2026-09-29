@@ -1,3 +1,5 @@
+import type { ImagePayload } from './image-input';
+
 /** Single-writer session occupancy marker (PRD 9.8, presentation layer only). */
 export type SessionOccupancy = 'none' | 'occupiedByOther' | 'releasedByOther' | 'lostLock';
 
@@ -51,6 +53,10 @@ export interface SettingsData {
     /** Effective cache-warming mode (VS Code config; Pi's native default is
      *  "streaming" and is only overridden here when explicitly set). */
     cacheWarming: string;
+    /** Webview URI of the uploaded Pi avatar image, when one exists. */
+    piAvatarUrl?: string;
+    /** Webview URI of the uploaded user avatar image, when one exists. */
+    userAvatarUrl?: string;
 }
 
 export interface ToolCallPendingInfo {
@@ -101,6 +107,19 @@ export interface TabInfo {
     hasNotification: boolean;
 }
 
+/** How Pi will deliver a message that was submitted while a run is in flight.
+ *  Mirrors the SDK queue: `steer` lands after the current tool batch (before
+ *  the next LLM call), `followUp` waits for the whole run to finish. */
+export type QueuedMessageKind = 'steer' | 'followUp';
+
+export interface QueuedMessage {
+    text: string;
+    kind: QueuedMessageKind;
+    /** Prepared image attachments. Stays host-side: only `text`/`kind`
+     *  are copied into the state frame (base64 payloads are too large). */
+    images?: ImagePayload[];
+}
+
 export interface SerializedAgentState {
     /** Omitted when unchanged since the last frame (T16 incremental stateSync). */
     messages?: any[];
@@ -122,7 +141,7 @@ export interface SerializedAgentState {
     isThinking?: boolean;
     thinkingStartTime?: number;
     streamingThinkingDuration?: number;
-    queuedMessages?: string[];
+    queuedMessages?: QueuedMessage[];
     compactionPrompt?: number | null;
     supportsImages?: boolean;
     occupancy?: SessionOccupancy;
@@ -191,8 +210,8 @@ export type ClientMessage =
     /** Roll the session back to the start of `turn` (user-turn ordinal) and
      *  send `text` as the replacement prompt (edit / regenerate). */
     | { type: 'replayTurn'; turn: number; text: string; images?: string[] }
-    | { type: 'steer'; text: string }
-    | { type: 'followUp'; text: string }
+    | { type: 'steer'; text: string; images?: string[] }
+    | { type: 'followUp'; text: string; images?: string[] }
     | { type: 'abort' }
     | { type: 'getModels' }
     /** Lazily ask the host to run Pi config discovery (model picker banner).
@@ -223,7 +242,7 @@ export type ClientMessage =
     | { type: 'switchTab'; tabId: string }
     | { type: 'openSettings' }
     | { type: 'getSkills' }
-    | { type: 'queueMessage'; text: string }
+    | { type: 'queueMessage'; text: string; images?: string[] }
     | { type: 'editQueuedMessage'; index: number; text: string }
     | { type: 'removeQueuedMessage'; index: number }
     | { type: 'cancelQueue' }
@@ -251,7 +270,15 @@ export type SettingsClientMessage =
     /** Open the OS picker and store the chosen image as the custom skin. */
     | { type: 'setCustomSkin' }
     /** Delete the uploaded image and fall back to the default skin. */
-    | { type: 'clearCustomSkin' };
+    | { type: 'clearCustomSkin' }
+    /** Open the OS picker and store the chosen image as the Pi avatar. */
+    | { type: 'setPiAvatar' }
+    /** Delete the uploaded Pi avatar and fall back to the default π marker. */
+    | { type: 'clearPiAvatar' }
+    /** Open the OS picker and store the chosen image as the user avatar. */
+    | { type: 'setUserAvatar' }
+    /** Delete the uploaded user avatar and fall back to the "Me" chip. */
+    | { type: 'clearUserAvatar' };
 
 // Extension -> Webview messages
 export interface MentionSymbolItem {
@@ -304,6 +331,8 @@ export type ServerMessage =
     | { type: 'langChanged'; lang: Lang }
     /** The user picked another skin; swap `data-skin` without reloading. */
     | { type: 'skinChanged'; skin: string; customSkinUrl?: string; customSkinOpacity?: number }
+    /** An avatar (re)uploaded or cleared; swap the CSS variables live. */
+    | { type: 'avatarChanged'; piAvatarUrl?: string; userAvatarUrl?: string }
     | { type: 'applyPreviewResult'; preview: ApplyPreviewInfo }
     | { type: 'applyResult'; previewId: string; ok: boolean; message?: string }
     | { type: 'compactionResult'; ok: boolean; message?: string; benign?: boolean }

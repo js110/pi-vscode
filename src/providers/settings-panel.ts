@@ -7,6 +7,7 @@ import { resolveDisplayLang } from './lang';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import { effectiveSkin } from '../shared/skins';
 import { customSkinPathSync, saveCustomSkin, clearCustomSkin } from '../utils/custom-skin';
+import { avatarPathSync, saveAvatar, clearAvatar, type AvatarSlot } from '../utils/custom-avatar';
 import { t } from '../shared/i18n';
 
 export class SettingsPanel {
@@ -22,6 +23,10 @@ export class SettingsPanel {
     /** Notified after any custom-skin file change (upload/clear), even when
      *  the `pi-agent.skin` config value itself doesn't change. */
     private _onSkinChange?: () => void;
+    /** globalStorage subdir for the uploaded avatar images (pi + user). */
+    private _avatarStorageDir?: string;
+    /** Notified after any avatar file change (upload/clear). */
+    private _onAvatarsChange?: () => void;
 
     private constructor(
         panel: vscode.WebviewPanel,
@@ -31,6 +36,8 @@ export class SettingsPanel {
         onCredentialChange?: (provider: string, key?: string) => Promise<void>,
         storageDir?: string,
         onSkinChange?: () => void,
+        avatarStorageDir?: string,
+        onAvatarsChange?: () => void,
     ) {
         this._panel = panel;
         this._extensionUri = extensionUri;
@@ -39,12 +46,15 @@ export class SettingsPanel {
         this._onCredentialChange = onCredentialChange;
         this._storageDir = storageDir;
         this._onSkinChange = onSkinChange;
+        this._avatarStorageDir = avatarStorageDir;
+        this._onAvatarsChange = onAvatarsChange;
 
         this._panel.webview.options = {
             enableScripts: true,
             localResourceRoots: [
                 extensionUri,
                 ...(this._storageDir ? [vscode.Uri.file(this._storageDir)] : []),
+                ...(this._avatarStorageDir ? [vscode.Uri.file(this._avatarStorageDir)] : []),
             ],
         };
         this._panel.webview.html = this._getHtml();
@@ -77,6 +87,8 @@ export class SettingsPanel {
         onCredentialChange?: (provider: string, key?: string) => Promise<void>,
         storageDir?: string,
         onSkinChange?: () => void,
+        avatarStorageDir?: string,
+        onAvatarsChange?: () => void,
     ): void {
         if (SettingsPanel._instance) {
             SettingsPanel._instance._panel.reveal(vscode.ViewColumn.One);
@@ -96,6 +108,7 @@ export class SettingsPanel {
 
         SettingsPanel._instance = new SettingsPanel(
             panel, extensionUri, secrets, globalRules, onCredentialChange, storageDir, onSkinChange,
+            avatarStorageDir, onAvatarsChange,
         );
     }
 
@@ -133,6 +146,18 @@ export class SettingsPanel {
                         .update('skin', 'default', vscode.ConfigurationTarget.Global);
                     await this._sendSettings();
                     this._onSkinChange?.();
+                    break;
+                case 'setPiAvatar':
+                    await this._setAvatar('pi');
+                    break;
+                case 'setUserAvatar':
+                    await this._setAvatar('user');
+                    break;
+                case 'clearPiAvatar':
+                    await this._clearAvatar('pi');
+                    break;
+                case 'clearUserAvatar':
+                    await this._clearAvatar('user');
                     break;
                 case 'setApiKey':
                     await this._secrets.store(`${API_KEY_PREFIX}${msg.provider}`, msg.key);
@@ -185,6 +210,8 @@ export class SettingsPanel {
 
         const authMethod = this._detectAuthMethod(provider, apiKeySet);
         const customPath = this._storageDir ? customSkinPathSync(this._storageDir) : undefined;
+        const piAvatarPath = this._avatarStorageDir ? avatarPathSync(this._avatarStorageDir, 'pi') : undefined;
+        const userAvatarPath = this._avatarStorageDir ? avatarPathSync(this._avatarStorageDir, 'user') : undefined;
 
         const data: SettingsData = {
             apiProvider: provider,
@@ -206,9 +233,38 @@ export class SettingsPanel {
                 : undefined,
             customSkinOpacity: config.get<number>('customSkinOpacity', 40),
             cacheWarming: config.get<string>('cacheWarming', 'streaming'),
+            piAvatarUrl: piAvatarPath
+                ? this._panel.webview.asWebviewUri(vscode.Uri.file(piAvatarPath)).toString()
+                : undefined,
+            userAvatarUrl: userAvatarPath
+                ? this._panel.webview.asWebviewUri(vscode.Uri.file(userAvatarPath)).toString()
+                : undefined,
         };
 
         this._post({ type: 'settings', data });
+    }
+
+    private async _setAvatar(slot: AvatarSlot): Promise<void> {
+        if (!this._avatarStorageDir) {
+            this._post({ type: 'error', message: t('settings.avatar.unavailable') });
+            return;
+        }
+        const dir = this._avatarStorageDir;
+        const picks = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            title: t('settings.avatar.dialogTitle'),
+            filters: { Images: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
+        });
+        if (!picks?.[0]) return;
+        await saveAvatar(dir, slot, picks[0].fsPath);
+        await this._sendSettings();
+        this._onAvatarsChange?.();
+    }
+
+    private async _clearAvatar(slot: AvatarSlot): Promise<void> {
+        if (this._avatarStorageDir) await clearAvatar(this._avatarStorageDir, slot);
+        await this._sendSettings();
+        this._onAvatarsChange?.();
     }
 
     private async _sendSkills(): Promise<void> {

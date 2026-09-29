@@ -35,11 +35,10 @@ const EN = {
 
     // Composer
     'input.ask': 'Ask Pi anything... (type / for commands)',
-    'input.queue': 'Queue a message...',
+    'input.queue': 'Message the running turn...',
     'input.send': 'Send',
-    'input.queueSend': 'Queue',
     'input.stop': 'Stop',
-    'input.steer': 'Steer',
+    'input.steer': 'Steer the running turn (Ctrl/Cmd+Enter queues instead)',
     'input.contextTooltip': 'Context: {tokens} / {window} tokens ({percent}%)',
     'input.contextWindowTooltip': 'Context window: {window} tokens',
 
@@ -50,14 +49,16 @@ const EN = {
     'stream.thought': 'Thought',
     'stream.thoughtForOne': 'Thought for {n} second',
     'stream.thoughtForMany': 'Thought for {n} seconds',
-    'stream.steering': 'Steering...',
 
     // Queued messages
-    'queue.count': '{n} queued',
+    'queue.count': '{n} pending',
+    'queue.kindSteer': 'Steering',
+    'queue.kindFollowUp': 'Queued',
     'queue.edit': 'Edit',
     'queue.remove': 'Remove',
     'queue.save': 'Save',
     'queue.cancel': 'Cancel',
+    'queue.replayFailed': 'Could not re-queue {n} message(s) after editing the list',
 
     // Changed files
     'files.countOne': '{n} file',
@@ -195,8 +196,8 @@ const EN = {
     'image.resized': '"{name}" was compressed automatically to fit the size limit',
     'image.tooMany': 'Too many images (max {n})',
     'image.invalid': 'Unsupported image data',
-    'image.queueUnsupported': 'Images cannot be added while the agent is streaming',
     'image.remove': 'Remove image',
+    'image.queueNeedsText': 'Add a note to send an attachment while Pi is busy — attachments cannot be queued on their own',
 
     // File attachments (non-image, text)
     'attach.binaryUnsupported': 'Could not attach "{name}" — binary files can\'t be inlined. Drag it from the Explorer to @-mention its path instead.',
@@ -280,6 +281,7 @@ const EN = {
     'inline.statusAccept': 'Accept',
     'inline.statusDiscard': 'Discard',
     'inline.statusTitle': 'Review the inline edit: keep or revert every change of this round',
+    'inline.discardUnavailable': 'This round joined a run already in flight, so there is no checkpoint to roll back to. Keep or revert the changes manually.',
 
     // Diff card
     'diff.new': 'NEW',
@@ -345,6 +347,14 @@ const EN = {
     'settings.skin.customDesc': 'Cover-cropped behind the panel: the image keeps its proportions at any size and is never stretched.',
     'settings.skin.dialogTitle': 'Choose a skin image',
     'settings.skin.unavailable': 'Skin storage is unavailable in this session.',
+    'settings.avatar.pi': 'Pi avatar',
+    'settings.avatar.user': 'Your avatar',
+    'settings.avatar.piDesc': 'Shown in the message rail where the π marker sits. The uploaded image replaces the default π.',
+    'settings.avatar.userDesc': 'Shown next to your own messages. The uploaded image replaces the "Me" chip.',
+    'settings.avatar.upload': 'Upload image…',
+    'settings.avatar.replace': 'Replace image…',
+    'settings.avatar.dialogTitle': 'Choose an avatar image',
+    'settings.avatar.unavailable': 'Avatar storage is unavailable in this session.',
     'settings.customSkinOpacity': 'Cover image opacity',
     'settings.customSkinOpacityDesc': 'Lower it when the image colours are close to the text colour and conversation is hard to read. A theme-coloured scrim plus this slider keep the messages readable against any image; the text always paints above the backdrop.',
     'settings.fontSize': 'Panel font size',
@@ -415,11 +425,10 @@ const ZH: Record<TextKey, string> = {
     'msg.turn': '第 {n} 轮',
 
     'input.ask': '向 Pi 提出任何请求...（输入 / 唤出命令）',
-    'input.queue': '排队一条消息...',
+    'input.queue': '给当前轮次发消息...',
     'input.send': '发送',
-    'input.queueSend': '排队',
     'input.stop': '停止',
-    'input.steer': '转向',
+    'input.steer': '插入当前轮次（Ctrl/Cmd+Enter 改为排队）',
     'input.contextTooltip': '上下文：{tokens} / {window} tokens（{percent}%）',
     'input.contextWindowTooltip': '上下文窗口：{window} tokens',
 
@@ -429,13 +438,15 @@ const ZH: Record<TextKey, string> = {
     'stream.thought': '已思考',
     'stream.thoughtForOne': '思考了 {n} 秒',
     'stream.thoughtForMany': '思考了 {n} 秒',
-    'stream.steering': '转向中...',
 
-    'queue.count': '排队 {n} 条',
+    'queue.count': '待发送 {n} 条',
+    'queue.kindSteer': '插入',
+    'queue.kindFollowUp': '排队',
     'queue.edit': '编辑',
     'queue.remove': '移除',
     'queue.save': '保存',
     'queue.cancel': '取消',
+    'queue.replayFailed': '编辑队列后有 {n} 条消息未能重新入列',
 
     'files.countOne': '{n} 个文件',
     'files.countMany': '{n} 个文件',
@@ -562,8 +573,8 @@ const ZH: Record<TextKey, string> = {
     'image.resized': '「{name}」已自动压缩以符合大小限制',
     'image.tooMany': '图片数量超限（最多 {n} 张）',
     'image.invalid': '无法识别的图片数据',
-    'image.queueUnsupported': '智能体回复期间无法添加图片',
     'image.remove': '移除图片',
+    'image.queueNeedsText': 'Pi 忙碌时发送附件请附带一句说明，附件无法单独入列',
 
     // File attachments (non-image, text)
     'attach.binaryUnsupported': '无法附加「{name}」：二进制文件不能直接内联，可从文件资源管理器拖入以 @ 方式引用路径',
@@ -645,6 +656,7 @@ const ZH: Record<TextKey, string> = {
     'inline.statusAccept': '接受',
     'inline.statusDiscard': '放弃',
     'inline.statusTitle': '评审行内编辑：保留或回滚本轮全部修改',
+    'inline.discardUnavailable': '本轮编辑加入了正在进行的运行，没有可回滚的检查点，请手动保留或撤销这些修改。',
 
     'diff.new': '新建',
     'diff.hunkTitle': '该文件的改动块',
@@ -708,6 +720,14 @@ const ZH: Record<TextKey, string> = {
     'settings.skin.customDesc': '按封面比例裁切铺在面板背后：任何尺寸都保持原始比例，不会拉伸变形。',
     'settings.skin.dialogTitle': '选择皮肤图片',
     'settings.skin.unavailable': '当前会话无法访问皮肤存储。',
+    'settings.avatar.pi': 'Pi 头像',
+    'settings.avatar.user': '我的头像',
+    'settings.avatar.piDesc': '显示在消息侧轨的 π 标记位置。上传图片后替换默认 π。',
+    'settings.avatar.userDesc': '显示在你的消息旁。上传图片后替换默认的"我"圆形徽标。',
+    'settings.avatar.upload': '上传图片…',
+    'settings.avatar.replace': '更换图片…',
+    'settings.avatar.dialogTitle': '选择头像图片',
+    'settings.avatar.unavailable': '当前会话无法访问头像存储。',
     'settings.customSkinOpacity': '封面图片透明度',
     'settings.customSkinOpacityDesc': '图片颜色和文字颜色接近、看不清对话时调低。主题色纱幕配合此滑块保证任意图片下对话仍可读；文字始终绘制在背景之上。',
     'settings.fontSize': '面板字号',

@@ -6,6 +6,7 @@ import { resolveDisplayLang } from './lang';
 import { clampFontSize, clampOpacity } from './settings-panel';
 import { effectiveSkin, type SkinId } from '../shared/skins';
 import { customSkinPathSync } from '../utils/custom-skin';
+import { avatarPathSync } from '../utils/custom-avatar';
 import { t } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import { parseBuiltinSlashCommand } from '../shared/slash-commands';
@@ -27,6 +28,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         private _selectionTracker?: SelectionContextTracker,
         /** globalStorage subdir holding the uploaded custom-skin image. */
         private _storageDir?: string,
+        /** globalStorage subdir holding the uploaded avatar images (pi + user). */
+        private _avatarStorageDir?: string,
     ) {
         this._extensionUri = extensionUri;
         this._tabManager = tabManager;
@@ -51,6 +54,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [
                 this._extensionUri,
                 ...(this._storageDir ? [vscode.Uri.file(this._storageDir)] : []),
+                ...(this._avatarStorageDir ? [vscode.Uri.file(this._avatarStorageDir)] : []),
             ],
         };
 
@@ -66,6 +70,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         this.post({ type: 'ready' });
         this.post({ type: 'langChanged', lang: resolveDisplayLang() });
+        // Restored uploads must decorate the first render, not wait for a
+        // settings-panel interaction.
+        this.post({ type: 'avatarChanged', ...this._resolveAvatars(webviewView.webview) });
         // The view may have been hidden while a selection chip was showing.
         this.post({
             type: 'selectionChanged',
@@ -97,6 +104,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.workspace.getConfiguration('pi-agent').get<number>('customSkinOpacity', 40),
         );
         this.post({ type: 'skinChanged', skin, customSkinUrl, customSkinOpacity: opacity });
+    }
+
+    /** An avatar was uploaded/cleared in the settings panel: push the new
+     *  URIs so the chat webview swaps its markers without a reload. */
+    async notifyAvatarsChanged(): Promise<void> {
+        this.post({ type: 'avatarChanged', ...this._resolveAvatars(this._view?.webview) });
+    }
+
+    /** Webview URIs of the uploaded avatars, keyed as the protocol frames
+     *  expect. Sync (fs probe) — called while building the initial push. */
+    private _resolveAvatars(webview?: vscode.Webview): { piAvatarUrl?: string; userAvatarUrl?: string } {
+        const dir = this._avatarStorageDir;
+        if (!dir) return {};
+        const url = (p?: string) => (p && webview ? webview.asWebviewUri(vscode.Uri.file(p)).toString() : undefined);
+        return {
+            piAvatarUrl: url(avatarPathSync(dir, 'pi')),
+            userAvatarUrl: url(avatarPathSync(dir, 'user')),
+        };
     }
 
     /** Effective skin for the shell: configured value, minus a `custom` that

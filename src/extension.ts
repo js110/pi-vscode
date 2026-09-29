@@ -404,7 +404,8 @@ export async function activate(context: vscode.ExtensionContext) {
         // Uploaded custom-skin image lives in global storage (survives
         // extension updates, which wipe the install dir).
         const skinStorageDir = path.join(context.globalStorageUri.fsPath, 'skin');
-        const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager, selectionTracker, skinStorageDir);
+        const avatarStorageDir = path.join(context.globalStorageUri.fsPath, 'avatars');
+        const sidebarProvider = new SidebarProvider(context.extensionUri, tabManager, selectionTracker, skinStorageDir, avatarStorageDir);
         providerRef = sidebarProvider;
 
         const commitMessage = new CommitMessageManager({
@@ -642,6 +643,9 @@ export async function activate(context: vscode.ExtensionContext) {
                     // Upload/clear may not change the config value (re-upload
                     // while already on custom), so notify directly too.
                     () => void sidebarProvider.notifySkinChanged(),
+                    avatarStorageDir,
+                    // Avatars have no config value at all — direct notify only.
+                    () => void sidebarProvider.notifyAvatarsChanged(),
                 );
             }),
 

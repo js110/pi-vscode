@@ -287,6 +287,19 @@ body {
     margin-top: 8px;
 }
 
+/* Avatar upload — circular preview thumbnail */
+.avatar-preview {
+    margin-top: 6px;
+}
+.avatar-preview img {
+    display: block;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid var(--hairline);
+    object-fit: cover;
+}
+
 /* Status badge (prototype .badge: rounded pill on theme surface) */
 .key-status {
     font-size: var(--fs-xs);

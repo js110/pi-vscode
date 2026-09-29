@@ -7,6 +7,7 @@ import type {
     ClientMessage,
     DropResolveResult,
     MentionSymbolItem,
+    QueuedMessage,
     ServerMessage,
     SerializedAgentState,
     SessionInfo,
@@ -120,6 +121,16 @@ function nextTabId(): string {
     return `tab-${++tabIdCounter}`;
 }
 
+/**
+ * SDK rejections that mean "the run is busy right now" rather than "your
+ * message is invalid" — compaction in progress, or a run that started while
+ * we still thought the tab was idle. Pi answers both by queueing.
+ */
+function isQueueBusyError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    return /already processing|compaction is in progress/i.test(message);
+}
+
 /** Non-persistent fallback used when the host supplies no store. */
 function inMemoryGlobalRuleStore(): GlobalRuleStore {
     let rules: import('../shared/protocol').ApprovalRuleInfo[] = [];
@@ -153,8 +164,23 @@ type TabState = Tab & {
     hasNotification: boolean;
     pendingApprovals: Map<string, PendingApproval>;
     approvalMemory: ApprovalMemory;
-    queuedMessages: string[];
+    queuedMessages: QueuedMessage[];
     isStreaming: boolean;
+    /**
+     * Turn indices booked by prompt calls whose run has not surfaced its
+     * first user `message_start` yet. Each queued message lands as its own
+     * user message later in the same run and consumes one entry; a surplus
+     * entry (or none) means the user message must book a turn itself. An
+     * array (not a flag) keeps two prompts racing through mention expansion
+     * from stealing each other's accounting.
+     */
+    pendingPromptTurns: number[];
+    /** Count of `queue_update` events seen — lets `_enqueue` skip a
+     *  redundant state emit when the SDK event already emitted. */
+    queueUpdateCount: number;
+    /** Set while a queue replace is replaying entries: the SDK's
+     *  synchronous `queue_update` events must not emit intermediate frames. */
+    suppressQueueEmit: boolean;
     compactionStage: CompactionStage;
     compactionPrompt: number | null;
     compactionInFlight: boolean;
@@ -397,7 +423,8 @@ export class TabManager {
         state.thinkingStartTime = tab.thinkingStartTime;
         state.streamingThinkingDuration = tab.streamingThinkingDuration;
         if (tab.queuedMessages.length > 0) {
-            state.queuedMessages = tab.queuedMessages;
+            // Images stay host-side: base64 payloads would bloat every frame.
+            state.queuedMessages = tab.queuedMessages.map(({ text, kind }) => ({ text, kind }));
         }
         state.compactionPrompt = tab.compactionPrompt;
         state.supportsImages = tab.session.supportsImages();
@@ -450,6 +477,9 @@ export class TabManager {
             approvalMemory: new ApprovalMemory(this._globalRules),
             queuedMessages: [],
             isStreaming: false,
+            pendingPromptTurns: [],
+            queueUpdateCount: 0,
+            suppressQueueEmit: false,
             compactionStage: 'none' as const,
             compactionPrompt: null,
             compactionInFlight: false,
@@ -583,6 +613,29 @@ export class TabManager {
             }
         }
 
+        if (event.type === 'message_start' && event.message?.role === 'assistant') {
+            // A run emits several assistant messages (tool calls, steering
+            // replies, auto-retries). The live bubble mirrors exactly one of
+            // them, like the CLI: start a fresh bubble instead of appending to
+            // the previous message's text.
+            this._clearBubbleFields(tab);
+        }
+
+        if (event.type === 'message_start' && event.message?.role === 'user') {
+            if (tab.pendingPromptTurns.length > 0) {
+                // The prompt turn booked its index before the run started.
+                tab.pendingPromptTurns.shift();
+            } else {
+                // A message drained from the steering/follow-up queue arrives
+                // as its own user message mid-run: book a fresh turn for it so
+                // checkpoints and diff attribution stay aligned (CLI queues
+                // steer/followUp inside the run that is already going).
+                tab.turnCounter++;
+                tab.checkpointManager.startTurn(tab.turnCounter);
+                tab.diffManager.setCurrentTurn(tab.turnCounter);
+            }
+        }
+
         if (event.type === 'message_end') {
             // User turns end with message_end too — the new bubble must ship
             // immediately, not only when the assistant replies.
@@ -604,10 +657,17 @@ export class TabManager {
                     });
                 }
                 tab.streamingThinkingDuration = 0;
+                // The finished message is in the transcript now; the live
+                // bubble stands down so its text is not shown twice (and a
+                // retried attempt's fragments never linger in the next one).
+                this._clearBubbleFields(tab);
             }
         }
 
         if (event.type === 'agent_end') {
+            // A run that never surfaced a user message must not leave the
+            // booked indices armed for the next delivery.
+            tab.pendingPromptTurns = [];
             if (event.willRetry) {
                 // SDK will retry — keep streaming state active
                 if (isActive) {
@@ -643,7 +703,15 @@ export class TabManager {
         }
 
         if (event.type === 'queue_update') {
-            tab.queuedMessages = [...(event.followUp ?? [])];
+            tab.queueUpdateCount++;
+            const before = JSON.stringify(tab.queuedMessages);
+            this._syncQueuedMessages(tab);
+            // Clear-then-replay inside a queue replace fires one event per
+            // entry; only the net change may emit, and never mid-replay.
+            if (isActive && !tab.suppressQueueEmit
+                && JSON.stringify(tab.queuedMessages) !== before) {
+                this._emitStateChange();
+            }
         }
 
         // Custom event from the session manager's cache-warming monitor (not
@@ -838,34 +906,18 @@ export class TabManager {
                 ) {
                     break;
                 }
+                // A streaming tab is not an error: `_sendPromptTurn` reroutes
+                // the message into Pi's queue instead of failing the send.
                 if (tab.isStreaming) {
-                    console.log('[Pi] prompt rejected: tab is streaming');
-                    throw new Error('Agent is still processing. Please wait or queue your message.');
+                    console.log('[Pi] prompt while streaming: queued');
                 }
                 if (tab.lock && tab.lock.occupancy !== 'none') {
                     this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
                     break;
                 }
-                let images: ImagePayload[] | undefined;
-                if (msg.images && msg.images.length > 0) {
-                    const prepared = preparePromptImages(msg.images);
-                    if (!prepared.ok) {
-                        const message =
-                            prepared.reason === 'tooMany'
-                                ? t('image.tooMany', { n: prepared.count })
-                                : prepared.reason === 'tooLarge'
-                                  ? t('image.tooLarge')
-                                  : t('image.invalid');
-                        this._adapters.transport.post({ type: 'error', message });
-                        break;
-                    }
-                    // The model may have been switched after the images were attached.
-                    if (!tab.session.supportsImages()) {
-                        this._adapters.transport.post({ type: 'error', message: t('image.unsupported') });
-                        break;
-                    }
-                    images = prepared.images;
-                }
+                const preparedImages = this._prepareImages(tab, msg.images);
+                if (!preparedImages.ok) break;
+                const images = preparedImages.images;
                 let text = msg.text;
                 if (msg.mentions && msg.mentions.length > 0) {
                     const resolved = await this._expandMentions(text, msg.mentions);
@@ -935,7 +987,19 @@ export class TabManager {
                 if (await this._maybeExecuteBuiltinCommand(tab, msg.text)) {
                     break;
                 }
-                await tab.session.steer(msg.text);
+                {
+                    const prepared = this._prepareImages(tab, msg.images);
+                    if (!prepared.ok) break;
+                    // An idle session never drains its queue — a steer parked
+                    // there would sit forever. The SDK streaming flag is the
+                    // truth; the host flag only settles at agent_settled.
+                    if (!tab.session.isStreaming) {
+                        if (!msg.text.trim() && !(prepared.images?.length)) break;
+                        await this._sendPromptTurn(tab, msg.text, prepared.images);
+                    } else {
+                        await this._enqueue(tab, msg.text, prepared.images, 'steer');
+                    }
+                }
                 break;
             case 'queueMessage':
                 // A builtin slash command queued while streaming would reach
@@ -943,14 +1007,21 @@ export class TabManager {
                 if (await this._maybeExecuteBuiltinCommand(tab, msg.text)) {
                     break;
                 }
-                await tab.session.followUp(msg.text);
-                tab.queuedMessages = tab.session.getFollowUpMessages();
-                this._emitStateChange();
+                {
+                    const prepared = this._prepareImages(tab, msg.images);
+                    if (!prepared.ok) break;
+                    if (!tab.session.isStreaming) {
+                        if (!msg.text.trim() && !(prepared.images?.length)) break;
+                        await this._sendPromptTurn(tab, msg.text, prepared.images);
+                    } else {
+                        await this._enqueue(tab, msg.text, prepared.images, 'followUp');
+                    }
+                }
                 break;
             case 'editQueuedMessage': {
-                // A queue item lives in the SDK's followUp queue and drains
-                // past the host — refuse edits that would smuggle a builtin
-                // command to the model as plain text.
+                // A queue item lives in the SDK's queue and drains past the
+                // host — refuse edits that would smuggle a builtin command
+                // to the model as plain text.
                 const editedCommand = parseBuiltinSlashCommand(msg.text);
                 if (editedCommand) {
                     this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: editedCommand.name }));
@@ -961,31 +1032,37 @@ export class TabManager {
                     msg.index < tab.queuedMessages.length &&
                     msg.text.trim()
                 ) {
-                    tab.queuedMessages[msg.index] = msg.text.trim();
-                    await tab.session.replaceFollowUpMessages(tab.queuedMessages);
+                    const next = [...tab.queuedMessages];
+                    next[msg.index] = { ...next[msg.index], text: msg.text.trim() };
+                    await this._replaceQueued(tab, next);
                 }
-                this._emitStateChange();
                 break;
             }
             case 'removeQueuedMessage':
                 if (msg.index >= 0 && msg.index < tab.queuedMessages.length) {
-                    tab.queuedMessages.splice(msg.index, 1);
-                    await tab.session.replaceFollowUpMessages(tab.queuedMessages);
+                    const next = tab.queuedMessages.filter((_, i) => i !== msg.index);
+                    await this._replaceQueued(tab, next);
                 }
-                this._emitStateChange();
                 break;
             case 'cancelQueue':
-                tab.queuedMessages = [];
-                await tab.session.replaceFollowUpMessages([]);
-                this._emitStateChange();
+                await this._replaceQueued(tab, []);
                 break;
             case 'followUp':
-                // A builtin reaching the follow-up queue drains past the host
-                // as plain text — intercept here like queueMessage/steer.
+                // A builtin reaching the queue drains past the host as plain
+                // text — intercept here like queueMessage/steer.
                 if (await this._maybeExecuteBuiltinCommand(tab, msg.text)) {
                     break;
                 }
-                await tab.session.followUp(msg.text);
+                {
+                    const prepared = this._prepareImages(tab, msg.images);
+                    if (!prepared.ok) break;
+                    if (!tab.session.isStreaming) {
+                        if (!msg.text.trim() && !(prepared.images?.length)) break;
+                        await this._sendPromptTurn(tab, msg.text, prepared.images);
+                    } else {
+                        await this._enqueue(tab, msg.text, prepared.images, 'followUp');
+                    }
+                }
                 break;
             case 'abort': {
                 await tab.session.abort();
@@ -1303,14 +1380,122 @@ export class TabManager {
         }
     }
 
+    /** Validate composer image payloads; posts an error and rejects on failure. */
+    private _prepareImages(
+        tab: TabState,
+        images?: string[],
+    ): { ok: true; images?: ImagePayload[] } | { ok: false } {
+        if (!images || images.length === 0) return { ok: true };
+        const prepared = preparePromptImages(images);
+        if (!prepared.ok) {
+            const message =
+                prepared.reason === 'tooMany'
+                    ? t('image.tooMany', { n: prepared.count })
+                    : prepared.reason === 'tooLarge'
+                      ? t('image.tooLarge')
+                      : t('image.invalid');
+            this._adapters.transport.post({ type: 'error', message });
+            return { ok: false };
+        }
+        // The model may have been switched after the images were attached.
+        if (!tab.session.supportsImages()) {
+            this._adapters.transport.post({ type: 'error', message: t('image.unsupported') });
+            return { ok: false };
+        }
+        return { ok: true, images: prepared.images };
+    }
+
+    /**
+     * Hand a message to Pi's queue: `steer` joins the run currently in
+     * flight, `followUp` waits for it to finish (CLI Enter / Ctrl+Enter).
+     */
+    private async _enqueue(
+        tab: TabState,
+        text: string,
+        images: ImagePayload[] | undefined,
+        kind: QueuedMessage['kind'],
+    ): Promise<void> {
+        // The SDK dequeues by matching the user message text: an empty-text
+        // entry can never leave the queue and would replay as a duplicate on
+        // every later edit of the list.
+        if (!text.trim()) {
+            this._adapters.transport.post({ type: 'error', message: t('image.queueNeedsText') });
+            return;
+        }
+        // Seed the image payload first: `queue_update` fires synchronously
+        // inside the SDK call and revives images from the previous list.
+        const hint = images?.length
+            ? [...tab.queuedMessages, { text, kind, images }]
+            : tab.queuedMessages;
+        const updatesBefore = tab.queueUpdateCount;
+        const isActive = tab.id === this._activeTabId;
+        if (kind === 'steer') {
+            await tab.session.steer(text, images);
+        } else {
+            await tab.session.followUp(text, images);
+        }
+        this._syncQueuedMessages(tab, hint);
+        // steer()/followUp() fire `queue_update` synchronously and the event
+        // handler already emitted the changed frame — emit here only when it
+        // did not (older SDK copies without the event).
+        if (isActive && tab.queueUpdateCount === updatesBefore) {
+            this._emitStateChange();
+        }
+    }
+
+    /** Rebuild the queue view from the SDK, re-attaching host-side images.
+     *  Alignment is positional per kind — the host list and the SDK queue
+     *  hold the same entries in the same order, so a text-first match would
+     *  graft attachments onto a duplicate sent without its images. When the
+     *  queue shrank (a message was delivered), the pool is aligned to the
+     *  tail; when it grew, to the front. */
+    private _syncQueuedMessages(tab: TabState, withImages: QueuedMessage[] = []): void {
+        const source = withImages.length > 0 ? withImages : tab.queuedMessages;
+        const stored: Record<QueuedMessage['kind'], (ImagePayload[] | undefined)[]> = {
+            steer: [],
+            followUp: [],
+        };
+        for (const m of source) stored[m.kind].push(m.images);
+        const live = tab.session.getQueuedMessages();
+        const seen: Record<QueuedMessage['kind'], number> = { steer: 0, followUp: 0 };
+        const total: Record<QueuedMessage['kind'], number> = { steer: 0, followUp: 0 };
+        for (const e of live) total[e.kind]++;
+        tab.queuedMessages = live.map((entry) => {
+            const pool = stored[entry.kind];
+            const i = seen[entry.kind]++;
+            const src = i + Math.max(0, pool.length - total[entry.kind]);
+            const images = src >= 0 && src < pool.length ? pool[src] : undefined;
+            return images && images.length > 0 ? { ...entry, images } : entry;
+        });
+    }
+
+    /** Clear and replay the queue with the caller's edited entries. */
+    private async _replaceQueued(tab: TabState, next: QueuedMessage[]): Promise<void> {
+        const isActive = tab.id === this._activeTabId;
+        tab.suppressQueueEmit = true;
+        let failed: QueuedMessage[] = [];
+        try {
+            failed = await tab.session.replaceQueuedMessages(next);
+            this._syncQueuedMessages(tab, next);
+        } finally {
+            tab.suppressQueueEmit = false;
+        }
+        if (failed.length > 0) {
+            this._adapters.ui.showMessage(t('queue.replayFailed', { n: failed.length }));
+        }
+        if (isActive) this._emitStateChange();
+    }
+
     /** Shared tail of every prompt path: streaming re-check, redo discard,
      *  turn accounting, and the SDK prompt call. `text` must be non-empty
      *  (or images non-empty); caller owns the earlier validation. */
     private async _sendPromptTurn(tab: TabState, text: string, images?: ImagePayload[]): Promise<void> {
-        // Mention expansion awaits fs I/O; the streaming state may have
-        // flipped during it. Re-check to avoid two concurrent turns.
-        if (tab.isStreaming) {
-            throw new Error('Agent is still processing. Please wait or queue your message.');
+        // Mention expansion awaits fs I/O; a run may have started during it.
+        // The SDK flag is the truth — the host flag only clears at settle, so
+        // trusting it here would park the message on an idle queue.
+        if (tab.session.isStreaming) {
+            await this._enqueue(tab, text, images, 'steer');
+            return;
         }
         if (tab.checkpointManager.rollbackPoint !== null) {
             tab.checkpointManager.discardSuspended();
@@ -1322,12 +1507,24 @@ export class TabManager {
         const turnIdx = tab.turnCounter;
         tab.checkpointManager.startTurn(turnIdx);
         tab.diffManager.setCurrentTurn(turnIdx);
+        tab.pendingPromptTurns.push(turnIdx);
         try {
             await tab.session.prompt(text, images);
         } catch (err) {
             // The turn never ran: release its index so the next prompt
             // reuses it (checkpoint/rollback math counts user turns).
-            tab.turnCounter--;
+            tab.pendingPromptTurns = tab.pendingPromptTurns.filter((t) => t !== turnIdx);
+            if (tab.turnCounter === turnIdx) {
+                tab.turnCounter--;
+            }
+            if (isQueueBusyError(err) && tab.session.isStreaming) {
+                // A run started under us: Pi's own answer to this case is to
+                // queue, not to fail the send. Compaction on an idle session
+                // rethrows — a followUp parked on an idle queue would never
+                // drain.
+                await this._enqueue(tab, text, images, 'steer');
+                return;
+            }
             throw err;
         }
     }
@@ -1339,6 +1536,18 @@ export class TabManager {
         tab.thinkingStartTime = 0;
         tab.streamingThinkingDuration = 0;
         tab.agentStartTime = 0;
+    }
+
+    /**
+     * Reset only the live-bubble buffers. Unlike `_clearStreamingFields` this
+     * leaves the run timing alone, so it is safe to call between assistant
+     * messages of the same run.
+     */
+    private _clearBubbleFields(tab: any): void {
+        tab.streamingText = '';
+        tab.streamingThinking = '';
+        tab.isThinking = false;
+        tab.thinkingStartTime = 0;
     }
 
     private _resetStreaming(tab: any): void {
@@ -1659,13 +1868,13 @@ export class TabManager {
         });
     }
 
-    /** Host entry (editor context menu): prompt, or FollowUp queue while streaming. */
+    /** Host entry (editor context menu): prompt, or steer into the running turn. */
     async sendToPi(text: string): Promise<void> {
         await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) return;
         if (tab.isStreaming) {
-            await this.dispatch({ type: 'queueMessage', text });
+            await this.dispatch({ type: 'steer', text });
         } else {
             await this.dispatch({ type: 'prompt', text });
         }

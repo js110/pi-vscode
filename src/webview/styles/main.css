@@ -558,6 +558,13 @@ body {
     pointer-events: none;
 }
 
+/* Uploaded avatar image replaces the π glyph in place (URL comes inline). */
+.turn-av.turn-av-image {
+    background-size: cover;
+    background-position: center;
+    color: transparent;
+}
+
 .turn-head {
     display: flex;
     align-items: baseline;
@@ -593,6 +600,16 @@ body {
     letter-spacing: 0.07em;
     text-transform: uppercase;
     user-select: none;
+}
+/* Uploaded avatar image replaces the "Me" pill in place (URL comes inline). */
+.u-av.u-av-image {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--hairline);
+    background-size: cover;
+    background-position: center;
+    color: transparent;
 }
 
 /* User turn: clean bubble — right-aligned, hugs its content */
@@ -1561,29 +1578,6 @@ body {
     outline: none;
 }
 
-.steer-btn {
-    background: transparent;
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-md);
-    width: 30px;
-    height: 30px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.15s, border-color 0.15s;
-    padding: 0;
-    flex-shrink: 0;
-}
-.steer-btn:hover {
-    background: var(--surface-hover);
-    border-color: var(--muted);
-}
-.steer-icon-svg {
-    width: 14px;
-    height: 14px;
-}
-
 .attach-btn {
     display: inline-flex;
     align-items: center;
@@ -1969,14 +1963,17 @@ body {
     padding: 6px 14px;
 }
 .queued-item:hover { background: var(--surface-hover); }
-.queued-item-icon {
-    color: var(--faint);
-    font-size: var(--fs-micro);
+.queued-item-kind {
     flex-shrink: 0;
-    width: 14px;
-    text-align: center;
     font-family: var(--font-mono);
+    font-size: var(--fs-micro);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--faint);
+    white-space: nowrap;
 }
+/* Steering lands inside the running turn — flag it as the "sooner" lane. */
+.queued-item-kind-steer { color: var(--warning-fg); }
 .queued-item-text {
     flex: 1;
     min-width: 0;
@@ -2434,48 +2431,6 @@ body {
     border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
     background: color-mix(in srgb, var(--accent) 10%, transparent);
     white-space: nowrap;
-}
-
-/* ───────────────────────── Steer toast ───────────────────────── */
-
-.steer-toast {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 8px 14px;
-    border-bottom: 1px solid var(--hairline);
-    font-size: var(--fs-sm);
-    transition: opacity 0.3s;
-    color: var(--fg);
-    background: color-mix(in srgb, var(--warning-fg) 6%, transparent);
-}
-.steer-toast-fade { opacity: 0; }
-.steer-toast-indicator {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--warning-fg);
-    flex-shrink: 0;
-    animation: pulse-dot 1.4s ease-in-out infinite;
-}
-.steer-toast-label {
-    font-size: var(--fs-xs);
-    color: var(--warning-fg);
-    flex-shrink: 0;
-    font-family: var(--font-mono);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-.steer-toast-text {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
 }
 
 /* ───────────────────────── Model picker popup ───────────────────────── */

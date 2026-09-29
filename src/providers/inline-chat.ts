@@ -124,6 +124,13 @@ export class InlineChatManager implements vscode.Disposable {
     async discard(): Promise<void> {
         const round = this._round;
         if (!round || round.phase !== 'pendingReview') return;
+        // The round's prompt was rerouted into a run already in flight —
+        // it booked no turn, so there is no checkpoint boundary to
+        // restore to and the edits interleave with that run's own turn.
+        if (round.firstTurnIdx <= 0) {
+            this._deps.showMessage(t('inline.discardUnavailable'));
+            return;
+        }
 
         const tm = this._deps.getTabManager();
         // A follow-up may be streaming on the round's tab after settle —
@@ -191,6 +198,13 @@ export class InlineChatManager implements vscode.Disposable {
     ): Promise<void> {
         const tab = tm.activeTab;
         if (!tab) return;
+        // The InputBox await above gives a run time to start; steering into
+        // it would interleave the round's edits with that run's own turn and
+        // leave no rollback boundary, so refuse instead.
+        if (tm.isTabStreaming(tab.id)) {
+            this._deps.showMessage(t('inline.busy'));
+            return;
+        }
         const anchorPath = editor.document.uri.fsPath;
         const anchorBase = editor.document.getText();
 
@@ -223,8 +237,9 @@ export class InlineChatManager implements vscode.Disposable {
 
         // dispatch() is async and yields before turnCounter++; capture the
         // *next* turn index so discard() restores to the correct boundary.
+        const turnBefore = tm.getTurnCounter(tab.id) ?? 0;
         const dispatching = tm.dispatch({ type: 'prompt', text: prompt, bypassSlashCommands: true });
-        round.firstTurnIdx = (tm.getTurnCounter(tab.id) ?? 0) + 1;
+        round.firstTurnIdx = turnBefore + 1;
 
         try {
             await dispatching;
@@ -234,6 +249,12 @@ export class InlineChatManager implements vscode.Disposable {
                 const text = humanizeErrorMessage(err);
                 if (text) this._deps.showMessage(text);
             }
+        }
+        // The prompt was rerouted into the queue (a run started under us) and
+        // drained without booking a turn: the round's edits have no rollback
+        // boundary, so discard must not pretend there is one.
+        if (this._round === round && (tm.getTurnCounter(tab.id) ?? 0) === turnBefore) {
+            round.firstTurnIdx = -1;
         }
     }
 

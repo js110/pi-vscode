@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { el, escHtml } from '../../../webview/dom';
 import {
     renderMarkdown,
@@ -20,6 +20,7 @@ import {
     buildStreamingSkeleton,
     updateStreamingThinking,
     reconcileStreamingText,
+    setAvatarImages,
 } from '../../../webview/render/messages';
 
 function toolCtx(overrides: Record<string, any> = {}) {
@@ -479,6 +480,25 @@ describe('streaming region', () => {
         expect(thinkingEl.classList.contains('active')).toBe(false);
     });
 
+    it('updateStreamingThinking collapses once the model starts answering', () => {
+        const thinkingEl = buildStreamingSkeleton().querySelector('#streaming-thinking') as HTMLDetailsElement;
+        updateStreamingThinking(thinkingEl, { thinking: 'plan', isThinking: true, durationSec: 1 });
+        expect(thinkingEl.open).toBe(true);
+
+        updateStreamingThinking(thinkingEl, { thinking: 'plan', isThinking: false, durationSec: 2 });
+        expect(thinkingEl.open).toBe(false);
+    });
+
+    it('updateStreamingThinking keeps a block the user re-opened after thinking ended', () => {
+        const thinkingEl = buildStreamingSkeleton().querySelector('#streaming-thinking') as HTMLDetailsElement;
+        updateStreamingThinking(thinkingEl, { thinking: 'plan', isThinking: true, durationSec: 1 });
+        updateStreamingThinking(thinkingEl, { thinking: 'plan', isThinking: false, durationSec: 2 });
+
+        thinkingEl.open = true;
+        updateStreamingThinking(thinkingEl, { thinking: 'plan', isThinking: false, durationSec: 3 });
+        expect(thinkingEl.open).toBe(true);
+    });
+
     it('reconcileStreamingText renders blocks incrementally', () => {
         const textEl = document.createElement('div');
         reconcileStreamingText(textEl, 'one block only');
@@ -529,5 +549,52 @@ describe('streaming region', () => {
         reconcileStreamingText(b, 'x\n\ny');
         expect(a.children.length).toBe(2);
         expect(b.children.length).toBe(2);
+    });
+});
+describe('avatar images', () => {
+    afterEach(() => {
+        setAvatarImages({});
+    });
+
+    it('the pi marker falls back to the glyph when no avatar is set', () => {
+        const nodes = buildMessageTree(baseRenderState({
+            messages: [{ role: 'assistant', text: 'hello' }],
+        }));
+        const av = nodes[0].querySelector('.turn-av');
+        expect(av?.textContent).toBe('π');
+        expect(av?.classList.contains('turn-av-image')).toBe(false);
+    });
+
+    it('an uploaded pi avatar renders as a background image instead of the glyph', () => {
+        setAvatarImages({ pi: 'https://example.test/vscode-webview/pi-avatar.png' });
+        const nodes = buildMessageTree(baseRenderState({
+            messages: [{ role: 'assistant', text: 'hello' }],
+        }));
+        const av = nodes[0].querySelector('.turn-av') as HTMLElement;
+        expect(av.classList.contains('turn-av-image')).toBe(true);
+        expect(av.style.backgroundImage).toContain('pi-avatar.png');
+        expect(av.textContent).toBe('');
+    });
+
+    it('an uploaded user avatar replaces the Me chip text', () => {
+        setAvatarImages({ user: 'https://example.test/vscode-webview/user-avatar.png' });
+        const nodes = buildMessageTree(baseRenderState({
+            messages: [{ role: 'user', text: 'hi' }],
+        }));
+        const av = nodes[0].querySelector('.u-av') as HTMLElement;
+        expect(av.classList.contains('u-av-image')).toBe(true);
+        expect(av.style.backgroundImage).toContain('user-avatar.png');
+        expect(av.textContent).toBe('');
+    });
+
+    it('an empty slot clears the image class again', () => {
+        setAvatarImages({ user: 'https://example.test/vscode-webview/user-avatar.png' });
+        setAvatarImages({});
+        const nodes = buildMessageTree(baseRenderState({
+            messages: [{ role: 'user', text: 'hi' }],
+        }));
+        const av = nodes[0].querySelector('.u-av') as HTMLElement;
+        expect(av.classList.contains('u-av-image')).toBe(false);
+        expect(av.textContent?.length).toBeGreaterThan(0);
     });
 });
