@@ -778,11 +778,16 @@ export class TabManager {
                 event.type === 'agent_start' ||
                 event.type === 'agent_end' ||
                 event.type === 'message_end' ||
-                event.type === 'turn_end'
+                event.type === 'turn_end' ||
+                event.type === 'agent_settled'
             ) {
                 this._emitStateChange();
             }
-        } else if (event.type === 'agent_start' || event.type === 'agent_end') {
+        } else if (
+            event.type === 'agent_start' ||
+            event.type === 'agent_end' ||
+            event.type === 'agent_settled'
+        ) {
             this._emitStateChange();
         }
     }

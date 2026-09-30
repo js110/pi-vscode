@@ -529,6 +529,12 @@ function handleAgentEvent(event: any): void {
             clearStreamingState();
             removeRetryPlaceholder();
             clearStreamingRegion();
+            // Re-render the tree in its settled form: user heads (the "Me"
+            // chip / uploaded avatar) are streaming-gated, and without this
+            // they would stay hidden until some later stateSync lands. The
+            // settled stateSync push covers the normal path; this guards the
+            // push-ordering race where the event arrives last.
+            void updateMessages();
             updateInputArea();
             break;
         case 'tool_execution_start':

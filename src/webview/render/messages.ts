@@ -424,10 +424,9 @@ function buildTurnMarker(turnNumber: number | undefined, isTurnStart: boolean): 
     return holder;
 }
 
-/** Compact "Me" avatar chip above the user bubble. Hidden while streaming so
- *  the active turn keeps its π marker as the sole rail decoration. */
-function buildUserHead(isStreaming: boolean): HTMLElement | null {
-    if (isStreaming) return null;
+/** Compact "Me" avatar chip above the user bubble. Always rendered, including
+ *  while streaming, so the user's avatar stays visible during a live turn. */
+function buildUserHead(): HTMLElement {
     const head = el('div', 'user-head');
     const av = el('span', 'u-av');
     if (avatarImages.user) {
@@ -455,10 +454,7 @@ function buildMessage(msg: any, index: number, turnNumber: number | undefined, c
 
     if (role === 'user') {
         const group = el('div', 'message-group-user turn turn-user');
-        const head = buildUserHead(ctx.isStreaming);
-        if (head) {
-            group.appendChild(head);
-        }
+        group.appendChild(buildUserHead());
 
         const wrapper = el('div', `message message-${role}`);
         if (turnNumber !== undefined && !ctx.isStreaming) {

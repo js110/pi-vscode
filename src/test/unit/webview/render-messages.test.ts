@@ -587,6 +587,27 @@ describe('avatar images', () => {
         expect(av.textContent).toBe('');
     });
 
+    it('the Me chip stays visible while streaming', () => {
+        const nodes = buildMessageTree(baseRenderState({
+            messages: [{ role: 'user', text: 'hi' }],
+            isStreaming: true,
+        }));
+        const av = nodes[0].querySelector('.u-av');
+        expect(av).not.toBeNull();
+        expect(av?.textContent?.length).toBeGreaterThan(0);
+    });
+
+    it('an uploaded user avatar stays visible while streaming', () => {
+        setAvatarImages({ user: 'https://example.test/vscode-webview/user-avatar.png' });
+        const nodes = buildMessageTree(baseRenderState({
+            messages: [{ role: 'user', text: 'hi' }],
+            isStreaming: true,
+        }));
+        const av = nodes[0].querySelector('.u-av') as HTMLElement;
+        expect(av.classList.contains('u-av-image')).toBe(true);
+        expect(av.style.backgroundImage).toContain('user-avatar.png');
+    });
+
     it('an empty slot clears the image class again', () => {
         setAvatarImages({ user: 'https://example.test/vscode-webview/user-avatar.png' });
         setAvatarImages({});

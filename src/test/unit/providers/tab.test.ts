@@ -564,6 +564,26 @@ describe('TabManager', () => {
         expect(tab.session.prompt).toHaveBeenCalledWith('look at this', undefined);
     });
 
+    it('fires onStateChange on agent_settled so the idle frame carries isStreaming=false', async () => {
+        const tab = makeTab();
+        const manager = new TabManager({ create: vi.fn(async () => tab) }, makeAdapters());
+        await manager.initialize();
+
+        // The webview renders streaming-gated UI (turn action buttons)
+        // from the state frame; agent_end keeps isStreaming=true on
+        // purpose, so the settled frame must be pushed or that UI never
+        // comes back.
+        let settleEmits = 0;
+        manager.onStateChange(() => { settleEmits++; });
+
+        manager.activeTab!.session.events.dispatch({ type: 'agent_start' } as any);
+        const afterStart = settleEmits;
+        manager.activeTab!.session.events.dispatch({ type: 'agent_settled' } as any);
+
+        expect(settleEmits).toBeGreaterThan(afterStart);
+        expect(manager.getState().isStreaming).toBe(false);
+    });
+
     it('sendToPi routes to the active tab in multi-tab setups', async () => {
         const first = makeTab();
         const second = makeTab();
