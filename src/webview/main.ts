@@ -230,8 +230,12 @@ function handleMessage(msg: ServerMessage): void {
         }
         case 'avatarChanged': {
             // Uploaded/cleared in the settings panel: swap the rail markers
-            // and user chips by re-rendering the message tree.
+            // and user chips by re-rendering the message tree, and sync the
+            // streaming marker directly — it is a CSS pseudo-element, so the
+            // tree re-render never touches it.
+            piAvatarUrl = msg.piAvatarUrl;
             setAvatarImages({ pi: msg.piAvatarUrl, user: msg.userAvatarUrl });
+            applyStreamingAvatar(document.getElementById('streaming-message'));
             void updateMessages();
             break;
         }
@@ -597,6 +601,26 @@ function scheduleStreamingRender(): void {
 
 let skeletonBuilt = false;
 
+/** Latest uploaded Pi avatar URL (webview URI), pushed by the host. The
+ *  streaming rail marker is a CSS pseudo-element — not a DOM node — so the
+ *  uploaded image cannot go through applyAvatarImage; instead it is swapped
+ *  in via the --stream-av custom property + .av-image class on the streaming
+ *  container. Settled turns keep using buildTurnMarker. */
+let piAvatarUrl: string | undefined;
+
+/** Apply the uploaded Pi avatar to a streaming container, or restore the
+ *  default π glyph when none is set. Idempotent; safe on a missing node. */
+function applyStreamingAvatar(container: HTMLElement | null): void {
+    if (!container) return;
+    if (piAvatarUrl) {
+        container.style.setProperty('--stream-av', `url("${piAvatarUrl.replace(/["\\]/g, '')}")`);
+        container.classList.add('av-image');
+    } else {
+        container.style.removeProperty('--stream-av');
+        container.classList.remove('av-image');
+    }
+}
+
 function render(): void {
     const app = document.getElementById('app')!;
     app.innerHTML = '';
@@ -645,6 +669,7 @@ function render(): void {
     messagesContainer.id = 'messages';
     const streamingContainer = el('div', 'streaming-message message-group-assistant');
     streamingContainer.id = 'streaming-message';
+    applyStreamingAvatar(streamingContainer); // render() rebuilds the shell; keep the avatar on the fresh container
     messagesContainer.appendChild(streamingContainer);
     const spacer = el('div', 'messages-spacer');
     messagesContainer.appendChild(spacer);

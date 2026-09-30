@@ -1157,6 +1157,17 @@ body {
     user-select: none;
 }
 
+/* Uploaded Pi avatar replaces the streaming π glyph. The host sets the
+   --stream-av custom property to the full url(...) value and toggles
+   .av-image (applyStreamingAvatar); mirrors .turn-av.turn-av-image for
+   settled turns. */
+.streaming-message.av-image::before {
+    content: '';
+    background-image: var(--stream-av);
+    background-size: cover;
+    background-position: center;
+}
+
 .preparing-placeholder {
     padding: 14px 2px;
     font-size: var(--fs-sm);

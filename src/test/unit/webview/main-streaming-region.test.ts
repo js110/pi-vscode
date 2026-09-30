@@ -146,5 +146,29 @@ describe('live streaming region (real main.ts), ' + __filename.split(/[\\/]/).po
         dispatch(event({ type: 'agent_settled' }));
         await nextFrame();
         expect(liveRegion().children.length).toBe(0);
+
+        // ── phase 7: uploaded Pi avatar follows the live turn ──
+        // The streaming rail marker is a CSS pseudo-element, so the swap
+        // must land as .av-image + --stream-av on the container itself.
+        dispatch(event({ type: 'agent_start' }));
+        dispatch(event({ type: 'message_start', message: { role: 'assistant' } }));
+        dispatch(delta('working with a custom avatar'));
+        await nextFrame();
+        expect(liveText()).toContain('working with a custom avatar');
+
+        dispatch({ type: 'avatarChanged', piAvatarUrl: 'https://img.test/pi-avatar.png' });
+        await nextFrame();
+        expect(liveRegion().classList.contains('av-image'), 'live marker swaps to the uploaded avatar').toBe(true);
+        expect(liveRegion().style.getPropertyValue('--stream-av')).toContain('pi-avatar.png');
+
+        // Clearing the avatar restores the default π glyph mid-stream.
+        dispatch({ type: 'avatarChanged' });
+        await nextFrame();
+        expect(liveRegion().classList.contains('av-image'), 'cleared avatar restores the default π').toBe(false);
+        expect(liveRegion().style.getPropertyValue('--stream-av')).toBe('');
+
+        dispatch(event({ type: 'agent_end' }));
+        dispatch(event({ type: 'agent_settled' }));
+        await nextFrame();
     });
 });
