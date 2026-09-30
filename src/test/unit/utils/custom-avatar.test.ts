@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { avatarPathSync, saveAvatar, clearAvatar } from '../../../utils/custom-avatar';
+import { avatarPathSync, avatarInfoSync, saveAvatar, clearAvatar } from '../../../utils/custom-avatar';
 
 describe('custom-avatar storage', () => {
     let dir: string;
@@ -17,7 +17,7 @@ describe('custom-avatar storage', () => {
     it('reports no upload when the directory is empty or missing', () => {
         expect(avatarPathSync(dir, 'pi')).toBeUndefined();
         expect(avatarPathSync(dir, 'user')).toBeUndefined();
-        expect(avatarPathSync(path.join(dir, 'missing'), 'pi')).toBeUndefined();
+        expect(avatarInfoSync(path.join(dir, 'missing'), 'pi')).toBeUndefined();
     });
 
     it('saves a picked image under the slot\'s stable name', async () => {
@@ -28,6 +28,29 @@ describe('custom-avatar storage', () => {
         expect(fs.readFileSync(dest).toString()).toBe('png-bytes');
         expect(avatarPathSync(dir, 'pi')).toBe(dest);
         expect(avatarPathSync(dir, 'user')).toBeUndefined();
+    });
+
+    it('avatarInfoSync returns the path and a version that changes on re-upload', async () => {
+        const a = path.join(dir, 'a.png');
+        const b = path.join(dir, 'b.png');
+        fs.writeFileSync(a, Buffer.from('A'));
+        fs.writeFileSync(b, Buffer.from('B'));
+
+        await saveAvatar(dir, 'pi', a);
+        const first = avatarInfoSync(dir, 'pi');
+        expect(first?.path).toBe(path.join(dir, 'pi-avatar.png'));
+        expect(typeof first?.version).toBe('number');
+
+        // copyFile preserves the source mtime, which may equal the first
+        // save's; force distinct mtimes so the version provably tracks time.
+        await new Promise((r) => setTimeout(r, 12));
+        const future = Date.now() + 5000;
+        fs.utimesSync(b, new Date(future), new Date(future));
+        await saveAvatar(dir, 'pi', b);
+        const second = avatarInfoSync(dir, 'pi');
+        expect(second?.path).toBe(first?.path); // stable filename…
+        expect(second?.version).toBeGreaterThan(first!.version); // …new version
+        expect(avatarInfoSync(dir, 'user')).toBeUndefined();
     });
 
     it('keeps the extension of a jpeg pick', async () => {

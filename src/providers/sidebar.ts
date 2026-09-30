@@ -6,7 +6,7 @@ import { resolveDisplayLang } from './lang';
 import { clampFontSize, clampOpacity } from './settings-panel';
 import { effectiveSkin, type SkinId } from '../shared/skins';
 import { customSkinPathSync } from '../utils/custom-skin';
-import { avatarPathSync } from '../utils/custom-avatar';
+import { avatarInfoSync, type AvatarSlot } from '../utils/custom-avatar';
 import { t } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import { parseBuiltinSlashCommand } from '../shared/slash-commands';
@@ -117,10 +117,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private _resolveAvatars(webview?: vscode.Webview): { piAvatarUrl?: string; userAvatarUrl?: string } {
         const dir = this._avatarStorageDir;
         if (!dir) return {};
-        const url = (p?: string) => (p && webview ? webview.asWebviewUri(vscode.Uri.file(p)).toString() : undefined);
+        const url = (slot: AvatarSlot) => {
+            const info = avatarInfoSync(dir, slot);
+            if (!info || !webview) return undefined;
+            const base = webview.asWebviewUri(vscode.Uri.file(info.path)).toString();
+            // The slot filename is stable across re-uploads; the mtime query
+            // busts Chromium's image cache so a replace actually shows.
+            return info.version ? `${base}?v=${info.version}` : base;
+        };
         return {
-            piAvatarUrl: url(avatarPathSync(dir, 'pi')),
-            userAvatarUrl: url(avatarPathSync(dir, 'user')),
+            piAvatarUrl: url('pi'),
+            userAvatarUrl: url('user'),
         };
     }
 

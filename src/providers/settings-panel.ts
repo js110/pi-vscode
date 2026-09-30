@@ -7,7 +7,7 @@ import { resolveDisplayLang } from './lang';
 import { humanizeErrorMessage } from '../shared/error-copy';
 import { effectiveSkin } from '../shared/skins';
 import { customSkinPathSync, saveCustomSkin, clearCustomSkin } from '../utils/custom-skin';
-import { avatarPathSync, saveAvatar, clearAvatar, type AvatarSlot } from '../utils/custom-avatar';
+import { avatarInfoSync, saveAvatar, clearAvatar, type AvatarSlot } from '../utils/custom-avatar';
 import { t } from '../shared/i18n';
 
 export class SettingsPanel {
@@ -210,8 +210,8 @@ export class SettingsPanel {
 
         const authMethod = this._detectAuthMethod(provider, apiKeySet);
         const customPath = this._storageDir ? customSkinPathSync(this._storageDir) : undefined;
-        const piAvatarPath = this._avatarStorageDir ? avatarPathSync(this._avatarStorageDir, 'pi') : undefined;
-        const userAvatarPath = this._avatarStorageDir ? avatarPathSync(this._avatarStorageDir, 'user') : undefined;
+        const piAvatar = this._avatarStorageDir ? avatarInfoSync(this._avatarStorageDir, 'pi') : undefined;
+        const userAvatar = this._avatarStorageDir ? avatarInfoSync(this._avatarStorageDir, 'user') : undefined;
 
         const data: SettingsData = {
             apiProvider: provider,
@@ -233,15 +233,22 @@ export class SettingsPanel {
                 : undefined,
             customSkinOpacity: config.get<number>('customSkinOpacity', 40),
             cacheWarming: config.get<string>('cacheWarming', 'streaming'),
-            piAvatarUrl: piAvatarPath
-                ? this._panel.webview.asWebviewUri(vscode.Uri.file(piAvatarPath)).toString()
+            piAvatarUrl: piAvatar
+                ? this._avatarUrl(piAvatar)
                 : undefined,
-            userAvatarUrl: userAvatarPath
-                ? this._panel.webview.asWebviewUri(vscode.Uri.file(userAvatarPath)).toString()
+            userAvatarUrl: userAvatar
+                ? this._avatarUrl(userAvatar)
                 : undefined,
         };
 
         this._post({ type: 'settings', data });
+    }
+
+    /** Webview URI for a stored avatar, with an mtime query so re-uploads
+     *  (stable filename) bust the webview's image cache. */
+    private _avatarUrl(info: { path: string; version: number }): string {
+        const base = this._panel.webview.asWebviewUri(vscode.Uri.file(info.path)).toString();
+        return info.version ? `${base}?v=${info.version}` : base;
     }
 
     private async _setAvatar(slot: AvatarSlot): Promise<void> {

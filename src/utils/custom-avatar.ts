@@ -25,6 +25,28 @@ export function avatarPathSync(storageDir: string, slot: AvatarSlot): string | u
     }
 }
 
+export interface AvatarInfo {
+    /** Absolute path of the stored image. */
+    path: string;
+    /** File mtime (ms). Each slot keeps a stable filename across re-uploads,
+     *  so the webview URI would otherwise be identical after a replace and
+     *  Chromium would keep serving the cached old image. Surfacing the mtime
+     *  lets callers append a `?v=` cache-buster. */
+    version: number;
+}
+
+/** Path + cache-busting version of the stored image for `slot`, or undefined
+ *  when absent. Sync like avatarPathSync: called while building state pushes. */
+export function avatarInfoSync(storageDir: string, slot: AvatarSlot): AvatarInfo | undefined {
+    const p = avatarPathSync(storageDir, slot);
+    if (!p) return undefined;
+    try {
+        return { path: p, version: Math.round(fs.statSync(p).mtimeMs) };
+    } catch {
+        return { path: p, version: 0 };
+    }
+}
+
 /** Copy a picked image into storage under the slot's stable name, replacing
  *  any previous upload for that slot (the other slot is untouched). */
 export async function saveAvatar(storageDir: string, slot: AvatarSlot, sourcePath: string): Promise<string> {
