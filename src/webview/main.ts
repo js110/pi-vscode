@@ -1,5 +1,9 @@
 import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo, QueuedMessage } from '../shared/protocol';
 import { buildOccupancyBannerHtml } from './render/occupancy';
+import { buildSessionTreePanel, buildExtensionDialog } from './render/native-panels';
+import { buildToolOutput, formatDuration } from './render/messages';
+import { getRunOutcome } from '../shared/run-outcome';
+import type { ExtensionUiState, SessionTreeEntryInfo } from '../shared/protocol';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
 import { normalizeImageFile, imageMimeFromName } from './image-resize';
 import { matchesModelFilter } from '../shared/model-filter';
@@ -63,6 +67,8 @@ const state: {
     cacheWarmingDecision?: CacheWarmingDecisionInfo;
     /** assetId → dataUrl, fed by stateSync.images (T16 image separation). */
     imageCache: Record<string, string>;
+    extensionUi?: ExtensionUiState;
+    runOutcome?: SerializedAgentState['runOutcome'];
 } = {
     messages: [],
     isStreaming: false,
@@ -99,6 +105,120 @@ let sessionSearchQuery = '';
 let sessionSearchTimer = 0;
 let fullSessionList: any[] = [];
 let currentSessionId: string | undefined;
+let treeOpen = false;
+let treeEntries: SessionTreeEntryInfo[] = [];
+let treeQuery = '';
+
+function mountNativePanel(panel: HTMLElement): void {
+    const header = document.querySelector('#app > .header');
+    if (header) header.after(panel);
+    else document.getElementById('app')?.prepend(panel);
+}
+
+function renderSessionTree(): void {
+    const previous = document.getElementById('tree-panel');
+    if (!treeOpen) { previous?.remove(); return; }
+    const focused = previous?.querySelector('input[type=search]') === document.activeElement;
+    const checked = (previous?.querySelector('#tree-summarize') as HTMLInputElement | null)?.checked;
+    const instructions = (previous?.querySelector('#tree-instructions') as HTMLTextAreaElement | null)?.value;
+    const panel = buildSessionTreePanel(treeEntries, treeQuery);
+    if (previous) previous.replaceWith(panel); else mountNativePanel(panel);
+    const search = panel.querySelector<HTMLInputElement>('input[type=search]')!;
+    if (checked) panel.querySelector<HTMLInputElement>('#tree-summarize')!.checked = true;
+    if (instructions) panel.querySelector<HTMLTextAreaElement>('#tree-instructions')!.value = instructions;
+    if (focused) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
+    search.addEventListener('input', () => { treeQuery = search.value; renderSessionTree(); });
+    panel.addEventListener('click', event => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
+        if (!button) return;
+        if (button.dataset.action === 'close') { treeOpen = false; panel.remove(); return; }
+        if (button.dataset.action === 'refresh') { vscode.postMessage({ type: 'getSessionTree' }); return; }
+        const row = button.closest<HTMLElement>('[data-entry-id]');
+        if (!row?.dataset.entryId) return;
+        const entryId = row.dataset.entryId;
+        if (button.dataset.action === 'navigate') {
+            historyReplacePending = { from: state.sessionId, rewrite: true };
+            vscode.postMessage({ type: 'navigateSessionTree', entryId, summarize: panel.querySelector<HTMLInputElement>('#tree-summarize')!.checked,
+                instructions: panel.querySelector<HTMLTextAreaElement>('#tree-instructions')!.value || undefined });
+        } else {
+            const input = el('input', 'native-search') as HTMLInputElement; input.value = treeEntries.find(entry => entry.id === entryId)?.label ?? '';
+            input.setAttribute('aria-label', t('tree.label')); row.replaceChildren(input); input.focus();
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Enter') vscode.postMessage({ type: 'labelSessionTree', entryId, label: input.value });
+                else if (event.key === 'Escape') renderSessionTree();
+            });
+        }
+    });
+}
+
+function updateNativeUi(): void {
+    const ui = state.extensionUi;
+    let strip = document.getElementById('extension-status');
+    if (!strip) { strip = el('div', 'extension-status'); strip.id = 'extension-status'; mountNativePanel(strip); }
+    const texts = Object.values(ui?.statuses ?? {});
+    if (ui?.title) texts.unshift(ui.title);
+    if (state.isStreaming && ui?.workingVisible !== false && ui?.workingMessage) texts.unshift(ui.workingMessage);
+    if (!state.isStreaming && state.runOutcome) texts.unshift(t(`run.${state.runOutcome}`));
+    strip.textContent = texts.join(' · '); strip.hidden = !texts.length;
+    const inputContainer = document.querySelector('.input-container');
+    for (const placement of ['aboveEditor', 'belowEditor'] as const) {
+        const id = `extension-widgets-${placement}`;
+        let widgets = document.getElementById(id);
+        if (!widgets) { widgets = el('div', 'extension-widgets'); widgets.id = id; if (placement === 'aboveEditor') inputContainer?.prepend(widgets); else inputContainer?.append(widgets); }
+        const lines = Object.values(ui?.widgets ?? {}).filter(widget => widget.placement === placement).map(widget => widget.lines.join('\n'));
+        widgets.textContent = lines.join('\n'); widgets.hidden = !lines.length;
+    }
+    const dialog = ui?.dialog;
+    let dialogPanel = document.getElementById('extension-dialog');
+    if (!dialog) dialogPanel?.remove();
+    else if (dialogPanel?.dataset.requestId !== dialog.id) {
+        dialogPanel?.remove(); dialogPanel = buildExtensionDialog(dialog); mountNativePanel(dialogPanel);
+        const panel = dialogPanel;
+        const respond = (value?: string, cancelled?: boolean) => vscode.postMessage({ type: 'extensionUiResponse', id: dialog.id, value, cancelled });
+        panel.addEventListener('click', event => {
+            const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
+            if (!button) return;
+            if (button.dataset.value !== undefined) respond(button.dataset.value);
+            else if (button.dataset.action === 'cancel') respond(undefined, true);
+            else respond(dialog.kind === 'confirm' ? 'yes' : panel.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea')?.value);
+        });
+        panel.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.preventDefault(); respond(undefined, true); }
+            else if (event.key === 'Enter' && dialog.kind !== 'editor' && dialog.kind !== 'select') { event.preventDefault(); respond(dialog.kind === 'confirm' ? 'yes' : panel.querySelector<HTMLInputElement>('input')?.value); }
+        });
+        panel.querySelector<HTMLElement>('input, textarea, button')?.focus();
+    }
+    const custom = ui?.custom;
+    let customPanel = document.getElementById('extension-custom');
+    if (!custom) customPanel?.remove();
+    else {
+        if (customPanel?.dataset.requestId !== custom.id) {
+            customPanel?.remove(); customPanel = el('section', 'native-panel extension-custom'); customPanel.id = 'extension-custom'; customPanel.dataset.requestId = custom.id; customPanel.tabIndex = 0; customPanel.setAttribute('aria-label', custom.title);
+            const panel = customPanel;
+            const header = el('strong', 'native-panel-header'); header.textContent = custom.title; panel.appendChild(header);
+            const lines = el('pre', 'native-terminal'); lines.setAttribute('aria-live', 'polite'); panel.appendChild(lines);
+            const input = el('input', 'native-search') as HTMLInputElement; input.placeholder = t('native.input'); input.setAttribute('aria-label', t('native.input')); panel.appendChild(input);
+            const send = (data: string) => vscode.postMessage({ type: 'extensionUiInput', id: custom.id, data, width: Math.max(20, Math.floor(panel.clientWidth / 8)) });
+            const actions = el('div', 'native-actions');
+            for (const [label, data] of [['↑', '\x1b[A'], ['↓', '\x1b[B'], [t('native.enter'), '\r'], [t('native.back'), '\x1b']] as const) {
+                const button = el('button', 'native-option'); button.textContent = label; button.addEventListener('click', () => send(data)); actions.appendChild(button);
+            }
+            const submit = el('button', 'native-option'); submit.textContent = t('native.send'); submit.addEventListener('click', () => { if (input.value) { send(`\x1b[200~${input.value}\x1b[201~`); input.value = ''; send('\r'); } }); actions.appendChild(submit); panel.appendChild(actions);
+            panel.addEventListener('keydown', event => {
+                const codes: Record<string, string> = { ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowLeft: '\x1b[D', ArrowRight: '\x1b[C', Enter: '\r', Escape: '\x1b', Tab: '\t', Backspace: '\x7f' };
+                if (event.target === input && event.key !== 'Enter' && event.key !== 'Escape') return;
+                const data = codes[event.key] ?? (event.key.length === 1 ? event.key : undefined);
+                if (!data) return;
+                event.preventDefault();
+                if (event.target === input && event.key === 'Enter' && input.value) { send(`\x1b[200~${input.value}\x1b[201~`); input.value = ''; }
+                send(data);
+            });
+            mountNativePanel(panel); panel.focus();
+        }
+        customPanel.querySelector('pre')!.textContent = custom.lines.join('\n');
+    }
+    if (ui?.toolsExpanded !== undefined) document.querySelectorAll<HTMLDetailsElement>('.tool-expandable').forEach(card => { card.open = ui.toolsExpanded!; });
+}
 
 // ── Message handling ──
 
@@ -108,6 +228,14 @@ window.addEventListener('message', (event) => {
 
 function handleMessage(msg: ServerMessage): void {
     switch (msg.type) {
+        case 'sessionTree':
+            if (msg.tabId === state.activeTabId) { treeEntries = msg.entries; treeOpen = true; renderSessionTree(); }
+            break;
+        case 'composerText': {
+            const input = document.querySelector<HTMLTextAreaElement>('#input');
+            if (input) { input.value = msg.text; input.dispatchEvent(new Event('input')); input.focus(); }
+            break;
+        }
         case 'ready':
             // Liveness signal only — the getState/getSkills handshake runs at
             // script init (bottom of file), so re-issuing it here would just
@@ -396,6 +524,8 @@ function autosizeInput(input: HTMLTextAreaElement): void {
 }
 
 function applyStateSync(s: SerializedAgentState): void {
+    state.extensionUi = s.extensionUi;
+    state.runOutcome = s.runOutcome;
     const prevTab = state.activeTabId;
     // Unchanged message lists are omitted from the frame (T16); keep ours.
     state.messages = s.messages ?? state.messages;
@@ -432,6 +562,8 @@ function applyStateSync(s: SerializedAgentState): void {
     // Transient cards live in the per-tab streaming area; they are wiped on a
     // tab switch and must not resurrect on a later langChanged.
     if (tabSwitched) {
+        treeOpen = false;
+        treeEntries = [];
         state.pendingApprovals = [];
         state.applyPreviews = [];
         state.compactionBusy = false;
@@ -478,6 +610,7 @@ function applyStateSync(s: SerializedAgentState): void {
         }
         updateScrollButton();
     }
+    updateNativeUi();
 }
 
 function handleAgentEvent(event: any): void {
@@ -529,6 +662,8 @@ function handleAgentEvent(event: any): void {
             removeRetryPlaceholder();
             break;
         case 'agent_settled':
+            state.runOutcome = getRunOutcome(event.aborted === true, state.messages);
+            updateNativeUi();
             state.isStreaming = false;
             clearStreamingState();
             removeRetryPlaceholder();
@@ -661,6 +796,8 @@ function render(): void {
         </button>
     `;
     railRow.appendChild(headerActions);
+    const treeButton = el('button', 'icon-btn'); treeButton.id = 'btn-tree'; treeButton.textContent = '⑂'; treeButton.title = t('tree.title'); treeButton.setAttribute('aria-label', t('tree.title')); headerActions.appendChild(treeButton);
+    const mcpButton = el('button', 'icon-btn'); mcpButton.id = 'btn-mcp'; mcpButton.textContent = 'MCP'; mcpButton.title = 'MCP'; headerActions.appendChild(mcpButton);
     header.appendChild(railRow);
     app.appendChild(header);
 
@@ -759,6 +896,8 @@ function render(): void {
     updateSelectionChip();
     updateImageChips();
     updateOccupancyBanner();
+    if (treeOpen) renderSessionTree();
+    updateNativeUi();
     scrollToBottom();
 }
 
@@ -1301,12 +1440,13 @@ function removePreparingPlaceholder(): void {
 }
 
 function showPreparingPlaceholder(): void {
+    if (state.extensionUi?.workingVisible === false) return;
     const container = document.getElementById('streaming-message');
     if (!container) return;
     if (document.getElementById('preparing-placeholder')) return;
     const ph = el('div', 'preparing-placeholder');
     ph.id = 'preparing-placeholder';
-    ph.textContent = t('stream.preparing');
+    ph.textContent = state.extensionUi?.workingMessage ?? t('stream.preparing');
     container.appendChild(ph);
     scrollToBottom();
 }
@@ -1405,8 +1545,16 @@ function resetStreamingBubble(): void {
 // ── Tool rendering ──
 
 function renderToolStart(event: any): void {
-    const container = document.getElementById('streaming-message');
+    let container = document.getElementById('streaming-message');
     if (!container) return;
+    if (event.parentToolCallId) {
+        const parent = document.getElementById(`tool-${event.parentToolCallId}`);
+        if (parent) {
+            let nested = parent.querySelector<HTMLElement>(':scope > .nested-tools, :scope > .tool-body > .nested-tools');
+            if (!nested) { nested = el('div', 'nested-tools'); (parent.querySelector('.tool-body') ?? parent).appendChild(nested); }
+            container = nested;
+        }
+    }
 
     if ((event.toolName === 'edit' || event.toolName === 'write') && event.args?.path) {
         const card = el('div', 'diff-card loading');
@@ -1451,20 +1599,20 @@ function renderToolUpdate(event: any): void {
     const card = document.getElementById(`tool-${event.toolCallId}`);
     if (!card) return;
     if (card.classList.contains('diff-card')) return;
-    const text = extractToolResultText(event.partialResult);
-    if (!text) return;
-    let resultEl = card.querySelector('.tool-result') as HTMLElement | null;
-    if (!resultEl) {
-        resultEl = el('pre', 'tool-result');
-        card.appendChild(resultEl);
-    }
-    resultEl.textContent = text;
+    const output = buildToolOutput(event.partialResult, state.imageCache);
+    const previous = card.querySelector(':scope > .tool-output');
+    if (previous) previous.replaceWith(output); else card.appendChild(output);
+    bindToolClickable();
     scrollToBottom();
 }
 
 function renderToolEnd(event: any): void {
     const card = document.getElementById(`tool-${event.toolCallId}`);
     if (!card) return;
+    if (typeof event.durationMs === 'number') {
+        const duration = el('span', 'tool-duration'); duration.textContent = formatDuration(event.durationMs); duration.title = t('tool.duration', { time: formatDuration(event.durationMs) });
+        card.querySelector('.tool-header, .diff-file-header')?.appendChild(duration);
+    }
 
     if (card.classList.contains('diff-card')) {
         const statusEl = card.querySelector('.tool-status');
@@ -1478,7 +1626,9 @@ function renderToolEnd(event: any): void {
     const toolName = (card as HTMLElement).dataset.toolName ?? '';
     const text = extractToolResultText(event.result);
     const isBash = toolName.toLowerCase() === 'bash';
-    const hasBody = !!(text || isBash);
+    const output = buildToolOutput(event.result, state.imageCache);
+    const nested = card.querySelector<HTMLElement>(':scope > .nested-tools');
+    const hasBody = !!(output.children.length || isBash || nested);
 
     if (hasBody) {
         const details = document.createElement('details');
@@ -1507,10 +1657,9 @@ function renderToolEnd(event: any): void {
         details.querySelector('summary')?.appendChild(arrow);
 
         const body = el('div', 'tool-body');
-        const resultEl = el('pre', 'tool-result');
-        resultEl.textContent = text || t('tool.noOutput');
-        if (!text) resultEl.classList.add('empty');
-        body.appendChild(resultEl);
+        if (!output.children.length && !nested) { const empty = el('pre', 'tool-result empty'); empty.textContent = t('tool.noOutput'); output.appendChild(empty); }
+        body.appendChild(output);
+        if (nested) body.appendChild(nested);
         details.appendChild(body);
 
         card.replaceWith(details);
@@ -2129,11 +2278,17 @@ function bindStableEvents(): void {
         autosizeInput(input);
         updateSlashMenu(input);
         updateMentionMenu(input);
+        vscode.postMessage({ type: 'composerChanged', text: input.value });
     });
 
     newTabBtn?.addEventListener('click', () => vscode.postMessage({ type: 'createTab' }));
     sessionsBtn?.addEventListener('click', () => openSessionList());
     settingsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
+    document.getElementById('btn-tree')?.addEventListener('click', () => {
+        if (treeOpen) { treeOpen = false; document.getElementById('tree-panel')?.remove(); }
+        else vscode.postMessage({ type: 'getSessionTree' });
+    });
+    document.getElementById('btn-mcp')?.addEventListener('click', () => vscode.postMessage({ type: 'openMcp' }));
 
     const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
     fileInput?.addEventListener('change', () => {
@@ -2441,6 +2596,10 @@ function bindHunkApplyButtons(): void {
 }
 
 function bindToolClickable(): void {
+    document.querySelectorAll<HTMLButtonElement>('.tool-full-output:not([data-click-bound])').forEach(button => {
+        button.dataset.clickBound = '1';
+        button.addEventListener('click', () => { if (button.dataset.filepath) vscode.postMessage({ type: 'openFile', filePath: button.dataset.filepath }); });
+    });
     document.querySelectorAll('.tool-clickable:not([data-click-bound])').forEach((card) => {
         card.setAttribute('data-click-bound', '1');
         const headerEl = card.querySelector('.tool-header') as HTMLElement | null;

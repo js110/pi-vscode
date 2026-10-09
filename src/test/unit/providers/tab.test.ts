@@ -72,6 +72,13 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
         cycleThinkingLevel: () => 'off',
         compact: vi.fn(async () => {}),
         getSkills: () => [],
+        getCommands: () => [],
+        getCurrentSessionPath: () => undefined,
+        executeBuiltinCommand: vi.fn(async () => ({})),
+        getSessionTree: vi.fn(() => []),
+        navigateSessionTree: vi.fn(async () => ({})),
+        labelSessionTree: vi.fn(),
+        openMcp: vi.fn(async () => {}),
         dispose: vi.fn(async () => {}),
         ...overrides,
     } as any;
@@ -1202,13 +1209,13 @@ describe('TabManager built-in slash command dispatch', () => {
         expect(sent).toBeDefined();
     });
 
-    it('opens settings for /settings and /login', async () => {
-        const { adapters, manager } = await setup();
+    it('opens settings for /settings and dispatches native login separately', async () => {
+        const { tab, adapters, manager } = await setup();
         await manager.dispatch({ type: 'prompt', text: '/settings' });
         expect(adapters.ui.openSettings).toHaveBeenCalledTimes(1);
         await manager.dispatch({ type: 'prompt', text: '/login' });
-        expect(adapters.ui.openSettings).toHaveBeenCalledTimes(2);
-        expect(adapters.ui.showMessage).toHaveBeenCalled();
+        expect(adapters.ui.openSettings).toHaveBeenCalledTimes(1);
+        expect(tab.session.executeBuiltinCommand).toHaveBeenCalledWith('login', '');
     });
 
     it('copies the last assistant reply for /copy', async () => {
@@ -1229,13 +1236,30 @@ describe('TabManager built-in slash command dispatch', () => {
         expect(adapters.ui.showMessage).toHaveBeenCalled();
     });
 
-    it('reports unsupported builtins instead of prompting', async () => {
+    it('executes tree natively instead of prompting', async () => {
         const { tab, adapters, manager } = await setup();
         await manager.dispatch({ type: 'prompt', text: '/tree' });
         expect(tab.session.prompt).not.toHaveBeenCalled();
-        expect(adapters.ui.showMessage).toHaveBeenCalledWith(
-            expect.stringContaining('/tree'),
-        );
+        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'sessionTree', tabId: manager.activeTab!.id, entries: [] });
+    });
+
+    it.each(['prompt', 'steer', 'followUp', 'queueMessage'] as const)('intercepts reload on the %s entry point', async type => {
+        const { tab, manager } = await setup();
+        await manager.dispatch({ type, text: '/reload' });
+        expect(tab.session.executeBuiltinCommand).toHaveBeenCalledWith('reload', '');
+        expect(tab.session.prompt).not.toHaveBeenCalled();
+        expect(tab.session.steer).not.toHaveBeenCalled();
+        expect(tab.session.followUp).not.toHaveBeenCalled();
+    });
+
+    it('refreshes the transcript, command menu, and draft after tree navigation', async () => {
+        const { adapters, manager } = await setup({ navigateSessionTree: vi.fn(async () => ({ changed: true, editorText: 'branch draft' })) });
+        const stateChanged = vi.fn();
+        manager.onStateChange(stateChanged);
+        await manager.dispatch({ type: 'navigateSessionTree', entryId: 'branch', summarize: false });
+        expect(stateChanged).toHaveBeenCalled();
+        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'skills', skills: [], commands: [] });
+        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'composerText', text: 'branch draft' });
     });
 
     it('falls through to the normal prompt for unknown slash commands', async () => {

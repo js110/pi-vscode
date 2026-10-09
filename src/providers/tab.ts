@@ -37,11 +37,12 @@ import {
     parseBuiltinSlashCommand,
 } from '../shared/slash-commands';
 import { collectAndReplaceImages } from '../shared/message-assets';
-import { buildSessionMarkdown, suggestedExportFileName } from '../shared/session-export';
+import { buildSessionMarkdown } from '../shared/session-export';
 import { SessionLockManager, LOCK_HEARTBEAT_MS, type SessionLockDeps } from '../pi/session-lock';
 import { parseUnifiedHunks, applyHunkSelection, applyHunkSelectionToNew } from '../shared/unified-hunks';
 import type { SessionPins } from '../utils/session-pins';
 import { inMemorySessionPins } from '../utils/session-pins';
+import { getRunOutcome, type RunOutcome } from '../shared/run-outcome';
 import { probeSessionFile, readSessionChunk, findSnippet, trashSessionFile } from '../utils/session-files';
 
 export interface Tab {
@@ -199,6 +200,7 @@ type TabState = Tab & {
     autoNamed: boolean;
     /** Latest Pi cache-warming decision (SDK 0.86+; absent on older copies). */
     cacheWarmingDecision?: import('../shared/protocol').CacheWarmingDecisionInfo;
+    runOutcome?: RunOutcome;
 };
 
 export class TabManager {
@@ -427,6 +429,7 @@ export class TabManager {
             state.queuedMessages = tab.queuedMessages.map(({ text, kind }) => ({ text, kind }));
         }
         state.compactionPrompt = tab.compactionPrompt;
+        state.runOutcome = tab.runOutcome;
         state.supportsImages = tab.session.supportsImages();
         if (tab.cacheWarmingDecision) {
             state.cacheWarmingDecision = tab.cacheWarmingDecision;
@@ -518,6 +521,9 @@ export class TabManager {
         );
 
         this._tabSubscriptions.set(tab.id, unsubs);
+        // Startup extensions may ask a question. Publish the tab before binding UI,
+        // and never block initialize(): responses must be able to dispatch.
+        if (tab.session.activateExtensionUi) void tab.session.activateExtensionUi().catch((error: unknown) => this._adapters.ui.showMessage(String(error)));
     }
 
     private _unsubscribeTab(tabId: string): void {
@@ -598,9 +604,34 @@ export class TabManager {
     }
 
     private _handleTabEvent(tab: any, event: any): void {
+        if (event.type === 'extension_resources_changed') {
+            if (tab.id === this._activeTabId) {
+                this._adapters.transport.post({ type: 'skills', skills: tab.session.getSkills(), commands: tab.session.getCommands() });
+                this._emitStateChange();
+            }
+            return;
+        }
+        if (event.type === 'extension_ui_changed') {
+            if (tab.id === this._activeTabId) this._emitStateChange();
+            return;
+        }
+        if (event.type === 'extension_notification') {
+            if (tab.id === this._activeTabId) this._adapters.ui.showMessage(event.message);
+            else tab.hasNotification = true;
+            return;
+        }
+        if (event.type === 'extension_composer') {
+            if (tab.id === this._activeTabId) this._adapters.transport.post({ type: 'composerText', text: event.text });
+            return;
+        }
+        if (event.type === 'native_session_changed') {
+            void this._syncNativeSession(tab).catch(error => this._adapters.ui.showMessage(String(error)));
+            return;
+        }
         const isActive = tab.id === this._activeTabId;
 
         if (event.type === 'agent_start') {
+            tab.runOutcome = undefined;
             tab.isStreaming = true;
             tab.streamingText = '';
             tab.streamingThinking = '';
@@ -692,14 +723,17 @@ export class TabManager {
         }
 
         if (event.type === 'agent_settled') {
+            tab.runOutcome = getRunOutcome(event.aborted === true, tab.session.getMessages());
             this._resetStreaming(tab);
             if (isActive) {
                 this._adapters.transport.setContext('pi-agent.isStreaming', false);
             } else {
                 tab.hasNotification = true;
             }
-            this._adapters.agent.notifyAgentDone?.(tab.name, tab.lastTurnDurationSec, isActive);
-            void this._maybeAutoName(tab);
+            if (tab.runOutcome === 'completed') {
+                this._adapters.agent.notifyAgentDone?.(tab.name, tab.lastTurnDurationSec, isActive);
+                void this._maybeAutoName(tab);
+            }
         }
 
         if (event.type === 'queue_update') {
@@ -902,6 +936,28 @@ export class TabManager {
         await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) return;
+        if (msg.type === 'extensionUiResponse') { tab.session.extensionUi.respond(msg.id, msg.cancelled ? undefined : msg.value); return; }
+        if (msg.type === 'extensionUiInput') { tab.session.extensionUi.input(msg.id, msg.data, msg.width); return; }
+        if (msg.type === 'extensionUiClose') { tab.session.extensionUi.close(msg.id); return; }
+        if (msg.type === 'composerChanged') { tab.session.extensionUi?.updateComposer(msg.text); return; }
+        if (msg.type === 'getSessionTree') { this._postSessionTree(tab); return; }
+        if (msg.type === 'navigateSessionTree' || msg.type === 'labelSessionTree' || msg.type === 'openMcp') {
+            if (tab.isStreaming || tab.compactionInFlight || this._isReadOnlyLocked(tab)) {
+                this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: msg.type === 'openMcp' ? 'mcp' : 'tree' }));
+                return;
+            }
+            try {
+                if (msg.type === 'openMcp') await tab.session.openMcp();
+                else if (msg.type === 'labelSessionTree') { tab.session.labelSessionTree(msg.entryId, msg.label); this._postSessionTree(tab); }
+                else {
+                    const result = await tab.session.navigateSessionTree(msg.entryId, msg.summarize, msg.instructions);
+                    if (result.changed) await this._syncNativeSession(tab);
+                    if (result.editorText !== undefined) this._adapters.transport.post({ type: 'composerText', text: result.editorText });
+                    this._postSessionTree(tab);
+                }
+            } catch (error) { this._adapters.transport.post({ type: 'error', message: humanizeErrorMessage(error) ?? String(error) }); }
+            return;
+        }
 
         switch (msg.type) {
             case 'prompt': {
@@ -1087,7 +1143,7 @@ export class TabManager {
                 this._emitStateChange();
                 break;
             case 'newSession':
-                await tab.session.newSession();
+                if (await tab.session.newSession() === false) break;
                 if (tab.lock) {
                     await tab.lock.release();
                 }
@@ -1108,7 +1164,7 @@ export class TabManager {
                 this._emitStateChange();
                 break;
             case 'loadSession':
-                await tab.session.loadSession(msg.sessionPath);
+                if (await tab.session.loadSession(msg.sessionPath) === false) break;
                 if (tab.lock) {
                     await tab.lock.adopt(msg.sessionPath);
                 }
@@ -1133,7 +1189,7 @@ export class TabManager {
                 const targetPath = msg.sessionPath;
                 if (targetPath && currentPath !== targetPath) {
                     // 方案B：加载目标会话后改名，并停留在该会话
-                    await tab.session.loadSession(targetPath);
+                    if (await tab.session.loadSession(targetPath) === false) break;
                     if (tab.lock) {
                         await tab.lock.adopt(targetPath);
                     }
@@ -1514,7 +1570,12 @@ export class TabManager {
         tab.diffManager.setCurrentTurn(turnIdx);
         tab.pendingPromptTurns.push(turnIdx);
         try {
-            await tab.session.prompt(text, images);
+            const sessionId = tab.session.getSessionId();
+            const disposition = await tab.session.prompt(text, images);
+            if (disposition === 'handled') {
+                tab.pendingPromptTurns = tab.pendingPromptTurns.filter(turn => turn !== turnIdx);
+                if (tab.turnCounter === turnIdx && sessionId === tab.session.getSessionId()) tab.turnCounter--;
+            }
         } catch (err) {
             // The turn never ran: release its index so the next prompt
             // reuses it (checkpoint/rollback math counts user turns).
@@ -1730,6 +1791,7 @@ export class TabManager {
             return true;
         }
         const { name, args } = input;
+        if (name === 'tree' && !args) { this._postSessionTree(tab); return true; }
         // `name` is now SupportedBuiltinCommandName; the exhaustiveness check in
         // the default branch forces a handler whenever the support matrix in
         // shared/slash-commands.ts gains a new native command.
@@ -1761,10 +1823,24 @@ export class TabManager {
                 await this.newSession();
                 return true;
             case 'model':
+                if (args) {
+                    const model = tab.session.getModels().find(model => `${model.provider}/${model.id}` === args || model.id === args);
+                    if (!model) {
+                        this._adapters.ui.showMessage(`Unknown Pi model: ${args}`);
+                        return true;
+                    }
+                    await tab.session.setModel(model.provider, model.id);
+                    this._emitStateChange();
+                    return true;
+                }
                 await this.selectModel();
                 return true;
             case 'thinking': {
                 const requested = args.toLowerCase();
+                if (requested && !tab.session.getAvailableThinkingLevels().includes(requested)) {
+                    this._adapters.ui.showMessage(`Unknown thinking level: ${args}`);
+                    return true;
+                }
                 if (requested && tab.session.getAvailableThinkingLevels().includes(requested)) {
                     tab.session.setThinkingLevel(requested);
                     this._emitStateChange();
@@ -1803,10 +1879,6 @@ export class TabManager {
             case 'settings':
                 this._adapters.ui.openSettings();
                 return true;
-            case 'login':
-                this._adapters.ui.openSettings();
-                this._adapters.ui.showMessage(t('slash.loginHint'));
-                return true;
             case 'copy': {
                 const lastReply = extractLastAssistantText(tab.session.getMessages());
                 if (!lastReply) {
@@ -1820,29 +1892,57 @@ export class TabManager {
             case 'session':
                 this._adapters.ui.showMessage(this._buildSessionInfo(tab));
                 return true;
-            case 'export': {
-                // Read-only — allowed mid-stream. Renders the serialized SDK
-                // messages to Markdown and lets the host pick a destination.
-                const messages = tab.session.getMessages();
-                if (messages.length === 0) {
-                    this._adapters.ui.showMessage(t('export.empty'));
+            case 'quit':
+                await tab.session.abort();
+                if (this._tabs.size > 1) await this._closeTab(tab.id);
+                else await tab.session.executeBuiltinCommand(name, args);
+                return true;
+            case 'export':
+            case 'reload':
+            case 'tree':
+            case 'fork':
+            case 'clone':
+            case 'import':
+            case 'scoped-models':
+            case 'logout':
+            case 'login':
+            case 'trust':
+            case 'share':
+            case 'bug':
+            case 'changelog':
+            case 'hotkeys': {
+                if (tab.isStreaming || tab.compactionInFlight) {
+                    this._adapters.ui.showMessage(t('slash.blockedStreaming', { name }));
                     return true;
                 }
-                const model = tab.session.getCurrentModel();
-                const markdown = buildSessionMarkdown(messages, {
-                    name: tab.session.getSessionName() ?? tab.name,
-                    model: model ? (model.name ?? model.id) : undefined,
-                    exportedAtMs: Date.now(),
-                });
-                const fileName = suggestedExportFileName(
-                    tab.session.getSessionName() ?? tab.name,
-                    Date.now(),
-                );
+                if (this._isReadOnlyLocked(tab)) {
+                    this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
+                    return true;
+                }
                 try {
-                    await this._adapters.agent.exportSession?.(markdown, fileName);
-                } catch (err) {
-                    const detail = humanizeErrorMessage(err) ?? (err instanceof Error ? err.message : String(err));
-                    this._adapters.ui.showMessage(t('export.failed', { message: detail }));
+                    const result = await tab.session.executeBuiltinCommand(name, args);
+                    if (result.changed) {
+                        const sessionPath = tab.session.getCurrentSessionPath();
+                        if (sessionPath && tab.lock) await tab.lock.adopt(sessionPath);
+                        if (['tree', 'fork', 'clone', 'import'].includes(name)) {
+                            tab.diffManager.clearAll();
+                            tab.checkpointManager.clearAll();
+                            tab.suspendedMessages = [];
+                            tab.messageMeta.clear();
+                            tab.imageAssets.clear();
+                            tab.imageData.clear();
+                            tab.compactionStage = 'none';
+                            tab.compactionPrompt = null;
+                            tab.queuedMessages = [];
+                        }
+                        tab.messagesDirty = true;
+                        this._updateTabName(tab);
+                        this._emitStateChange();
+                        this._adapters.transport.post({ type: 'skills', skills: tab.session.getSkills(), commands: tab.session.getCommands() });
+                    }
+                    if (result.editorText !== undefined) this._adapters.transport.post({ type: 'composerText', text: result.editorText });
+                } catch (error) {
+                    this._adapters.transport.post({ type: 'error', message: humanizeErrorMessage(error) ?? String(error) });
                 }
                 return true;
             }
@@ -1851,6 +1951,32 @@ export class TabManager {
                 this._adapters.ui.showMessage(t('slash.unsupported', { name: exhaustive }));
                 return true;
             }
+        }
+    }
+
+    private _postSessionTree(tab: TabState): void {
+        this._adapters.transport.post({ type: 'sessionTree', tabId: tab.id, entries: tab.session.getSessionTree() });
+    }
+
+    private async _syncNativeSession(tab: TabState): Promise<void> {
+        const sessionPath = tab.session.getCurrentSessionPath();
+        if (sessionPath && tab.lock) await tab.lock.adopt(sessionPath);
+        tab.diffManager.clearAll();
+        tab.checkpointManager.clearAll();
+        tab.suspendedMessages = [];
+        tab.messageMeta.clear();
+        tab.imageAssets.clear();
+        tab.imageData.clear();
+        tab.compactionStage = 'none';
+        tab.compactionPrompt = null;
+        tab.queuedMessages = [];
+        tab.runOutcome = undefined;
+        tab.turnCounter = tab.session.getMessages().filter(message => message.role === 'user').length;
+        tab.messagesDirty = true;
+        this._updateTabName(tab);
+        if (tab.id === this._activeTabId) {
+            this._emitStateChange();
+            this._adapters.transport.post({ type: 'skills', skills: tab.session.getSkills(), commands: tab.session.getCommands() });
         }
     }
 

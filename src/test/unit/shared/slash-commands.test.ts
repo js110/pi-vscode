@@ -111,15 +111,28 @@ describe('support matrix', () => {
     const EXPECTED_NATIVE = [
         'settings',
         'model',
+        'tree',
         'thinking',
+        'scoped-models',
+        'export',
+        'import',
+        'share',
+        'bug',
         'copy',
         'name',
         'session',
-        'export',
+        'changelog',
+        'hotkeys',
+        'fork',
+        'clone',
+        'trust',
         'login',
+        'logout',
         'new',
         'compact',
         'resume',
+        'reload',
+        'quit',
     ];
 
     it('marks exactly the host-executable commands as native', () => {
@@ -129,14 +142,13 @@ describe('support matrix', () => {
 
     it('resolves support by name', () => {
         expect(isSupportedBuiltinSlashCommandName('compact')).toBe(true);
-        expect(isSupportedBuiltinSlashCommandName('tree')).toBe(false);
+        expect(isSupportedBuiltinSlashCommandName('tree')).toBe(true);
         expect(isSupportedBuiltinSlashCommandName('not-a-command')).toBe(false);
     });
 
-    it('keeps the unsupported mirror entries advertised but not native', () => {
+    it('supports every mirrored native command', () => {
         const unsupported = BUILTIN_COMMANDS.filter((c) => c.support === 'unsupported').map((c) => c.name);
-        expect(unsupported).toContain('tree');
-        expect(unsupported).toContain('quit');
+        expect(unsupported).toEqual([]);
         for (const name of unsupported) {
             expect(isSupportedBuiltinSlashCommandName(name)).toBe(false);
         }
@@ -159,12 +171,12 @@ describe('classifySlashInput', () => {
         });
     });
 
-    it('classifies an unsupported builtin without handing it to the model', () => {
+    it('classifies tree as a host command without handing it to the model', () => {
         expect(classifySlashInput('/tree')).toEqual({
             kind: 'builtin',
             name: 'tree',
             args: '',
-            supported: false,
+            supported: true,
         });
     });
 });

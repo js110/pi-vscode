@@ -121,6 +121,8 @@ export interface QueuedMessage {
 }
 
 export interface SerializedAgentState {
+    runOutcome?: 'completed' | 'cancelled' | 'failed';
+    extensionUi?: ExtensionUiState;
     /** Omitted when unchanged since the last frame (T16 incremental stateSync). */
     messages?: any[];
     model?: { provider: string; id: string; name?: string };
@@ -147,6 +149,36 @@ export interface SerializedAgentState {
     occupancy?: SessionOccupancy;
     cacheWarmingStatus?: CacheWarmingStatusInfo;
     cacheWarmingDecision?: CacheWarmingDecisionInfo;
+}
+
+export interface SessionTreeEntryInfo {
+    id: string;
+    parentId: string | null;
+    depth: number;
+    kind: string;
+    text: string;
+    label?: string;
+    timestamp?: string;
+    current: boolean;
+}
+
+export interface ExtensionUiDialog {
+    id: string;
+    kind: 'select' | 'confirm' | 'input' | 'editor';
+    title: string;
+    message?: string;
+    options?: string[];
+    value?: string;
+}
+export interface ExtensionUiState {
+    statuses: Record<string, string>;
+    widgets: Record<string, { lines: string[]; placement: 'aboveEditor' | 'belowEditor' }>;
+    workingMessage?: string;
+    workingVisible?: boolean;
+    title?: string;
+    toolsExpanded?: boolean;
+    dialog?: ExtensionUiDialog;
+    custom?: { id: string; lines: string[]; title: string };
 }
 
 export interface ModelInfo {
@@ -206,6 +238,14 @@ export interface PiConfigSnapshot {
 
 // Webview -> Extension messages
 export type ClientMessage =
+    | { type: 'getSessionTree' }
+    | { type: 'navigateSessionTree'; entryId: string; summarize: boolean; instructions?: string }
+    | { type: 'labelSessionTree'; entryId: string; label: string }
+    | { type: 'openMcp' }
+    | { type: 'extensionUiResponse'; id: string; value?: string; cancelled?: boolean }
+    | { type: 'extensionUiInput'; id: string; data: string; width?: number }
+    | { type: 'extensionUiClose'; id: string }
+    | { type: 'composerChanged'; text: string }
     | { type: 'prompt'; text: string; images?: string[]; mentions?: string[]; attachContents?: { name: string; content: string }[]; bypassSlashCommands?: boolean }
     /** Roll the session back to the start of `turn` (user-turn ordinal) and
      *  send `text` as the replacement prompt (edit / regenerate). */
@@ -311,6 +351,8 @@ export interface SelectionContextInfo {
 }
 
 export type ServerMessage =
+    | { type: 'sessionTree'; tabId: string; entries: SessionTreeEntryInfo[] }
+    | { type: 'composerText'; text: string }
     | { type: 'ready' }
     | { type: 'stateSync'; state: SerializedAgentState; images?: Record<string, string> }
     | { type: 'selectionChanged'; selection: SelectionContextInfo | null }

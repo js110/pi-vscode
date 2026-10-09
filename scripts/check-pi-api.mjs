@@ -96,6 +96,17 @@ checkStatic('ModelRuntime', 'create');
 ['setRuntimeApiKey', 'removeRuntimeApiKey', 'completeSimple', 'getAvailableSnapshot']
     .forEach((m) => checkProto('ModelRuntime', m));
 checkProto('DefaultResourceLoader', 'reload');
+if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.0.0')) {
+    ['AgentSessionRuntime', 'createAgentSessionServices', 'createAgentSessionFromServices', 'ProjectTrustStore'].forEach(checkExport);
+    ['fork', 'importFromJsonl', 'setRebindSession', 'newSession', 'switchSession', 'dispose'].forEach(m => checkProto('AgentSessionRuntime', m));
+    ['reload', 'navigateTree', 'getUserMessagesForForking', 'exportToHtml', 'exportToJsonl', 'setScopedModels', 'bindExtensions', 'waitForIdle'].forEach(m => checkProto('AgentSession', m));
+    ['getTree', 'getLeafId', 'getCwd', 'getEntry', 'appendLabelChange'].forEach(m => checkProto('SessionManager', m));
+    ['getCommand', 'createCommandContext'].forEach(m => checkProto('ExtensionRunner', m));
+    ['Theme', 'initTheme'].forEach(checkExport);
+    ['login', 'logout', 'listCredentials', 'getProviders', 'getProvider', 'getAvailableSnapshot'].forEach(m => checkProto('ModelRuntime', m));
+    checkProto('ProjectTrustStore', 'set');
+    checkProto('SettingsManager', 'setEnabledModels');
+}
 
 // --- Version-gated APIs (cache warming, SDK 0.86.0+) ---
 // The pinned bundled copy (0.84.4) predates cache warming, and the extension

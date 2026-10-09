@@ -9,7 +9,6 @@ import { customSkinPathSync } from '../utils/custom-skin';
 import { avatarInfoSync, type AvatarSlot } from '../utils/custom-avatar';
 import { t } from '../shared/i18n';
 import { humanizeErrorMessage } from '../shared/error-copy';
-import { parseBuiltinSlashCommand } from '../shared/slash-commands';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
@@ -167,7 +166,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             if (
                 (msg.type === 'prompt' || msg.type === 'queueMessage')
                 && !mentions
-                && !parseBuiltinSlashCommand(msg.text)
+                && !msg.text.trimStart().startsWith('/')
                 && this._selectionTracker
             ) {
                 priorSelection = this._selectionTracker.current;

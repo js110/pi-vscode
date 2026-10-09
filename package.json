@@ -2,7 +2,7 @@
   "name": "piByue",
   "displayName": "pi Agent By js",
   "description": "A first-class VS Code interface powered by the native Pi coding agent SDK.",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "publisher": "jiangsheng666",
   "license": "MIT",
   "repository": {
@@ -236,7 +236,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Restrict which tools the agent can use. Leave empty to allow all tools."
+          "description": "Pi tool selection: names or patterns (read, mcp__*), or adjust defaults (+codemode, -write). Leave empty to use Pi defaults. Applies to new sessions."
         },
         "pi-agent.autoSaveSessions": {
           "type": "boolean",
@@ -339,7 +339,7 @@
     "test:all": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.87.1",
+    "@earendil-works/pi-coding-agent": "^1.1.0",
     "highlight.js": "^11.12.0",
     "marked": "^18.0.11"
   },

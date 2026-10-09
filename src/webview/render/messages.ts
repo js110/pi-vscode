@@ -33,6 +33,7 @@ import {
     renderDiffLines,
 } from '../../shared/webview-text';
 import { el, escHtml } from '../dom';
+import { toImageDataUrl } from '../../shared/message-assets';
 
 // ── Markdown rendering ──
 //
@@ -237,6 +238,10 @@ export function buildDiffCard(change: FileChangeInfo, msg?: any): HTMLElement {
             ${change.isNew ? `<span class="diff-new-badge">${escHtml(t('diff.new'))}</span>` : ''}
         </div>
     `;
+
+    if (typeof msg?.durationMs === 'number') {
+        const duration = el('span', 'tool-duration'); duration.textContent = formatDuration(msg.durationMs); card.querySelector('.diff-file-header')?.appendChild(duration);
+    }
 
 if (change.diff) {
         const diffView = el('div', 'diff-view');
@@ -449,7 +454,7 @@ function buildMessage(msg: any, index: number, turnNumber: number | undefined, c
                 return buildDiffCard(matchingChange, msg);
             }
         }
-        return buildToolCard(msg, { allMessages: ctx.messages, msgIndex: index, approvalTraces: ctx.approvalTraces });
+        return buildToolCard(msg, { allMessages: ctx.messages, msgIndex: index, approvalTraces: ctx.approvalTraces, imageCache: ctx.imageCache });
     }
 
     if (role === 'user') {
@@ -637,6 +642,7 @@ function findToolCallInMessages(messages: any[], beforeIndex: number, toolCallId
 
 function buildToolFooter(msg: any, allMessages: any[], msgIndex: number): HTMLElement | null {
     const parts: string[] = [];
+    if (typeof msg.durationMs === 'number') parts.push(t('tool.duration', { time: formatDuration(msg.durationMs) }));
     const ts = msg.timestamp;
     if (ts) parts.push(formatTimestamp(ts));
 
@@ -669,6 +675,49 @@ export interface ToolCardContext {
     allMessages: any[];
     msgIndex: number;
     approvalTraces: Map<string, ApprovalScope>;
+    imageCache?: Record<string, string>;
+}
+
+export function formatDuration(durationMs: number): string {
+    if (!Number.isFinite(durationMs) || durationMs < 0) return '';
+    return durationMs < 1000 ? `${Math.round(durationMs)} ms` : `${(durationMs / 1000).toFixed(1)} s`;
+}
+
+/** Preserve separate output items, inline images, and Pi codemode's persisted calls. */
+export function buildToolOutput(result: any, imageCache: Record<string, string> = {}): HTMLElement {
+    const output = el('div', 'tool-output');
+    const content = Array.isArray(result?.content) ? result.content : typeof result?.content === 'string' ? [{ type: 'text', text: result.content }] : [];
+    for (const item of content) {
+        if (item?.type === 'text' && typeof item.text === 'string') {
+            const text = el('pre', 'tool-result'); text.textContent = item.text; output.appendChild(text);
+        } else if (item?.type === 'image' || item?.type === 'image_url') {
+            const src = typeof item.assetId === 'string' ? imageCache[item.assetId] : typeof item.data === 'string' ? toImageDataUrl(item.data, item.mimeType) : undefined;
+            if (src?.startsWith('data:image/')) {
+                const image = el('img', 'message-image tool-image') as HTMLImageElement;
+                image.src = src; image.alt = 'Pi'; image.loading = 'lazy'; output.appendChild(image);
+            }
+        }
+    }
+    if (Array.isArray(result?.details?.calls) && result.details.calls.length) {
+        const calls = el('div', 'codemode-calls'); calls.setAttribute('aria-label', t('tool.calls'));
+        for (const call of result.details.calls) {
+            const row = document.createElement('details'); row.className = 'codemode-call';
+            const summary = document.createElement('summary');
+            const name = el('span'); name.textContent = String(call.name ?? '');
+            const status = el('span', `tool-status ${call.status === 'error' ? 'error' : call.status === 'running' ? 'running' : 'done'}`); status.textContent = call.status === 'cancelled' ? t('run.cancelled') : call.status === 'error' ? t('tool.error') : call.status === 'running' ? t('tool.running') : t('tool.done');
+            summary.append(name, status);
+            if (typeof call.durationMs === 'number') { const duration = el('span', 'tool-duration'); duration.textContent = formatDuration(call.durationMs); summary.appendChild(duration); }
+            row.appendChild(summary);
+            const args = el('pre', 'tool-result'); args.textContent = String(call.args ?? ''); row.appendChild(args);
+            if (call.error) { const error = el('pre', 'tool-result'); error.textContent = String(call.error); row.appendChild(error); }
+            calls.appendChild(row);
+        }
+        output.appendChild(calls);
+    }
+    if (typeof result?.details?.fullOutputPath === 'string') {
+        const button = el('button', 'native-option tool-full-output'); button.dataset.filepath = result.details.fullOutputPath; button.textContent = t('tool.fullOutput'); output.appendChild(button);
+    }
+    return output;
 }
 
 /** Settled tool-result card: expandable body for bash/edit-with-output, compact
@@ -689,7 +738,9 @@ export function buildToolCard(msg: any, ctx: ToolCardContext): HTMLElement {
     const filePath = parsedArgs?.path ?? parsedArgs?.file_path ?? '';
 
     const resultContent = extractText(msg);
-    const hasBody = !!(resultContent || isBash) && !isRead;
+    const output = buildToolOutput(msg, ctx.imageCache);
+    const hasRichOutput = output.querySelector('img, .codemode-calls, .tool-full-output') !== null;
+    const hasBody = (!!(resultContent || isBash) && !isRead) || hasRichOutput;
 
     const footer = buildToolFooter(msg, ctx.allMessages, ctx.msgIndex);
 
@@ -707,10 +758,8 @@ export function buildToolCard(msg: any, ctx: ToolCardContext): HTMLElement {
         `;
 
         const body = el('div', 'tool-body');
-        const result = el('pre', 'tool-result');
-        result.textContent = resultContent || t('tool.noOutput');
-        if (!resultContent) result.classList.add('empty');
-        body.appendChild(result);
+        if (!output.children.length) { const empty = el('pre', 'tool-result empty'); empty.textContent = t('tool.noOutput'); output.appendChild(empty); }
+        body.appendChild(output);
         details.appendChild(body);
         wrapper.appendChild(details);
 

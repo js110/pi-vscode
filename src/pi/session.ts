@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type {
     AgentSession,
+    AgentSessionRuntime,
     AgentSessionEvent,
     SessionManager,
     ModelRegistry,
@@ -17,6 +18,9 @@ import { getModelRegistry, getAvailableModels, findModel, findConfiguredModel, d
 import { TtlCache } from '../shared/ttl-cache';
 import { BUILTIN_COMMANDS, isBuiltinSlashCommandName } from '../shared/slash-commands';
 import { t } from '../shared/i18n';
+import { executeNativeCommand } from './native-commands';
+import { ExtensionUiBridge } from './extension-ui';
+import type { SessionTreeEntryInfo } from '../shared/protocol';
 
 export type ToolApprovalHandler = (toolCallId: string, toolName: string, args: any) => Promise<boolean>;
 
@@ -28,6 +32,11 @@ export interface RollbackResult {
 }
 
 export class PiSessionManager {
+    private _runtime: AgentSessionRuntime | undefined;
+    private _approvalRunners = new WeakSet<object>();
+    private _cacheWarmingRunners = new WeakSet<object>();
+    private _uiReady: Promise<void> | undefined;
+    private _uiBoundSessions = new WeakSet<object>();
     private _session: AgentSession | undefined;
     private _sessionManager: SessionManager | undefined;
     private _modelRegistry: ModelRegistry | undefined;
@@ -39,6 +48,11 @@ export class PiSessionManager {
     private _toolApprovalHandler: ToolApprovalHandler | undefined;
     private _sessionsCache = new TtlCache<SessionInfo[]>(5_000);
     readonly events = new EventRouter();
+    readonly extensionUi = new ExtensionUiBridge(
+        () => this.events.dispatch({ type: 'extension_ui_changed' } as any),
+        (message, severity) => this.events.dispatch({ type: 'extension_notification', message, severity } as any),
+        text => this.events.dispatch({ type: 'extension_composer', text } as any),
+    );
 
     constructor(
         outputChannel: vscode.OutputChannel,
@@ -124,13 +138,15 @@ export class PiSessionManager {
         }
     }
 
-    async prompt(text: string, images?: ImagePayload[]): Promise<void> {
+    async prompt(text: string, images?: ImagePayload[]): Promise<string | void> {
+        await this._uiReady;
         if (!this._session) { throw new Error('Session not initialized'); }
         const start = Date.now();
         this._outputChannel.appendLine(`[prompt] called at ${new Date().toISOString()}, text="${text.substring(0, 80)}${text.length > 80 ? '...' : ''}"${images ? `, images=${images.length}` : ''}`);
         try {
-            await this._session.prompt(text, images && images.length > 0 ? { images } : undefined);
+            const disposition = await this._session.prompt(text, images && images.length > 0 ? { images } : undefined);
             this._outputChannel.appendLine(`[prompt] resolved in ${Date.now() - start}ms`);
+            return disposition;
         } catch (err: any) {
             this._outputChannel.appendLine(`[prompt] rejected in ${Date.now() - start}ms: ${err.message ?? String(err)}`);
             throw err;
@@ -259,8 +275,14 @@ export class PiSessionManager {
         return this._session.cycleThinkingLevel();
     }
 
-    async newSession(): Promise<void> {
+    async newSession(): Promise<boolean | void> {
         if (!this._session) { return; }
+        if (this._runtime && hasFunction(this._runtime, 'newSession')) {
+            const result = await this._runtime.newSession();
+            if (result.cancelled) return false;
+            this._applyDefaultSettings(this._runtime.session);
+            return true;
+        }
         this._unsubscribe?.();
         this._session.dispose();
 
@@ -297,8 +319,12 @@ export class PiSessionManager {
         return mapped.map((s) => ({ ...s }));
     }
 
-    async loadSession(sessionPath: string): Promise<void> {
+    async loadSession(sessionPath: string): Promise<boolean | void> {
         if (!this._session) { return; }
+        if (this._runtime && hasFunction(this._runtime, 'switchSession')) {
+            const result = await this._runtime.switchSession(sessionPath);
+            return !result.cancelled;
+        }
         this._unsubscribe?.();
         this._session.dispose();
 
@@ -383,7 +409,7 @@ export class PiSessionManager {
         await resourceLoader.reload();
 
         const allowedTools = vscode.workspace.getConfiguration('pi-agent').get<string[]>('allowedTools', []);
-        return createAgentSession({
+        const result = await createAgentSession({
             cwd,
             modelRuntime: this._modelRuntime,
             sessionManager,
@@ -391,6 +417,131 @@ export class PiSessionManager {
             resourceLoader,
             ...(allowedTools.length > 0 ? { tools: allowedTools } : {}),
         });
+        const sdk = await loadPiSdk();
+        if (hasFunction(sdk, 'AgentSessionRuntime') && hasFunction(sdk, 'createAgentSessionServices') && hasFunction(sdk, 'createAgentSessionFromServices')) {
+            const services = { cwd, agentDir, modelRuntime: this._modelRuntime, settingsManager, resourceLoader, diagnostics: [] };
+            this._runtime = new sdk.AgentSessionRuntime(result.session, services, async (options) => {
+                const nextAllowedTools = vscode.workspace.getConfiguration('pi-agent').get<string[]>('allowedTools', []);
+                const nextServices = await sdk.createAgentSessionServices({
+                    cwd: options.cwd, agentDir: options.agentDir, modelRuntime: this._modelRuntime,
+                    resourceLoaderOptions: { additionalExtensionPaths: this._bridgeExtensionPath ? [this._bridgeExtensionPath] : [] },
+                });
+                const next = await sdk.createAgentSessionFromServices({
+                    services: nextServices, sessionManager: options.sessionManager,
+                    sessionStartEvent: options.sessionStartEvent,
+                    ...(nextAllowedTools.length > 0 ? { tools: nextAllowedTools } : {}),
+                });
+                return { ...next, services: nextServices, diagnostics: nextServices.diagnostics };
+            });
+            this._runtime.setRebindSession(async (session) => {
+                this.extensionUi.reset();
+                this._unsubscribe?.();
+                this._session = session;
+                this._sessionManager = session.sessionManager;
+                this._unsubscribe = session.subscribe(this.events.asSessionListener());
+                this._installToolApprovalHook(session);
+                this._installCacheWarmingMonitor(session);
+                this._sessionsCache.invalidate();
+                await this._bindExtensionUi(session);
+                this.events.dispatch({ type: 'native_session_changed' } as any);
+            });
+        }
+        this._installToolApprovalHook(result.session);
+        this._installCacheWarmingMonitor(result.session);
+        return result;
+    }
+
+    async activateExtensionUi(): Promise<void> {
+        if (!this._session || this._uiBoundSessions.has(this._session)) return;
+        this._uiReady = this._bindExtensionUi(this._session);
+        await this._uiReady;
+    }
+
+    private async _bindExtensionUi(session: AgentSession): Promise<void> {
+        if (this._uiBoundSessions.has(session)) return;
+        this._uiBoundSessions.add(session);
+        if (!hasFunction(session, 'bindExtensions')) return;
+        const sdk = await loadPiSdk();
+        if (!hasFunction(sdk, 'Theme')) return;
+        if (hasFunction(sdk, 'initTheme')) sdk.initTheme(undefined, false);
+        const changed = () => this.events.dispatch({ type: 'native_session_changed' } as any);
+        const requireRuntime = () => { if (!this._runtime) throw new Error('Session lifecycle requires Pi 1.x'); return this._runtime; };
+        await session.bindExtensions({
+            mode: 'tui', uiContext: this.extensionUi.createContext(sdk),
+            commandContextActions: {
+                waitForIdle: async () => { if (hasFunction(session, 'waitForIdle')) await session.waitForIdle(); },
+                newSession: options => requireRuntime().newSession(options),
+                switchSession: (file, options) => requireRuntime().switchSession(file, options),
+                fork: (id, options) => requireRuntime().fork(id, options),
+                navigateTree: async (id, options) => { const result = await session.navigateTree(id, options); if (!result.cancelled) changed(); return result; },
+                reload: async () => { await this.reloadResources(); this.events.dispatch({ type: 'extension_resources_changed' } as any); },
+            },
+            abortHandler: () => { void session.abort(); },
+            onError: error => this.events.dispatch({ type: 'extension_notification', severity: 'error', message: error.error } as any),
+        });
+    }
+
+    async reloadResources(): Promise<void> {
+        const session = this._session;
+        if (!session || !hasFunction(session, 'reload')) throw new Error('Pi reload is unavailable');
+        this.extensionUi.reset();
+        await session.reload({ beforeSessionStart: () => {
+            this._installToolApprovalHook(session);
+            this._installCacheWarmingMonitor(session);
+        } });
+    }
+
+    getSessionTree(): SessionTreeEntryInfo[] {
+        const manager = this._session?.sessionManager;
+        if (!manager || !hasFunction(manager, 'getTree')) return [];
+        const entries: SessionTreeEntryInfo[] = [];
+        const visit = (nodes: ReturnType<SessionManager['getTree']>, depth: number) => {
+            for (const node of nodes) {
+                const entry = node.entry;
+                const message = entry.type === 'message' ? entry.message : undefined;
+                const content = message && 'content' in message ? message.content : undefined;
+                const text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((part: any) => part.type === 'text').map((part: any) => part.text).join('\n') : entry.type === 'branch_summary' ? entry.summary : '';
+                entries.push({ id: entry.id, parentId: entry.parentId, depth, kind: message?.role ?? entry.type,
+                    text: text.slice(0, 2000), label: node.label, timestamp: entry.timestamp, current: entry.id === manager.getLeafId() });
+                visit(node.children, depth + 1);
+            }
+        };
+        visit(manager.getTree(), 0);
+        return entries;
+    }
+
+    async navigateSessionTree(id: string, summarize: boolean, instructions?: string): Promise<{ changed?: boolean; editorText?: string }> {
+        const session = this._session;
+        if (!session || !hasFunction(session, 'navigateTree')) throw new Error('Pi session navigation is unavailable');
+        if (!session.sessionManager.getEntry(id)) throw new Error('Session entry no longer exists');
+        const result = await session.navigateTree(id, { summarize, customInstructions: instructions });
+        return result.cancelled || result.aborted ? {} : { changed: true, editorText: result.editorText };
+    }
+
+    labelSessionTree(id: string, label: string): void {
+        const manager = this._session?.sessionManager;
+        if (!manager || !hasFunction(manager, 'appendLabelChange') || !manager.getEntry(id)) throw new Error('Session entry is unavailable');
+        manager.appendLabelChange(id, label.trim() || undefined);
+    }
+
+    async openMcp(): Promise<void> {
+        await this._uiReady;
+        const session = this._session;
+        if (!session || !hasFunction(session.extensionRunner, 'getCommand') || !session.extensionRunner.getCommand('mcp')) throw new Error('The native MCP extension is unavailable. Reload Pi resources.');
+        await session.prompt('/mcp');
+    }
+
+    async executeBuiltinCommand(name: string, args: string): Promise<{ changed?: boolean; editorText?: string }> {
+        if (!this._session) throw new Error('Session not initialized');
+        if (name === 'reload') { await this.reloadResources(); return { changed: true }; }
+        try {
+            return await executeNativeCommand(await loadPiSdk(), this._session, this._runtime, name, args, this._secrets);
+        } finally {
+            if (name === 'reload' || name === 'trust') {
+                this._installToolApprovalHook(this._session);
+                this._installCacheWarmingMonitor(this._session);
+            }
+        }
     }
 
     getModels(): ModelInfo[] {
@@ -446,6 +597,8 @@ export class PiSessionManager {
         try {
             const runner = session.extensionRunner;
             if (!runner) return;
+            if (this._approvalRunners.has(runner)) return;
+            this._approvalRunners.add(runner);
 
             const origEmitToolCall = runner.emitToolCall.bind(runner);
             const self = this;
@@ -515,6 +668,8 @@ export class PiSessionManager {
         try {
             const runner = (session as any).extensionRunner;
             if (!runner || typeof runner.emitCacheWarmingDecision !== 'function') { return; }
+            if (this._cacheWarmingRunners.has(runner)) return;
+            this._cacheWarmingRunners.add(runner);
 
             const origEmit = runner.emitCacheWarmingDecision.bind(runner);
             const self = this;
@@ -674,6 +829,7 @@ export class PiSessionManager {
         const model = s.model;
         return {
             ...(includeMessages ? { messages: (s as any).messages?.map(safeSerialize) ?? [] } : {}),
+            extensionUi: safeSerialize(this.extensionUi.state),
             model: model ? { provider: getProviderId(model), id: model.id, name: model.name } : undefined,
             thinkingLevel: s.thinkingLevel,
             isStreaming: s.isStreaming,
@@ -726,8 +882,11 @@ export class PiSessionManager {
     }
 
     async dispose(): Promise<void> {
+        this.extensionUi.reset();
         this._unsubscribe?.();
-        this._session?.dispose();
+        if (this._runtime) await this._runtime.dispose();
+        else this._session?.dispose();
+        this._runtime = undefined;
         this._session = undefined;
         this.events.clear();
     }
