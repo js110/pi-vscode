@@ -102,7 +102,7 @@ if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.0.0')) {
     ['reload', 'navigateTree', 'getUserMessagesForForking', 'exportToHtml', 'exportToJsonl', 'setScopedModels', 'bindExtensions', 'waitForIdle'].forEach(m => checkProto('AgentSession', m));
     ['getTree', 'getLeafId', 'getCwd', 'getEntry', 'appendLabelChange'].forEach(m => checkProto('SessionManager', m));
     ['getCommand', 'createCommandContext'].forEach(m => checkProto('ExtensionRunner', m));
-    ['Theme', 'initTheme'].forEach(checkExport);
+    ['Theme', 'initTheme', 'createMcpExtension', 'createCodemodeExtension', 'createToolSearchExtension'].forEach(checkExport);
     ['login', 'logout', 'listCredentials', 'getProviders', 'getProvider', 'getAvailableSnapshot'].forEach(m => checkProto('ModelRuntime', m));
     checkProto('ProjectTrustStore', 'set');
     checkProto('SettingsManager', 'setEnabledModels');

@@ -1261,6 +1261,15 @@ describe('TabManager built-in slash command dispatch', () => {
         expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'skills', skills: [], commands: [] });
         expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'composerText', tabId: expect.any(String), text: 'branch draft' });
     });
+    it('opens the selected session tree only after a successful resume', async () => {
+        const { adapters, manager, tab } = await setup({ loadSession: vi.fn(async () => true) });
+        await manager.dispatch({ type: 'loadSession', sessionPath: '/selected.jsonl', openTree: true });
+        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'sessionTree', tabId: manager.activeTab!.id, entries: [] });
+        vi.mocked(adapters.transport.post).mockClear();
+        vi.mocked(tab.session.loadSession).mockResolvedValueOnce(false);
+        await manager.dispatch({ type: 'loadSession', sessionPath: '/cancelled.jsonl', openTree: true });
+        expect(adapters.transport.post).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'sessionTree' }));
+    });
 
     it('falls through to the normal prompt for unknown slash commands', async () => {
         const { tab, manager } = await setup();

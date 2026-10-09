@@ -108,6 +108,7 @@ let currentSessionId: string | undefined;
 let treeOpen = false;
 let treeEntries: SessionTreeEntryInfo[] = [];
 const composerDrafts = new Map<string, string>();
+const collapsedTreeEntries = new Set<string>();
 let treeQuery = '';
 
 function mountNativePanel(panel: HTMLElement): void {
@@ -122,8 +123,17 @@ function renderSessionTree(): void {
     const focused = previous?.querySelector('input[type=search]') === document.activeElement;
     const checked = (previous?.querySelector('#tree-summarize') as HTMLInputElement | null)?.checked;
     const instructions = (previous?.querySelector('#tree-instructions') as HTMLTextAreaElement | null)?.value;
-    const panel = buildSessionTreePanel(treeEntries, treeQuery);
-    if (previous) previous.replaceWith(panel); else mountNativePanel(panel);
+    const optionsOpen = previous?.querySelector<HTMLDetailsElement>('.tree-controls')?.open ?? false;
+    const scrollTop = document.getElementById('session-panel')?.scrollTop ?? 0;
+    const panel = buildSessionTreePanel(treeEntries, treeQuery, collapsedTreeEntries);
+    let browser = document.getElementById('session-panel');
+    if (!browser) { browser = el('div', 'session-panel'); browser.id = 'session-panel'; mountNativePanel(browser); }
+    const back = el('button', 'native-option'); back.textContent = t('sessions.back');
+    back.addEventListener('click', () => openSessionList());
+    panel.querySelector('.native-panel-header')?.prepend(back);
+    browser.replaceChildren(panel);
+    browser.scrollTop = scrollTop;
+    panel.querySelector<HTMLDetailsElement>('.tree-controls')!.open = optionsOpen;
     const search = panel.querySelector<HTMLInputElement>('input[type=search]')!;
     if (checked) panel.querySelector<HTMLInputElement>('#tree-summarize')!.checked = true;
     if (instructions) panel.querySelector<HTMLTextAreaElement>('#tree-instructions')!.value = instructions;
@@ -132,11 +142,15 @@ function renderSessionTree(): void {
     panel.addEventListener('click', event => {
         const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
         if (!button) return;
-        if (button.dataset.action === 'close') { treeOpen = false; panel.remove(); return; }
+        if (button.dataset.action === 'close') { treeOpen = false; browser.remove(); return; }
         if (button.dataset.action === 'refresh') { vscode.postMessage({ type: 'getSessionTree' }); return; }
         const row = button.closest<HTMLElement>('[data-entry-id]');
         if (!row?.dataset.entryId) return;
         const entryId = row.dataset.entryId;
+        if (button.dataset.action === 'fold') {
+            if (collapsedTreeEntries.has(entryId)) collapsedTreeEntries.delete(entryId); else collapsedTreeEntries.add(entryId);
+            renderSessionTree(); return;
+        }
         if (button.dataset.action === 'navigate') {
             historyReplacePending = { from: state.sessionId, rewrite: true };
             vscode.postMessage({ type: 'navigateSessionTree', entryId, summarize: panel.querySelector<HTMLInputElement>('#tree-summarize')!.checked,
@@ -284,7 +298,7 @@ function handleMessage(msg: ServerMessage): void {
             // Refresh only when the user already opened the panel; a
             // background 'sessions' push (e.g. auto-rename after a turn)
             // must never mount it on its own.
-            if (document.getElementById('session-panel')) {
+            if (document.getElementById('session-panel') && !treeOpen) {
                 renderSessionList(msg.sessions, msg.currentSessionId);
             }
             break;
@@ -564,15 +578,19 @@ function applyStateSync(s: SerializedAgentState): void {
     }
     const tabSwitched = prevTab !== state.activeTabId;
     if (!tabSwitched && prevSession !== state.sessionId) {
+        const wasTreeOpen = treeOpen;
+        collapsedTreeEntries.clear();
         treeOpen = false;
         treeEntries = [];
         treeQuery = '';
         document.getElementById('tree-panel')?.remove();
+        if (wasTreeOpen) openSessionList();
     }
 
     // Transient cards live in the per-tab streaming area; they are wiped on a
     // tab switch and must not resurrect on a later langChanged.
     if (tabSwitched) {
+        collapsedTreeEntries.clear();
         if (prevTab && previousDraft !== undefined) composerDrafts.set(prevTab, previousDraft);
         treeOpen = false;
         treeEntries = [];
@@ -812,7 +830,6 @@ function render(): void {
         </button>
     `;
     railRow.appendChild(headerActions);
-    const treeButton = el('button', 'icon-btn'); treeButton.id = 'btn-tree'; treeButton.textContent = '⑂'; treeButton.title = t('tree.title'); treeButton.setAttribute('aria-label', t('tree.title')); headerActions.appendChild(treeButton);
     const mcpButton = el('button', 'icon-btn'); mcpButton.id = 'btn-mcp'; mcpButton.textContent = 'MCP'; mcpButton.title = 'MCP'; headerActions.appendChild(mcpButton);
     header.appendChild(railRow);
     app.appendChild(header);
@@ -1977,9 +1994,8 @@ function updateFooterModel(): void {
 
 /** User-opened session panel: show cached data (if any) and refresh. */
 function openSessionList(): void {
-    if (!document.getElementById('session-panel')) {
-        renderSessionList(fullSessionList, currentSessionId);
-    }
+    treeOpen = false;
+    renderSessionList(fullSessionList, state.sessionId ?? currentSessionId);
     vscode.postMessage({ type: 'getSessions' });
 }
 
@@ -1988,24 +2004,20 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     if (!panel) {
         panel = el('div', 'session-panel');
         panel.id = 'session-panel';
-        const app = document.getElementById('app');
-        const modelBar = document.getElementById('model-bar');
-        if (app && modelBar?.nextSibling) {
-            app.insertBefore(panel, modelBar.nextSibling);
-        } else {
-            app?.appendChild(panel);
-        }
+        mountNativePanel(panel);
     }
 
     if (sessions.length === 0) {
         panel.innerHTML = `
             <div class="session-header">
                 <span>${escHtml(t('sessions.title'))}</span>
+                <button class="native-option" id="btn-current-tree">${escHtml(t('sessions.branches'))}</button>
                 <button class="icon-btn" id="btn-close-sessions" title="${escHtml(t('sessions.close'))}">&times;</button>
             </div>
             <div class="session-empty">${escHtml(t('sessions.empty'))}</div>
         `;
         document.getElementById('btn-close-sessions')?.addEventListener('click', () => panel?.remove());
+        document.getElementById('btn-current-tree')?.addEventListener('click', () => vscode.postMessage({ type: 'getSessionTree' }));
         return;
     }
 
@@ -2027,6 +2039,7 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     panel.innerHTML = `
         <div class="session-header">
             <span>${escHtml(t('sessions.title'))}</span>
+            <button class="native-option" id="btn-current-tree">${escHtml(t('sessions.branches'))}</button>
             <button class="icon-btn" id="btn-close-sessions" title="${escHtml(t('sessions.close'))}">&times;</button>
         </div>
         <div class="session-search">
@@ -2048,6 +2061,7 @@ function renderSessionList(sessions: any[], currentId?: string): void {
                                 ${snippet}
                             </div>
                             <div class="session-item-actions">
+                                <button class="session-item-tree" title="${escHtml(t('sessions.viewBranches'))}" aria-label="${escHtml(t('sessions.viewBranches'))}">⑂</button>
                                 <button class="session-item-pin" title="${escHtml(t('sessions.pinTitle'))}" data-pinned="${s.pinned ? '1' : '0'}">${s.pinned ? '📌' : '·'}</button>
                                 <button class="session-item-rename" title="${escHtml(t('header.renameSession'))}">✎</button>
                                 <button class="session-item-delete" title="${escHtml(t('sessions.deleteTitle'))}">🗑</button>
@@ -2059,6 +2073,16 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     `;
 
     document.getElementById('btn-close-sessions')?.addEventListener('click', () => panel?.remove());
+    document.getElementById('btn-current-tree')?.addEventListener('click', () => vscode.postMessage({ type: 'getSessionTree' }));
+    panel.querySelectorAll<HTMLButtonElement>('.session-item-tree').forEach(button => button.addEventListener('click', event => {
+        event.stopPropagation();
+        const row = button.closest<HTMLElement>('.session-item');
+        if (row?.classList.contains('active')) vscode.postMessage({ type: 'getSessionTree' });
+        else if (row?.dataset.path) {
+            historyReplacePending = { from: state.sessionId, rewrite: false };
+            vscode.postMessage({ type: 'loadSession', sessionPath: row.dataset.path, openTree: true });
+        }
+    }));
     const searchInput = document.getElementById('session-search-input') as HTMLInputElement | null;
     searchInput?.addEventListener('input', () => {
         sessionSearchQuery = searchInput.value;
@@ -2300,10 +2324,6 @@ function bindStableEvents(): void {
     newTabBtn?.addEventListener('click', () => vscode.postMessage({ type: 'createTab' }));
     sessionsBtn?.addEventListener('click', () => openSessionList());
     settingsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
-    document.getElementById('btn-tree')?.addEventListener('click', () => {
-        if (treeOpen) { treeOpen = false; document.getElementById('tree-panel')?.remove(); }
-        else vscode.postMessage({ type: 'getSessionTree' });
-    });
     document.getElementById('btn-mcp')?.addEventListener('click', () => vscode.postMessage({ type: 'openMcp' }));
 
     const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;

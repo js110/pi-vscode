@@ -260,7 +260,7 @@ export type ClientMessage =
     | { type: 'setModel'; provider: string; modelId: string }
     | { type: 'setThinkingLevel'; level: string }
     | { type: 'newSession' }
-    | { type: 'loadSession'; sessionPath: string }
+    | { type: 'loadSession'; sessionPath: string; openTree?: boolean }
     | { type: 'renameSession'; name: string; sessionPath?: string }
     | { type: 'getSessions' }
     | { type: 'deleteSession'; sessionPath: string }

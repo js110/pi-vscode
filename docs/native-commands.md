@@ -44,8 +44,11 @@ The implementation targets the installed Pi SDK 1.1.0:
    the sidebar. Its menus expose server status and native connection, enable,
    reconnect and authentication actions. Arrow keys, Enter, Escape and text
    input are forwarded to Pi; Back returns through native menus.
-4. The tree header button or `/tree` opens a persistent searchable tree with
-   branch labels, current-position highlighting and optional summary instructions.
+4. The Sessions header button opens one browser for session history and branches.
+   Search, pin, rename and delete sessions in the list; use a session's branch
+   button to open it and inspect its tree. The branch view returns to the list
+   with All sessions. `/tree` opens the current session's branch view directly,
+   with labels, current-position highlighting and optional summary instructions.
 5. Tool cards show separate text/image output items, nested tool executions,
    full-output links and durations, both live and after restoring a session.
    Tool settings accept Pi's patterns and `+name`/`-name` selections.
@@ -54,7 +57,8 @@ The implementation targets the installed Pi SDK 1.1.0:
    do not incorrectly mark a successful run as failed.
 
 Custom TUI components use a text-and-key adapter, not a complete terminal emulator.
-Extensions that replace Pi's terminal header, footer, editor or autocomplete
+Terminal startup headers are ignored silently to preserve chat space. Extensions that replace
+Pi's terminal footer, editor or autocomplete
 provider receive an explicit unsupported warning. The sidebar follows the VS Code
 theme. MCP server/network authentication still requires the server's normal setup.
 

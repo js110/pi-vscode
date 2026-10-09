@@ -357,7 +357,7 @@ body {
 
 .session-panel {
     border-bottom: 1px solid var(--hairline);
-    max-height: 250px;
+    max-height: 48vh;
     overflow-y: auto;
     flex-shrink: 0;
     background: var(--surface);
@@ -451,6 +451,7 @@ body {
 .session-search input::placeholder { color: var(--faint); }
 
 .session-item-rename,
+.session-item-tree,
 .session-item-pin,
 .session-item-delete {
     flex-shrink: 0;
@@ -469,6 +470,9 @@ body {
 .session-item:hover .session-item-delete,
 .session-item:hover .session-item-pin { opacity: 1; }
 .session-item-rename:hover { color: var(--accent); background: var(--surface-strong); }
+.session-item-tree { opacity: 1; color: var(--muted); }
+.session-item-tree:hover, .session-item-tree:focus-visible { color: var(--accent); background: var(--surface-strong); }
+.session-panel > .tree-panel { max-height: none; border-bottom: none; }
 .session-item-pin { opacity: 0.7; }
 .session-item-pin[data-pinned="1"] { opacity: 1; color: var(--accent); }
 .session-item-pin:hover { color: var(--accent); background: var(--surface-strong); }
@@ -2645,16 +2649,21 @@ body {
 .native-search { display: block; box-sizing: border-box; width: 100%; margin: 4px 0 8px; padding: 6px; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); color: var(--vscode-input-foreground); background: var(--vscode-input-background); font: inherit; resize: vertical; }
 .native-panel button:focus-visible, .native-search:focus-visible, .extension-custom:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 .native-empty { color: var(--vscode-descriptionForeground); padding: 6px 0; white-space: pre-wrap; }
-.tree-controls { font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+.tree-controls { font-size: 0.9em; color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
+.tree-controls > summary { cursor: pointer; padding: 4px 0; }
 .tree-controls label { display: flex; align-items: center; gap: 6px; }
 .tree-list { border-left: 1px solid var(--vscode-panel-border); }
-.tree-entry { display: flex; align-items: stretch; gap: 4px; padding-left: calc(min(var(--tree-depth), 12) * 7px); }
+.tree-entry { display: flex; align-items: stretch; gap: 2px; margin-left: calc(var(--tree-depth) * 12px); border-left: 1px solid var(--vscode-panel-border); }
+.tree-fold { align-self: center; width: 18px; flex-shrink: 0; padding: 0; }
+.tree-ancestor .tree-text { color: var(--vscode-descriptionForeground); }
+.tree-entry.current { box-shadow: inset 2px 0 var(--vscode-focusBorder); }
+.tree-label { align-self: center; }
 .tree-entry.current { background: var(--vscode-list-inactiveSelectionBackground); color: var(--vscode-list-inactiveSelectionForeground); }
 .tree-navigate { display: grid; min-width: 0; flex: 1; gap: 2px; padding: 7px 8px; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .tree-navigate:hover { background: var(--vscode-list-hoverBackground); }
 .tree-navigate:disabled { cursor: default; opacity: 1; }
 .tree-kind { color: var(--vscode-descriptionForeground); font-size: 0.85em; }
-.tree-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-text { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .native-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
 .native-option { border: 1px solid var(--vscode-button-border, var(--vscode-panel-border)); border-radius: 3px; padding: 5px 9px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); font: inherit; cursor: pointer; }
 .native-option:hover { background: var(--vscode-button-secondaryHoverBackground); }

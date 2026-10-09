@@ -6,6 +6,13 @@ const sdk = { Theme: class {} } as any;
 const make = () => { const changed = vi.fn(); const notify = vi.fn(); const composer = vi.fn(); const bridge = new ExtensionUiBridge(changed, notify, composer); return { bridge, ui: bridge.createContext(sdk), changed, notify, composer }; };
 
 describe('extension UI bridge', () => {
+    it('ignores terminal startup banners across reload without warning', () => {
+        const { bridge, ui, notify } = make();
+        const factory = vi.fn(() => ({ render: () => ['Custom Pi'], invalidate() {} }));
+        ui.setHeader(factory); bridge.reset(); ui.setHeader(factory); ui.setHeader(undefined);
+        expect(factory).not.toHaveBeenCalled();
+        expect(bridge.state.widgets).toEqual({}); expect(notify).not.toHaveBeenCalled();
+    });
     it('routes selectors by request id and isolates tabs', async () => {
         const first = make(); const second = make();
         const a = first.ui.select('Pick', ['a', 'b']); const b = second.ui.select('Pick', ['a', 'b']);

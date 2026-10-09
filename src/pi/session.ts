@@ -20,6 +20,7 @@ import { BUILTIN_COMMANDS, isBuiltinSlashCommandName } from '../shared/slash-com
 import { t } from '../shared/i18n';
 import { executeNativeCommand } from './native-commands';
 import { ExtensionUiBridge } from './extension-ui';
+import { nativeExtensionFactories } from './native-extensions';
 import type { SessionTreeEntryInfo } from '../shared/protocol';
 
 export type ToolApprovalHandler = (toolCallId: string, toolName: string, args: any) => Promise<boolean>;
@@ -390,6 +391,7 @@ export class PiSessionManager {
     }
 
     private async _createPiSession(cwd: string, sessionManager: SessionManager) {
+        const sdk = await loadPiSdk();
         const {
             createAgentSession,
             DefaultResourceLoader,
@@ -404,6 +406,7 @@ export class PiSessionManager {
             cwd,
             agentDir,
             settingsManager,
+            extensionFactories: nativeExtensionFactories(sdk),
             additionalExtensionPaths: this._bridgeExtensionPath ? [this._bridgeExtensionPath] : [],
         });
         await resourceLoader.reload();
@@ -417,14 +420,13 @@ export class PiSessionManager {
             resourceLoader,
             ...(allowedTools.length > 0 ? { tools: allowedTools } : {}),
         });
-        const sdk = await loadPiSdk();
         if (hasFunction(sdk, 'AgentSessionRuntime') && hasFunction(sdk, 'createAgentSessionServices') && hasFunction(sdk, 'createAgentSessionFromServices')) {
             const services = { cwd, agentDir, modelRuntime: this._modelRuntime, settingsManager, resourceLoader, diagnostics: [] };
             this._runtime = new sdk.AgentSessionRuntime(result.session, services, async (options) => {
                 const nextAllowedTools = vscode.workspace.getConfiguration('pi-agent').get<string[]>('allowedTools', []);
                 const nextServices = await sdk.createAgentSessionServices({
                     cwd: options.cwd, agentDir: options.agentDir, modelRuntime: this._modelRuntime,
-                    resourceLoaderOptions: { additionalExtensionPaths: this._bridgeExtensionPath ? [this._bridgeExtensionPath] : [] },
+                    resourceLoaderOptions: { extensionFactories: nativeExtensionFactories(sdk), additionalExtensionPaths: this._bridgeExtensionPath ? [this._bridgeExtensionPath] : [] },
                 });
                 const next = await sdk.createAgentSessionFromServices({
                     services: nextServices, sessionManager: options.sessionManager,

@@ -105,7 +105,7 @@ export class ExtensionUiBridge {
         });
         const unsupported = () => this.notify('This extension replaces terminal chrome. Use its dialogs or widgets in the sidebar.', 'warning');
         const bridge = this;
-        return {
+        const context: ExtensionUIContext = {
             select: (title, options, opts) => this.dialog('select', title, { options }, opts),
             confirm: async (title, message, opts) => (await this.dialog('confirm', title, { message: terminalText(message) }, opts)) === 'yes',
             input: (title, placeholder, opts) => this.dialog('input', title, { message: placeholder }, opts),
@@ -136,7 +136,9 @@ export class ExtensionUiBridge {
             setWorkingVisible: visible => { this.state.workingVisible = visible; this.changed(); },
             setWorkingIndicator: options => { this.state.workingVisible = options?.frames?.length !== 0; this.changed(); },
             setHiddenThinkingLabel: () => {},
-            setFooter: factory => { if (factory) unsupported(); }, setHeader: factory => { if (factory) unsupported(); },
+            setFooter: factory => { if (factory) unsupported(); },
+            // Startup banners belong to the terminal; keep SDK compatibility without sidebar chrome.
+            setHeader: () => {},
             setTitle: title => { this.state.title = terminalText(title); this.changed(); },
             custom: async <T>(factory: Parameters<ExtensionUIContext['custom']>[0]): Promise<T> => {
                 this.custom?.finish();
@@ -173,5 +175,6 @@ export class ExtensionUiBridge {
             theme, getAllThemes: () => [], getTheme: () => theme, setTheme: () => ({ success: false, error: 'The sidebar follows the VS Code theme.' }),
             getToolsExpanded: () => this.state.toolsExpanded ?? false, setToolsExpanded: expanded => { bridge.state.toolsExpanded = expanded; bridge.changed(); },
         };
+        return context;
     }
 }

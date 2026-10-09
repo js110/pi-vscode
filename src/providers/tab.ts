@@ -1182,6 +1182,7 @@ export class TabManager {
                 tab.messageMeta.clear();
                 this._updateTabName(tab);
                 this._emitStateChange();
+                if (msg.openTree) this._postSessionTree(tab);
                 break;
             case 'renameSession': {
                 const clean = (msg.name ?? '').trim();
