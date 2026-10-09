@@ -621,7 +621,7 @@ export class TabManager {
             return;
         }
         if (event.type === 'extension_composer') {
-            if (tab.id === this._activeTabId) this._adapters.transport.post({ type: 'composerText', text: event.text });
+            this._adapters.transport.post({ type: 'composerText', tabId: tab.id, text: event.text });
             return;
         }
         if (event.type === 'native_session_changed') {
@@ -952,7 +952,7 @@ export class TabManager {
                 else {
                     const result = await tab.session.navigateSessionTree(msg.entryId, msg.summarize, msg.instructions);
                     if (result.changed) await this._syncNativeSession(tab);
-                    if (result.editorText !== undefined) this._adapters.transport.post({ type: 'composerText', text: result.editorText });
+                    if (result.editorText !== undefined) this._adapters.transport.post({ type: 'composerText', tabId: tab.id, text: result.editorText });
                     this._postSessionTree(tab);
                 }
             } catch (error) { this._adapters.transport.post({ type: 'error', message: humanizeErrorMessage(error) ?? String(error) }); }
@@ -1940,7 +1940,7 @@ export class TabManager {
                         this._emitStateChange();
                         this._adapters.transport.post({ type: 'skills', skills: tab.session.getSkills(), commands: tab.session.getCommands() });
                     }
-                    if (result.editorText !== undefined) this._adapters.transport.post({ type: 'composerText', text: result.editorText });
+                    if (result.editorText !== undefined) this._adapters.transport.post({ type: 'composerText', tabId: tab.id, text: result.editorText });
                 } catch (error) {
                     this._adapters.transport.post({ type: 'error', message: humanizeErrorMessage(error) ?? String(error) });
                 }

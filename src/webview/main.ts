@@ -107,6 +107,7 @@ let fullSessionList: any[] = [];
 let currentSessionId: string | undefined;
 let treeOpen = false;
 let treeEntries: SessionTreeEntryInfo[] = [];
+const composerDrafts = new Map<string, string>();
 let treeQuery = '';
 
 function mountNativePanel(panel: HTMLElement): void {
@@ -232,6 +233,8 @@ function handleMessage(msg: ServerMessage): void {
             if (msg.tabId === state.activeTabId) { treeEntries = msg.entries; treeOpen = true; renderSessionTree(); }
             break;
         case 'composerText': {
+            composerDrafts.set(msg.tabId, msg.text);
+            if (msg.tabId !== state.activeTabId) break;
             const input = document.querySelector<HTMLTextAreaElement>('#input');
             if (input) { input.value = msg.text; input.dispatchEvent(new Event('input')); input.focus(); }
             break;
@@ -527,6 +530,8 @@ function applyStateSync(s: SerializedAgentState): void {
     state.extensionUi = s.extensionUi;
     state.runOutcome = s.runOutcome;
     const prevTab = state.activeTabId;
+    const prevSession = state.sessionId;
+    const previousDraft = document.querySelector<HTMLTextAreaElement>('#input')?.value;
     // Unchanged message lists are omitted from the frame (T16); keep ours.
     state.messages = s.messages ?? state.messages;
     state.isStreaming = s.isStreaming;
@@ -558,10 +563,17 @@ function applyStateSync(s: SerializedAgentState): void {
         updateImageChips();
     }
     const tabSwitched = prevTab !== state.activeTabId;
+    if (!tabSwitched && prevSession !== state.sessionId) {
+        treeOpen = false;
+        treeEntries = [];
+        treeQuery = '';
+        document.getElementById('tree-panel')?.remove();
+    }
 
     // Transient cards live in the per-tab streaming area; they are wiped on a
     // tab switch and must not resurrect on a later langChanged.
     if (tabSwitched) {
+        if (prevTab && previousDraft !== undefined) composerDrafts.set(prevTab, previousDraft);
         treeOpen = false;
         treeEntries = [];
         state.pendingApprovals = [];
@@ -577,6 +589,10 @@ function applyStateSync(s: SerializedAgentState): void {
 
     if (tabSwitched || !skeletonBuilt) {
         render();
+        if (tabSwitched) {
+            const input = document.querySelector<HTMLTextAreaElement>('#input');
+            if (input) { input.value = composerDrafts.get(state.activeTabId) ?? ''; input.dispatchEvent(new Event('input')); }
+        }
         // Only a frame that actually carries the history can satisfy a
         // pending replace — a message-less tab frame (resolve-time read-mode
         // snapshots and T16-omitted unchanged messages both produce one) must

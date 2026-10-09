@@ -1259,7 +1259,7 @@ describe('TabManager built-in slash command dispatch', () => {
         await manager.dispatch({ type: 'navigateSessionTree', entryId: 'branch', summarize: false });
         expect(stateChanged).toHaveBeenCalled();
         expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'skills', skills: [], commands: [] });
-        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'composerText', text: 'branch draft' });
+        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'composerText', tabId: expect.any(String), text: 'branch draft' });
     });
 
     it('falls through to the normal prompt for unknown slash commands', async () => {

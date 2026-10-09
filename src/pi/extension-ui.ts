@@ -60,6 +60,8 @@ export class ExtensionUiBridge {
         this.state.widgets = {};
         delete this.state.workingMessage;
         delete this.state.title;
+        delete this.state.workingVisible;
+        delete this.state.toolsExpanded;
         this.changed();
     }
     private renderCustom(): void {

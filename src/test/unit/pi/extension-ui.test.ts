@@ -36,7 +36,9 @@ describe('extension UI bridge', () => {
         const { bridge, ui, composer } = make(); bridge.updateComposer('draft'); ui.pasteToEditor(' + edit');
         expect(ui.getEditorText()).toBe('draft + edit'); expect(composer).toHaveBeenCalledWith('draft + edit');
         ui.setStatus('native', '\x1b[31mconnected\x1b[0m'); ui.setWidget('widget', ['hello']);
+        ui.setWorkingVisible(false); ui.setToolsExpanded(true);
         const result = ui.confirm('Continue', 'Message'); bridge.reset();
+        expect(bridge.state.workingVisible).toBeUndefined(); expect(bridge.state.toolsExpanded).toBeUndefined();
         expect(await result).toBe(false); expect(bridge.state.statuses).toEqual({}); expect(bridge.state.widgets).toEqual({});
     });
     it('strips control sequences while keeping their readable labels', () => {

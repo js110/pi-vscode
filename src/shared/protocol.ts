@@ -352,7 +352,7 @@ export interface SelectionContextInfo {
 
 export type ServerMessage =
     | { type: 'sessionTree'; tabId: string; entries: SessionTreeEntryInfo[] }
-    | { type: 'composerText'; text: string }
+    | { type: 'composerText'; tabId: string; text: string }
     | { type: 'ready' }
     | { type: 'stateSync'; state: SerializedAgentState; images?: Record<string, string> }
     | { type: 'selectionChanged'; selection: SelectionContextInfo | null }

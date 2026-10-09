@@ -42,4 +42,16 @@ it('wires tree navigation, extension dialogs, MCP keys and tab isolation through
     expect(document.getElementById('extension-custom')).toBeNull();
     expect(document.getElementById('tree-panel')).toBeNull();
     expect(document.getElementById('extension-status')!.textContent).toContain('Cancelled');
+    const input = document.querySelector<HTMLTextAreaElement>('#input')!;
+    input.value = 'B draft';
+    dispatch({ type: 'composerText', tabId: 't1', text: 'A navigation draft' });
+    expect(input.value).toBe('B draft');
+    dispatch({ type: 'stateSync', state: base });
+    expect(document.querySelector<HTMLTextAreaElement>('#input')!.value).toBe('A navigation draft');
+    dispatch({ type: 'stateSync', state: { ...base, activeTabId: 't2', sessionId: 's2' } });
+    expect(document.querySelector<HTMLTextAreaElement>('#input')!.value).toBe('B draft');
+    dispatch({ type: 'sessionTree', tabId: 't2', entries: [{ id: 'old', parentId: null, depth: 0, kind: 'user', text: 'Old session', current: false }] });
+    expect(document.getElementById('tree-panel')).not.toBeNull();
+    dispatch({ type: 'stateSync', state: { ...base, activeTabId: 't2', sessionId: 'replacement' } });
+    expect(document.getElementById('tree-panel')).toBeNull();
 });
