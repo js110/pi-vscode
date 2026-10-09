@@ -40,7 +40,7 @@ The implementation targets the installed Pi SDK 1.1.0:
 2. The extension UI bridge supports selectors, confirmation, input, multiline
    editors, notifications, status, widgets and composer updates. Requests are
    isolated per tab and canceled on reload or disposal.
-3. The MCP header button or `/mcp` opens Pi's native management component inside
+3. `/mcp` opens Pi's native management component through the generic extension UI inside
    the sidebar. Its menus expose server status and native connection, enable,
    reconnect and authentication actions. Arrow keys, Enter, Escape and text
    input are forwarded to Pi; Back returns through native menus.

@@ -78,7 +78,6 @@ function makeTab(overrides: Partial<Tab['session']> = {}): Tab {
         getSessionTree: vi.fn(() => []),
         navigateSessionTree: vi.fn(async () => ({})),
         labelSessionTree: vi.fn(),
-        openMcp: vi.fn(async () => {}),
         dispose: vi.fn(async () => {}),
         ...overrides,
     } as any;

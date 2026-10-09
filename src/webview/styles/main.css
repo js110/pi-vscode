@@ -2679,5 +2679,4 @@ body {
 .nested-tools, .codemode-calls { border-left: 1px solid var(--vscode-panel-border); padding-left: 8px; margin-top: 6px; }
 .codemode-call > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 0; font-size: 0.9em; }
 .tool-duration { margin-left: auto; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 0.85em; }
-#btn-mcp { font-size: 10px; }
 @media (max-width: 300px) { .header-right { gap: 1px; } .native-panel { padding: 6px; } .native-terminal { font-size: 11px; } }

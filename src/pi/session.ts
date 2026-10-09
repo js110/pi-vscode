@@ -526,13 +526,6 @@ export class PiSessionManager {
         manager.appendLabelChange(id, label.trim() || undefined);
     }
 
-    async openMcp(): Promise<void> {
-        await this._uiReady;
-        const session = this._session;
-        if (!session || !hasFunction(session.extensionRunner, 'getCommand') || !session.extensionRunner.getCommand('mcp')) throw new Error('The native MCP extension is unavailable. Reload Pi resources.');
-        await session.prompt('/mcp');
-    }
-
     async executeBuiltinCommand(name: string, args: string): Promise<{ changed?: boolean; editorText?: string }> {
         if (!this._session) throw new Error('Session not initialized');
         if (name === 'reload') { await this.reloadResources(); return { changed: true }; }

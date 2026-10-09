@@ -830,7 +830,6 @@ function render(): void {
         </button>
     `;
     railRow.appendChild(headerActions);
-    const mcpButton = el('button', 'icon-btn'); mcpButton.id = 'btn-mcp'; mcpButton.textContent = 'MCP'; mcpButton.title = 'MCP'; headerActions.appendChild(mcpButton);
     header.appendChild(railRow);
     app.appendChild(header);
 
@@ -2324,7 +2323,6 @@ function bindStableEvents(): void {
     newTabBtn?.addEventListener('click', () => vscode.postMessage({ type: 'createTab' }));
     sessionsBtn?.addEventListener('click', () => openSessionList());
     settingsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
-    document.getElementById('btn-mcp')?.addEventListener('click', () => vscode.postMessage({ type: 'openMcp' }));
 
     const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
     fileInput?.addEventListener('change', () => {

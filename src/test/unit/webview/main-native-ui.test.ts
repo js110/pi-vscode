@@ -19,6 +19,7 @@ it('wires tree navigation, extension dialogs, MCP keys and tab isolation through
     dispatch({ type: 'stateSync', state: base });
     expect(document.getElementById('extension-header')).toBeNull();
     expect(document.getElementById('btn-tree')).toBeNull();
+    expect(document.getElementById('btn-mcp')).toBeNull();
     document.getElementById('btn-sessions')!.click();
     document.getElementById('btn-current-tree')!.click();
     expect(sent).toContainEqual({ type: 'getSessionTree' });

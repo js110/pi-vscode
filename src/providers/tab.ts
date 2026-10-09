@@ -941,14 +941,13 @@ export class TabManager {
         if (msg.type === 'extensionUiClose') { tab.session.extensionUi.close(msg.id); return; }
         if (msg.type === 'composerChanged') { tab.session.extensionUi?.updateComposer(msg.text); return; }
         if (msg.type === 'getSessionTree') { this._postSessionTree(tab); return; }
-        if (msg.type === 'navigateSessionTree' || msg.type === 'labelSessionTree' || msg.type === 'openMcp') {
+        if (msg.type === 'navigateSessionTree' || msg.type === 'labelSessionTree') {
             if (tab.isStreaming || tab.compactionInFlight || this._isReadOnlyLocked(tab)) {
-                this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: msg.type === 'openMcp' ? 'mcp' : 'tree' }));
+                this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: 'tree' }));
                 return;
             }
             try {
-                if (msg.type === 'openMcp') await tab.session.openMcp();
-                else if (msg.type === 'labelSessionTree') { tab.session.labelSessionTree(msg.entryId, msg.label); this._postSessionTree(tab); }
+                if (msg.type === 'labelSessionTree') { tab.session.labelSessionTree(msg.entryId, msg.label); this._postSessionTree(tab); }
                 else {
                     const result = await tab.session.navigateSessionTree(msg.entryId, msg.summarize, msg.instructions);
                     if (result.changed) await this._syncNativeSession(tab);

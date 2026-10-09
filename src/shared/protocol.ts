@@ -241,7 +241,6 @@ export type ClientMessage =
     | { type: 'getSessionTree' }
     | { type: 'navigateSessionTree'; entryId: string; summarize: boolean; instructions?: string }
     | { type: 'labelSessionTree'; entryId: string; label: string }
-    | { type: 'openMcp' }
     | { type: 'extensionUiResponse'; id: string; value?: string; cancelled?: boolean }
     | { type: 'extensionUiInput'; id: string; data: string; width?: number }
     | { type: 'extensionUiClose'; id: string }

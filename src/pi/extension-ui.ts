@@ -68,7 +68,7 @@ export class ExtensionUiBridge {
         const view = this.custom;
         if (!view?.component) return;
         try {
-            this.state.custom = { id: view.id, title: 'menu' in view.component && 'redirectUrl' in view.component ? 'MCP' : 'Pi',
+            this.state.custom = { id: view.id, title: 'Pi',
                 lines: view.component.render(view.width).map(terminalText) };
             this.changed();
         } catch (error) { this.notify(String(error), 'error'); view.finish(); }
