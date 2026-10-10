@@ -2060,7 +2060,7 @@ function renderSessionList(sessions: any[], currentId?: string): void {
                                 ${snippet}
                             </div>
                             <div class="session-item-actions">
-                                <button class="session-item-tree" title="${escHtml(t('sessions.viewBranches'))}" aria-label="${escHtml(t('sessions.viewBranches'))}">⑂</button>
+                                <button class="session-item-tree" title="${escHtml(t('sessions.viewBranches'))}" aria-label="${escHtml(t('sessions.viewBranches'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="4" cy="3.5" r="1.75" fill="currentColor" stroke="none"/><circle cx="4" cy="12.5" r="1.75" fill="currentColor" stroke="none"/><circle cx="12" cy="6.5" r="1.75" fill="currentColor" stroke="none"/><path d="M4 5.25v5.5M5.75 3.5h2.5A3.75 3.75 0 0 1 12 7.25"/></svg></button>
                                 <button class="session-item-pin" title="${escHtml(t('sessions.pinTitle'))}" data-pinned="${s.pinned ? '1' : '0'}">${s.pinned ? '📌' : '·'}</button>
                                 <button class="session-item-rename" title="${escHtml(t('header.renameSession'))}">✎</button>
                                 <button class="session-item-delete" title="${escHtml(t('sessions.deleteTitle'))}">🗑</button>

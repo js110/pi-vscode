@@ -470,23 +470,37 @@ body {
 .session-item:hover .session-item-delete,
 .session-item:hover .session-item-pin { opacity: 1; }
 .session-item-rename:hover { color: var(--accent); background: var(--surface-strong); }
-.session-item-tree { opacity: 1; color: var(--muted); }
-.session-item-tree:hover, .session-item-tree:focus-visible { color: var(--accent); background: var(--surface-strong); }
+.session-item-tree {
+    opacity: 1;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 6px;
+    background: var(--surface-strong);
+    border: 1px solid var(--hairline);
+}
+.session-item-tree svg { display: block; }
+.session-item-tree:hover, .session-item-tree:focus-visible { color: var(--accent); border-color: var(--accent); background: var(--surface-strong); }
 .session-panel > .tree-panel { max-height: none; border-bottom: none; }
-/* The session tree is a standalone browser: while it is open the panel takes
-   the full height and the transcript/composer stand down instead of peeking
-   out below the 48vh tray. DOM-driven (#tree-panel exists only while open),
-   so every close path reverts this automatically. The tree stretches to fill
-   the panel — its native-panel chrome is opaque, so a short tree must not
-   leave a skin-background strip visible below it (a stitched two-tone look). */
-#app:has(#tree-panel) .session-panel { max-height: none; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-#app:has(#tree-panel) .session-panel > .tree-panel { flex: 1 1 auto; }
-#app:has(#tree-panel) .messages,
-#app:has(#tree-panel) .input-container,
-#app:has(#tree-panel) .scroll-btn-wrap { display: none; }
-/* The status strip under the panel joins the native chrome colour while the
-   tree is open, so the whole lower area reads as one panel. */
-#app:has(#tree-panel) .extension-status { background: var(--vscode-sideBar-background); }
+/* Both the session list and the session tree are standalone panels: while
+   either is open the panel takes the full height and the transcript/composer
+   stand down instead of peeking out below a 48vh tray. DOM-driven
+   (#session-panel exists only while open), so every close path reverts this
+   automatically. The list stays translucent so the skin background shows
+   through it; children must not shrink (flexbox would compress them instead
+   of overflowing into the panel's own scrollbar). */
+#app:has(#session-panel) .session-panel { max-height: none; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#app:has(#session-panel) .session-panel > * { flex-shrink: 0; }
+#app:has(#session-panel) .session-panel > .session-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+#app:has(#session-panel) .messages,
+#app:has(#session-panel) .input-container,
+#app:has(#session-panel) .scroll-btn-wrap { display: none; }
+
+/* The tree matches the session list: the skin background shows through, so
+   the tree chrome is transparent instead of .native-panel's opaque colour
+   (dialogs/custom panels keep the opaque native colour — only the tree
+   lives inside the session panel). The status strip stays over the skin too. */
+#app:has(#tree-panel) .session-panel > .tree-panel { flex: 1 1 auto; background: transparent; }
 .session-item-pin { opacity: 0.7; }
 .session-item-pin[data-pinned="1"] { opacity: 1; color: var(--accent); }
 .session-item-pin:hover { color: var(--accent); background: var(--surface-strong); }
