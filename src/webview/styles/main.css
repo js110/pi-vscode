@@ -490,6 +490,15 @@ body {
    through it; children must not shrink (flexbox would compress them instead
    of overflowing into the panel's own scrollbar). */
 #app:has(#session-panel) .session-panel { max-height: none; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* Frosted glass scrim: the skin artwork stays visible behind the standalone
+   panel, but a blurred translucent wash keeps text readable over busy
+   images (a flat transparent tree over a photo is a muddy, low-contrast
+   mess). Applies to both the session list and the tree. */
+#app:has(#session-panel) .session-panel {
+    background: color-mix(in srgb, var(--vscode-sideBar-background) 68%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.1);
+    backdrop-filter: blur(16px) saturate(1.1);
+}
 #app:has(#session-panel) .session-panel > * { flex-shrink: 0; }
 #app:has(#session-panel) .session-panel > .session-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
 #app:has(#session-panel) .messages,
