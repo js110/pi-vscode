@@ -39,6 +39,12 @@ export interface SettingsData {
     thinkingLevel: string;
     autoApproveTools: boolean;
     allowedTools: string[];
+    /** Tool denylist applied after `allowedTools` (SDK `excludeTools`). */
+    excludeTools: string[];
+    /** Enable Pi's codemode tool (`+codemode`) on new sessions. */
+    enableCodemode: boolean;
+    /** Enable Pi's tool_search tool (`+tool_search`) on new sessions. */
+    enableToolSearch: boolean;
     autoSaveSessions: boolean;
     sessionStoragePath: string;
     contextUsageWarningThreshold: number;

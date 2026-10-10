@@ -2,7 +2,7 @@
 
 > [English](README.md) | [简体中文](README.zh-CN.md)
 
-**pi Agent By js**（扩展 ID `jiangsheng666.piByue`）把 [Pi 编码代理](https://github.com/earendil-works/pi-coding-agent)装进一个原生的 VS Code 面板。它没有另起炉灶实现一套模型/代理协议：面板直接运行 Pi 官方 SDK，因此认证、模型注册表、会话、技能、工具、事件流、追问队列与上下文压缩的行为和 Pi CLI 完全一致——因为它们本来就是 Pi 本身。
+**pi Agent By js**（扩展 ID `jiangsheng666.piByue`）把 [Pi 编码代理](https://github.com/earendil-works/pi)装进一个原生的 VS Code 面板。它没有另起炉灶实现一套模型/代理协议：面板直接运行 Pi 官方 SDK，因此认证、模型注册表、会话、技能、工具、事件流、追问队列与上下文压缩的行为和 Pi CLI 完全一致——因为它们本来就是 Pi 本身。
 
 面板通过 Pi 图标在 VS Code 的**右侧辅助栏**（Secondary Side Bar）打开，也可拖拽到其他位置。UI 派生自 [Zetaphor/pi-vscode-extension](https://github.com/Zetaphor/pi-vscode-extension)，IDE 桥接派生自 [pithings/pi-vscode](https://github.com/pithings/pi-vscode)。两个上游项目均为 MIT 协议，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

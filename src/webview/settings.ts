@@ -121,8 +121,14 @@ function render(data: SettingsData): void {
     container.appendChild(buildSection(t('settings.section.tools'), [
         buildToggle('autoApproveTools', t('settings.autoApprove'), data.autoApproveTools,
             t('settings.autoApproveDesc')),
+        buildToggle('enableCodemode', t('settings.enableCodemode'), data.enableCodemode,
+            t('settings.enableCodemodeDesc')),
+        buildToggle('enableToolSearch', t('settings.enableToolSearch'), data.enableToolSearch,
+            t('settings.enableToolSearchDesc')),
         buildTextarea('allowedTools', t('settings.allowedTools'), data.allowedTools.join(', '),
-            t('settings.allowedToolsDesc')),
+            t('settings.allowedToolsDesc'), t('settings.allowedToolsPlaceholder')),
+        buildTextarea('excludeTools', t('settings.excludeTools'), data.excludeTools.join(', '),
+            t('settings.excludeToolsDesc'), t('settings.excludeToolsPlaceholder')),
     ]));
 
     const approvalSection = buildSection(t('settings.section.approval'), [buildApprovalPlaceholder()]);
@@ -191,13 +197,13 @@ function buildTextInput(key: string, label: string, value: string, description: 
     return row;
 }
 
-function buildTextarea(key: string, label: string, value: string, description: string): HTMLElement {
+function buildTextarea(key: string, label: string, value: string, description: string, placeholder = t('settings.allowedToolsPlaceholder')): HTMLElement {
     const row = el('div', 'setting-row');
     row.innerHTML = `
         <div class="setting-label-row">
             <label for="setting-${key}">${escHtml(label)}</label>
         </div>
-        <input type="text" id="setting-${key}" class="setting-input" data-key="${key}" value="${escAttr(value)}" placeholder="${escAttr(t('settings.allowedToolsPlaceholder'))}">
+        <input type="text" id="setting-${key}" class="setting-input" data-key="${key}" value="${escAttr(value)}" placeholder="${escAttr(placeholder)}">
         <p class="setting-description">${escHtml(description)}</p>
     `;
     return row;
@@ -457,7 +463,7 @@ function bindEvents(): void {
             debounce = setTimeout(() => {
                 const key = (input as HTMLInputElement).dataset.key!;
                 let value: any = (input as HTMLInputElement).value;
-                if (key === 'allowedTools') {
+                if (key === 'allowedTools' || key === 'excludeTools') {
                     value = value.split(',').map((s: string) => s.trim()).filter(Boolean);
                 }
                 vscode.postMessage({ type: 'updateSetting', key, value });

@@ -2,7 +2,7 @@
 
 > [English](README.md) | [简体中文](README.zh-CN.md)
 
-**pi Agent By js** (extension ID `jiangsheng666.piByue`) puts the [Pi coding agent](https://github.com/earendil-works/pi-coding-agent) into a native VS Code panel. It is not another model/agent protocol: the panel runs Pi's own SDK, so authentication, the model registry, sessions, skills, tools, event streaming, follow-up queueing, and context compaction all behave exactly like the Pi CLI — because they *are* Pi.
+**pi Agent By js** (extension ID `jiangsheng666.piByue`) puts the [Pi coding agent](https://github.com/earendil-works/pi) into a native VS Code panel. It is not another model/agent protocol: the panel runs Pi's own SDK, so authentication, the model registry, sessions, skills, tools, event streaming, follow-up queueing, and context compaction all behave exactly like the Pi CLI — because they *are* Pi.
 
 The panel opens in VS Code's secondary side bar from the Pi icon and can be dragged anywhere. UI derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetaphor/pi-vscode-extension); IDE bridge derived from [pithings/pi-vscode](https://github.com/pithings/pi-vscode). Both upstreams are MIT licensed — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

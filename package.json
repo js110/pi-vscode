@@ -238,6 +238,24 @@
           "default": [],
           "description": "Pi tool selection: names or patterns (read, mcp__*), or adjust defaults (+codemode, -write). Leave empty to use Pi defaults. Applies to new sessions."
         },
+        "pi-agent.excludeTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Pi tool denylist: names or patterns (bash, mcp__*) disabled after allowedTools is applied. Plain entries only — no +/-. Applies to new sessions."
+        },
+        "pi-agent.enableCodemode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Pi's codemode tool (+codemode): the agent writes small JS programs to call tools in batch, usually faster and cheaper. Ignored when Allowed Tools is an explicit plain allowlist (add codemode there by name instead). Applies to new sessions."
+        },
+        "pi-agent.enableToolSearch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Pi's tool_search tool (+tool_search): the agent discovers tools on demand instead of loading every tool into the prompt (useful with many MCP servers). Ignored when Allowed Tools is an explicit plain allowlist. Applies to new sessions."
+        },
         "pi-agent.autoSaveSessions": {
           "type": "boolean",
           "default": true,

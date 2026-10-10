@@ -27,7 +27,7 @@ try {
     process.exit(1);
 }
 
-const pkgVersion = (() => {
+const sdkPkg = (() => {
     try {
         const entryUrl = import.meta.resolve('@earendil-works/pi-coding-agent');
         let dir = dirname(fileURLToPath(entryUrl));
@@ -36,7 +36,7 @@ const pkgVersion = (() => {
             if (existsSync(p)) {
                 const pkg = JSON.parse(readFileSync(p, 'utf8'));
                 if (pkg?.name === '@earendil-works/pi-coding-agent') {
-                    return String(pkg.version ?? 'unknown');
+                    return { version: String(pkg.version ?? 'unknown'), dir };
                 }
             }
             dir = dirname(dir);
@@ -44,8 +44,10 @@ const pkgVersion = (() => {
     } catch {
         /* fall through */
     }
-    return 'unknown';
+    return { version: 'unknown', dir: undefined };
 })();
+const pkgVersion = sdkPkg.version;
+const sdkRoot = sdkPkg.dir;
 
 const missing = [];
 
@@ -72,6 +74,22 @@ function checkStatic(objName, method) {
 function checkProto(objName, method) {
     const obj = sdk?.[objName];
     if (typeof obj?.prototype?.[method] !== 'function') { missing.push(`${objName}#${method}`); }
+}
+
+/**
+ * Assert that a token still appears in an installed .d.ts file. Use for
+ * option/event *fields* (e.g. `excludeTools`, `agent_settled.aborted`) that
+ * no export/prototype check can see — a rename there would otherwise slip
+ * through typecheck only if the extension's own reads are also gone.
+ */
+function checkTypeToken(relPath, token) {
+    if (!sdkRoot) return;
+    try {
+        const text = readFileSync(join(sdkRoot, relPath), 'utf8');
+        if (!text.includes(token)) missing.push(`types: ${relPath} → "${token}"`);
+    } catch (err) {
+        missing.push(`types: ${relPath} unreadable (${err?.code ?? err?.message ?? err})`);
+    }
 }
 
 // --- Module exports used by the extension (src/pi/*) ---
@@ -102,6 +120,11 @@ if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.0.0')) {
     ['reload', 'navigateTree', 'getUserMessagesForForking', 'exportToHtml', 'exportToJsonl', 'setScopedModels', 'bindExtensions', 'waitForIdle'].forEach(m => checkProto('AgentSession', m));
     ['getTree', 'getLeafId', 'getCwd', 'getEntry', 'appendLabelChange'].forEach(m => checkProto('SessionManager', m));
     ['getCommand', 'createCommandContext'].forEach(m => checkProto('ExtensionRunner', m));
+    // The tool-approval hook monkey-patches ExtensionRunner.emitToolCall
+    // (src/pi/session.ts). A rename there does NOT throw — the patch just
+    // lands on a dead property and every approval silently bypasses — so it
+    // must be part of the audit, not merely typecheck-covered.
+    checkProto('ExtensionRunner', 'emitToolCall');
     ['Theme', 'initTheme', 'createMcpExtension', 'createCodemodeExtension', 'createToolSearchExtension'].forEach(checkExport);
     ['login', 'logout', 'listCredentials', 'getProviders', 'getProvider', 'getAvailableSnapshot'].forEach(m => checkProto('ModelRuntime', m));
     checkProto('ProjectTrustStore', 'set');
@@ -115,6 +138,16 @@ if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.0.0')) {
 // will catch a rename/removal on the next SDK bump.
 if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '0.86.0')) {
     ['getCacheWarmingMode', 'setCacheWarmingMode'].forEach((m) => checkProto('SettingsManager', m));
+}
+
+// --- Version-gated APIs (Pi 1.1.0+): session denylist and run/status fields ---
+// The extension reads these unconditionally on 1.1.0+ (session tool options,
+// agent_settled.aborted, tool durationMs); gate so an older pinned copy only
+// warns via the canary's latest-SDK run.
+if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.1.0')) {
+    checkTypeToken('dist/core/sdk.d.ts', 'excludeTools');
+    checkTypeToken('dist/core/agent-session.d.ts', 'aborted: boolean');
+    checkTypeToken('dist/core/extensions/types.d.ts', 'durationMs');
 }
 
 // AgentSession instance methods cannot be checked without creating a live

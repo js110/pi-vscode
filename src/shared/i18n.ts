@@ -295,6 +295,12 @@ const EN = {
 
     // Status bar open-panel entry (the secondary-sidebar container has no activity-bar icon)
     'statusBar.openPanel': 'Open Pi Agent panel',
+    // Pi 1.1.0 program status states (mirrors the SDK's OSC 7501 reporting)
+    'statusBar.status.working': 'Working',
+    'statusBar.status.blocked': 'Waiting for you',
+    'statusBar.status.done': 'Done',
+    'statusBar.status.error': 'Failed',
+    'statusBar.status.idle': 'Idle',
     'occupancy.occupied': 'This session is open in another VS Code window. It is read-only here.',
     'occupancy.released': 'The other window released this session. You can resume editing.',
     'occupancy.lostLock': 'This session was taken over by another window. It is read-only here.',
@@ -354,6 +360,13 @@ const EN = {
     'settings.allowedTools': 'Allowed Tools',
     'settings.allowedToolsDesc': 'Comma-separated Pi tool selection: names or patterns (read, mcp__*), or adjust defaults (+codemode, -write). Empty uses Pi defaults. Applies to new sessions.',
     'settings.allowedToolsPlaceholder': 'e.g. read, grep, bash',
+    'settings.excludeTools': 'Excluded Tools',
+    'settings.excludeToolsDesc': 'Comma-separated Pi tool denylist: names or patterns (bash, mcp__*), plain entries only — no +/-. Applied after Allowed Tools. Applies to new sessions.',
+    'settings.excludeToolsPlaceholder': 'e.g. bash, mcp__github__*',
+    'settings.enableCodemode': 'Enable codemode',
+    'settings.enableCodemodeDesc': 'Adds Pi\'s codemode tool (+codemode): the agent writes small JS programs to batch tool calls, usually faster and cheaper. Ignored when Allowed Tools is a plain allowlist — add codemode by name there instead. New sessions only.',
+    'settings.enableToolSearch': 'Enable tool search',
+    'settings.enableToolSearchDesc': 'Adds Pi\'s tool_search tool (+tool_search): the agent discovers tools on demand instead of loading every tool into the prompt (useful with many MCP servers). New sessions only.',
     'settings.section.approval': 'Approval Memory',
     'settings.approvalLoading': 'Loading approval rules...',
     'settings.approvalDesc': 'Tools you chose to "Remember" from approval cards, allowed in every tab. Shell tools are never remembered. Changes take effect immediately.',
@@ -706,6 +719,12 @@ const ZH: Record<TextKey, string> = {
 
     // 状态栏打开面板入口（次侧边栏容器没有活动栏图标）
     'statusBar.openPanel': '打开 Pi Agent 面板',
+    // Pi 1.1.0 程序状态五态（对应 SDK 的 OSC 7501 状态上报）
+    'statusBar.status.working': '运行中',
+    'statusBar.status.blocked': '等待你操作',
+    'statusBar.status.done': '已完成',
+    'statusBar.status.error': '运行失败',
+    'statusBar.status.idle': '空闲',
     'occupancy.occupied': '该会话已在其他 VS Code 窗口打开，此处为只读。',
     'occupancy.released': '其他窗口已释放该会话，可以恢复编辑。',
     'occupancy.lostLock': '该会话已被其他窗口接管，此处为只读。',
@@ -762,6 +781,13 @@ const ZH: Record<TextKey, string> = {
     'settings.allowedTools': '允许的工具',
     'settings.allowedToolsDesc': '以逗号分隔的 Pi 工具选择：名称或通配符（read、mcp__*），也可调整默认工具（+codemode、-write）。留空使用 Pi 默认值，新会话生效。',
     'settings.allowedToolsPlaceholder': '如 read, grep, bash',
+    'settings.excludeTools': '排除的工具',
+    'settings.excludeToolsDesc': '以逗号分隔的 Pi 工具拒绝名单：名称或通配符（bash、mcp__*），仅普通条目——不支持 +/-。在"允许的工具"之后应用，新会话生效。',
+    'settings.excludeToolsPlaceholder': '如 bash, mcp__github__*',
+    'settings.enableCodemode': '启用 codemode',
+    'settings.enableCodemodeDesc': '加入 Pi 的 codemode 工具（+codemode）：代理编写小型 JS 程序批量调用工具，通常更快更省。若"允许的工具"是显式白名单则忽略此项——请在其中直接写 codemode。仅新会话生效。',
+    'settings.enableToolSearch': '启用 tool search',
+    'settings.enableToolSearchDesc': '加入 Pi 的 tool_search 工具（+tool_search）：代理按需发现工具，无需把全部工具塞进提示词（MCP 服务器多时有用）。仅新会话生效。',
     'settings.section.approval': '审批记忆',
     'settings.approvalLoading': '正在加载审批规则...',
     'settings.approvalDesc': '你在审批卡中选择"记住"的工具，将在所有标签页中放行。Shell 类工具永远不会被记住。更改即时生效。',

@@ -1,7 +1,16 @@
 import * as vscode from 'vscode';
 import type { TabManager } from './tab';
 import { formatTokensCompact } from '../shared/webview-text';
-import { t } from '../shared/i18n';
+import { t, type TextKey } from '../shared/i18n';
+import type { ProgramStatus } from '../shared/program-status';
+
+const STATUS_LABEL: Record<ProgramStatus, TextKey> = {
+    working: 'statusBar.status.working',
+    blocked: 'statusBar.status.blocked',
+    done: 'statusBar.status.done',
+    error: 'statusBar.status.error',
+    idle: 'statusBar.status.idle',
+};
 
 export class StatusBarManager implements vscode.Disposable {
     private _item: vscode.StatusBarItem;
@@ -30,6 +39,7 @@ export class StatusBarManager implements vscode.Disposable {
     /** Re-apply language-dependent copy after `pi-agent.displayLanguage` changes. */
     refresh(): void {
         this._openItem.tooltip = t('statusBar.openPanel');
+        this._update();
     }
 
     private _update(): void {
@@ -38,12 +48,17 @@ export class StatusBarManager implements vscode.Disposable {
         if (!session) return;
 
         const model = session.getCurrentModel();
-        const isStreaming = this._tabManager.isStreaming;
-        const icon = isStreaming ? '$(loading~spin)' : '$(hubot)';
+        const status = this._tabManager.getProgramStatus();
+        const icon =
+            status === 'working' ? '$(loading~spin)' :
+            status === 'blocked' ? '$(question)' :
+            status === 'error' ? '$(error)' :
+            status === 'done' ? '$(check)' :
+            '$(hubot)';
         const name = model ? (model.name ?? model.id) : 'No model';
         this._item.text = `${icon} Pi: ${name}`;
 
-        const parts: string[] = ['Pi Agent'];
+        const parts: string[] = [t(STATUS_LABEL[status]), 'Pi Agent'];
         if (model?.name) {
             parts.push(`Model: ${model.provider}/${model.id}`);
         }

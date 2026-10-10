@@ -21,6 +21,7 @@ import { t } from '../shared/i18n';
 import { executeNativeCommand } from './native-commands';
 import { ExtensionUiBridge } from './extension-ui';
 import { nativeExtensionFactories } from './native-extensions';
+import { buildSessionToolOptions, type SessionToolOptions } from '../shared/tool-options';
 import type { SessionTreeEntryInfo } from '../shared/protocol';
 
 export type ToolApprovalHandler = (toolCallId: string, toolName: string, args: any) => Promise<boolean>;
@@ -411,19 +412,25 @@ export class PiSessionManager {
         });
         await resourceLoader.reload();
 
-        const allowedTools = vscode.workspace.getConfiguration('pi-agent').get<string[]>('allowedTools', []);
+        const { tools, excludeTools, skippedExtras } = this._readToolOptions();
+        if (skippedExtras.length > 0) {
+            this._outputChannel.appendLine(
+                `Tool toggles skipped: ${skippedExtras.join(', ')} — Allowed Tools is a plain allowlist; add them there by name.`,
+            );
+        }
         const result = await createAgentSession({
             cwd,
             modelRuntime: this._modelRuntime,
             sessionManager,
             settingsManager,
             resourceLoader,
-            ...(allowedTools.length > 0 ? { tools: allowedTools } : {}),
+            ...(tools ? { tools } : {}),
+            ...(excludeTools ? { excludeTools } : {}),
         });
         if (hasFunction(sdk, 'AgentSessionRuntime') && hasFunction(sdk, 'createAgentSessionServices') && hasFunction(sdk, 'createAgentSessionFromServices')) {
             const services = { cwd, agentDir, modelRuntime: this._modelRuntime, settingsManager, resourceLoader, diagnostics: [] };
             this._runtime = new sdk.AgentSessionRuntime(result.session, services, async (options) => {
-                const nextAllowedTools = vscode.workspace.getConfiguration('pi-agent').get<string[]>('allowedTools', []);
+                const nextToolOptions = this._readToolOptions();
                 const nextServices = await sdk.createAgentSessionServices({
                     cwd: options.cwd, agentDir: options.agentDir, modelRuntime: this._modelRuntime,
                     resourceLoaderOptions: { extensionFactories: nativeExtensionFactories(sdk), additionalExtensionPaths: this._bridgeExtensionPath ? [this._bridgeExtensionPath] : [] },
@@ -431,7 +438,8 @@ export class PiSessionManager {
                 const next = await sdk.createAgentSessionFromServices({
                     services: nextServices, sessionManager: options.sessionManager,
                     sessionStartEvent: options.sessionStartEvent,
-                    ...(nextAllowedTools.length > 0 ? { tools: nextAllowedTools } : {}),
+                    ...(nextToolOptions.tools ? { tools: nextToolOptions.tools } : {}),
+                    ...(nextToolOptions.excludeTools ? { excludeTools: nextToolOptions.excludeTools } : {}),
                 });
                 return { ...next, services: nextServices, diagnostics: nextServices.diagnostics };
             });
@@ -582,6 +590,19 @@ export class PiSessionManager {
 
     getAutoApproveTools(): boolean {
         return vscode.workspace.getConfiguration('pi-agent').get<boolean>('autoApproveTools', false);
+    }
+
+    /** Session tool selection from VS Code settings (allowlist/denylist +
+     *  codemode/tool-search toggles), re-read per session (re)creation so a
+     *  settings change lands on the next session without a reload. */
+    private _readToolOptions(): SessionToolOptions {
+        const config = vscode.workspace.getConfiguration('pi-agent');
+        return buildSessionToolOptions({
+            allowedTools: config.get<string[]>('allowedTools', []),
+            excludeTools: config.get<string[]>('excludeTools', []),
+            enableCodemode: config.get<boolean>('enableCodemode', false),
+            enableToolSearch: config.get<boolean>('enableToolSearch', false),
+        });
     }
 
     setToolApprovalHandler(handler: ToolApprovalHandler | undefined): void {

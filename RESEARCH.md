@@ -2,6 +2,8 @@
 
 Research date: 2026-09-01.
 
+> **Status note (2026-10-10):** the Pi SDK is now 1.1.0. Current integration notes live in `docs/native-commands.md`; the post-1.0 feature gap analysis is in `docs/research/pi-post-1.0-features.md`. The 0.84.x-era conclusions below are historical.
+
 ## Decision
 
 Use a Pi-specific UI implementation as the base and keep Pi as the agent backend. Do not retrofit Cline, Continue, or Roo Code's provider/agent loops, because that would duplicate the model interaction, tool loop, session format, skills, and compaction already supplied by Pi.

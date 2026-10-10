@@ -43,6 +43,7 @@ import { parseUnifiedHunks, applyHunkSelection, applyHunkSelectionToNew } from '
 import type { SessionPins } from '../utils/session-pins';
 import { inMemorySessionPins } from '../utils/session-pins';
 import { getRunOutcome, type RunOutcome } from '../shared/run-outcome';
+import { deriveProgramStatus, type ProgramStatus } from '../shared/program-status';
 import { probeSessionFile, readSessionChunk, findSnippet, trashSessionFile } from '../utils/session-files';
 
 export interface Tab {
@@ -333,6 +334,24 @@ export class TabManager {
 
     get isStreaming(): boolean {
         return this._tabs.get(this._activeTabId)?.isStreaming ?? false;
+    }
+
+    /**
+     * Pi 1.1.0-style program status of the active tab (working / blocked /
+     * done / error / idle), re-derived from host signals. The SDK's own OSC
+     * 7501 reporting never reaches a VS Code host, so the status bar shows
+     * this equivalent instead.
+     */
+    getProgramStatus(): ProgramStatus {
+        const tab = this._tabs.get(this._activeTabId);
+        if (!tab) return 'idle';
+        const ui = tab.session.extensionUi.state;
+        return deriveProgramStatus({
+            isStreaming: tab.isStreaming,
+            compactionInFlight: tab.compactionInFlight,
+            waitingForUser: !!ui.dialog || !!ui.custom || tab.pendingApprovals.size > 0,
+            runOutcome: tab.runOutcome,
+        });
     }
 
     onStateChange(listener: () => void): () => void {
