@@ -473,6 +473,13 @@ body {
 .session-item-tree { opacity: 1; color: var(--muted); }
 .session-item-tree:hover, .session-item-tree:focus-visible { color: var(--accent); background: var(--surface-strong); }
 .session-panel > .tree-panel { max-height: none; border-bottom: none; }
+/* The session tree is a standalone browser: while it is open the panel takes
+   the full height and the transcript/composer stand down instead of peeking
+   out below the 48vh tray. DOM-driven (#tree-panel exists only while open),
+   so every close path reverts this automatically. */
+#app:has(#tree-panel) .session-panel { max-height: none; flex: 1 1 auto; min-height: 0; }
+#app:has(#tree-panel) .messages,
+#app:has(#tree-panel) .input-container { display: none; }
 .session-item-pin { opacity: 0.7; }
 .session-item-pin[data-pinned="1"] { opacity: 1; color: var(--accent); }
 .session-item-pin:hover { color: var(--accent); background: var(--surface-strong); }
