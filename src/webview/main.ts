@@ -2276,9 +2276,16 @@ function bindStableEvents(): void {
 
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             const list = currentHistory();
+            // Multi-line editing: arrows move the caret first. History
+            // navigation only binds at the field's edge — Up on the first
+            // line, Down on the last — so editing line 2 of a draft never
+            // swaps the whole input for an older message.
+            const caret = input.selectionStart ?? 0;
+            const caretOnFirstLine = !input.value.slice(0, caret).includes('\n');
+            const caretOnLastLine = !input.value.slice(caret).includes('\n');
             if (list.length === 0) {
                 historyCursor = -1;
-            } else if (e.key === 'ArrowUp') {
+            } else if (e.key === 'ArrowUp' && caretOnFirstLine) {
                 e.preventDefault();
                 if (historyCursor === -1) {
                     historyDraft = input.value;
@@ -2289,7 +2296,7 @@ function bindStableEvents(): void {
                 input.value = list[historyCursor];
                 autosizeInput(input);
                 input.setSelectionRange(input.value.length, input.value.length);
-            } else if (historyCursor !== -1) {
+            } else if (e.key === 'ArrowDown' && historyCursor !== -1 && caretOnLastLine) {
                 e.preventDefault();
                 if (historyCursor >= list.length - 1) {
                     historyCursor = -1;
