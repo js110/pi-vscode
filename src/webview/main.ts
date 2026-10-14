@@ -158,10 +158,16 @@ function renderSessionTree(): void {
         } else {
             const input = el('input', 'native-search') as HTMLInputElement; input.value = treeEntries.find(entry => entry.id === entryId)?.label ?? '';
             input.setAttribute('aria-label', t('tree.label')); row.replaceChildren(input); input.focus();
+            const restore = (): void => renderSessionTree();
             input.addEventListener('keydown', event => {
-                if (event.key === 'Enter') vscode.postMessage({ type: 'labelSessionTree', entryId, label: input.value });
-                else if (event.key === 'Escape') renderSessionTree();
+                event.stopPropagation();
+                if ((event as KeyboardEvent).isComposing) return;
+                if (event.key === 'Enter') { vscode.postMessage({ type: 'labelSessionTree', entryId, label: input.value }); restore(); }
+                else if (event.key === 'Escape') restore();
             });
+            // Clicking anywhere else reads as "give up": restore the row
+            // instead of leaving the input embedded forever.
+            input.addEventListener('blur', restore);
         }
     });
 }
@@ -1820,7 +1826,7 @@ function removeApplyPreviewCard(previewId: string): void {
 }
 
 function showNotice(message: string): void {
-    showToast({ containerId: 'messages', className: 'notice-toast', message, durationMs: 4000 });
+    showToast({ containerId: activeToastContainerId(), className: 'notice-toast', message, durationMs: 4000 });
     scrollToBottom();
 }
 
@@ -2182,14 +2188,21 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     });
 }
 
-/** Input-validation hints dismiss themselves; agent errors stay until the next turn. */
+/** Input-validation hints dismiss themselves; agent errors stay until the next turn.
+ *  Toasts anchor to the session panel while it covers the transcript — an error
+ *  behind a full-height panel reads as "click did nothing". */
 const ERROR_HINT_MS = 5000;
 
+function activeToastContainerId(): string {
+    return document.getElementById('session-panel') ? 'session-panel' : 'messages';
+}
+
 function showError(message: string, durationMs?: number): void {
-    const container = document.getElementById('messages');
+    const containerId = activeToastContainerId();
+    const container = document.getElementById(containerId);
     if (!container) return;
     if (durationMs != null) {
-        showToast({ containerId: 'messages', className: 'error-message', message, durationMs });
+        showToast({ containerId, className: 'error-message', message, durationMs });
         scrollToBottom();
         return;
     }
