@@ -43,4 +43,20 @@ it('dispatches navigateSessionTree for a non-current branch in a forked tree', a
 
     otherBtn.click();
     expect(sent.some((m) => m.type === 'navigateSessionTree' && m.entryId === 'e3')).toBe(true);
+
+    // The host rewrites the branch in place — same sessionId, new history —
+    // and pushes a stateSync. The full-height session panel must close so
+    // the rewritten conversation is actually visible (user report: tree
+    // clicks look dead because the panel stayed over the new history).
+    expect(document.getElementById('session-panel')).not.toBeNull();
+    dispatch({ type: 'stateSync', state: {
+        ...base,
+        messages: [
+            { role: 'user', content: 'first question' },
+            { role: 'assistant', content: 'answer' },
+            { role: 'user', content: 'other branch' },
+        ],
+    } });
+    expect(document.getElementById('session-panel')).toBeNull();
+    expect(document.getElementById('tree-panel')).toBeNull();
 });

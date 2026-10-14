@@ -546,6 +546,76 @@ function autosizeInput(input: HTMLTextAreaElement): void {
     input.style.height = Math.min(input.scrollHeight, 200) + 'px';
 }
 
+/** True when the caret sits on the textarea's first *visual* row.
+ *  Soft-wrapped lines count: a long first line that wraps into two rows is
+ *  still one logical line, and Up must move the caret inside it rather than
+ *  swap the draft for a history entry. */
+function caretOnFirstVisualRow(textarea: HTMLTextAreaElement): boolean {
+    const caret = textarea.selectionStart ?? 0;
+    const before = textarea.value.slice(0, caret);
+    if (before.includes('\n')) return false; // later logical line
+    if (caret === 0) return true; // start of the field is always row 0
+    return caretSharesEdgeRow(textarea, caret, 'start');
+}
+
+/** True when the caret sits on the textarea's last visual row (mirror of
+ *  caretOnFirstVisualRow for Down-arrow history exit). */
+function caretOnLastVisualRow(textarea: HTMLTextAreaElement): boolean {
+    const caret = textarea.selectionStart ?? 0;
+    const after = textarea.value.slice(caret);
+    if (after.includes('\n')) return false; // earlier logical line
+    if (caret === textarea.value.length) return true; // end is always the last row
+    return caretSharesEdgeRow(textarea, caret, 'end');
+}
+
+/** Visual-row measurement: a mirror div replicates the textarea's text
+ *  layout (fonts, wrapping width), a zero-width marker sits at the caret
+ *  inside its logical line, and the marker's offsetTop decides the row.
+ *  In test DOMs without layout everything measures as one row, which
+ *  degrades to the plain logical-line behavior. */
+function caretSharesEdgeRow(textarea: HTMLTextAreaElement, caret: number, edge: 'start' | 'end'): boolean {
+    const value = textarea.value;
+    const lineStart = value.lastIndexOf('\n', caret - 1) + 1;
+    let lineEnd = value.indexOf('\n', caret);
+    if (lineEnd === -1) lineEnd = value.length;
+    const offsetInLine = caret - lineStart;
+
+    const computed = getComputedStyle(textarea);
+    const mirror = document.createElement('div');
+    const style = mirror.style;
+    style.position = 'absolute';
+    style.visibility = 'hidden';
+    style.pointerEvents = 'none';
+    style.boxSizing = 'content-box';
+    style.whiteSpace = 'pre-wrap';
+    style.overflowWrap = computed.getPropertyValue('overflow-wrap') || 'break-word';
+    style.wordBreak = computed.getPropertyValue('word-break');
+    for (const prop of ['font-family', 'font-size', 'font-style', 'font-weight', 'font-variant', 'letter-spacing', 'word-spacing', 'text-indent', 'text-transform', 'line-height', 'tab-size'] as const) {
+        style.setProperty(prop, computed.getPropertyValue(prop));
+    }
+    const paddingL = parseFloat(computed.getPropertyValue('padding-left')) || 0;
+    const paddingR = parseFloat(computed.getPropertyValue('padding-right')) || 0;
+    // clientWidth is the padding box (borders and scrollbar excluded); the
+    // mirror replicates the content box only.
+    style.width = Math.max(textarea.clientWidth - paddingL - paddingR, 0) + 'px';
+
+    const lineText = value.slice(lineStart, lineEnd);
+    const probe = document.createElement('span');
+    probe.textContent = '​';
+    const marker = document.createElement('span');
+    marker.textContent = '​';
+    mirror.append(probe, document.createTextNode(lineText.slice(0, offsetInLine)), marker, document.createTextNode(lineText.slice(offsetInLine)));
+    document.body.appendChild(mirror);
+    try {
+        const rowHeight = parseFloat(computed.getPropertyValue('line-height')) || marker.offsetHeight || 16;
+        if (edge === 'start') return Math.abs(marker.offsetTop - probe.offsetTop) < rowHeight / 2;
+        // Last row: the mirror's bottom edge is within one row of the marker.
+        return mirror.offsetHeight - marker.offsetTop <= rowHeight * 1.5;
+    } finally {
+        mirror.remove();
+    }
+}
+
 function applyStateSync(s: SerializedAgentState): void {
     state.extensionUi = s.extensionUi;
     state.runOutcome = s.runOutcome;
@@ -639,6 +709,14 @@ function applyStateSync(s: SerializedAgentState): void {
             const { from, rewrite } = historyReplacePending;
             if (rewrite || s.sessionId !== from) {
                 historyReplacePending = null;
+                // A completed history rewrite (tree jump, checkpoint restore,
+                // replay) must land on the conversation. Tree jumps rewrite
+                // in place and keep the same sessionId, so the session-change
+                // branch above never runs — close the full-height panel here
+                // instead of leaving it over the rewritten history.
+                treeOpen = false;
+                document.getElementById('tree-panel')?.remove();
+                document.getElementById('session-panel')?.remove();
                 userHasScrolled = false;
                 scrollToBottom(true);
                 updateScrollButton();
@@ -2277,15 +2355,13 @@ function bindStableEvents(): void {
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             const list = currentHistory();
             // Multi-line editing: arrows move the caret first. History
-            // navigation only binds at the field's edge — Up on the first
-            // line, Down on the last — so editing line 2 of a draft never
-            // swaps the whole input for an older message.
-            const caret = input.selectionStart ?? 0;
-            const caretOnFirstLine = !input.value.slice(0, caret).includes('\n');
-            const caretOnLastLine = !input.value.slice(caret).includes('\n');
+            // navigation only binds at the field's *visual* edge — Up on the
+            // first row, Down on the last — so editing line 2 of a draft, or
+            // inside a soft-wrapped line, never swaps the whole input for an
+            // older message.
             if (list.length === 0) {
                 historyCursor = -1;
-            } else if (e.key === 'ArrowUp' && caretOnFirstLine) {
+            } else if (e.key === 'ArrowUp' && caretOnFirstVisualRow(input)) {
                 e.preventDefault();
                 if (historyCursor === -1) {
                     historyDraft = input.value;
@@ -2296,7 +2372,7 @@ function bindStableEvents(): void {
                 input.value = list[historyCursor];
                 autosizeInput(input);
                 input.setSelectionRange(input.value.length, input.value.length);
-            } else if (e.key === 'ArrowDown' && historyCursor !== -1 && caretOnLastLine) {
+            } else if (e.key === 'ArrowDown' && historyCursor !== -1 && caretOnLastVisualRow(input)) {
                 e.preventDefault();
                 if (historyCursor >= list.length - 1) {
                     historyCursor = -1;
