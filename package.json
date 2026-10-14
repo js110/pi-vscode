@@ -362,11 +362,12 @@
     "test": "vitest",
     "test:unit": "vitest run",
     "compile:test": "tsc -p tsconfig.test.json",
-    "test:integration": "npm run compile && npm run compile:test && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-local-vscode-tests.ps1",
+    "test:integration": "npm run compile && npm run compile:test && node out-test/test/integration/runTest.js",
     "test:all": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@vscode/codicons": "^0.0.46-24",
     "highlight.js": "^11.12.0",
     "marked": "^18.0.11"
   },
