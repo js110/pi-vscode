@@ -522,12 +522,20 @@ export class PiSessionManager {
         return entries;
     }
 
-    async navigateSessionTree(id: string, summarize: boolean, instructions?: string): Promise<{ changed?: boolean; editorText?: string }> {
+    async navigateSessionTree(id: string, summarize: boolean, instructions?: string): Promise<{ changed?: boolean; cancelled?: boolean; aborted?: boolean; editorText?: string }> {
         const session = this._session;
         if (!session || !hasFunction(session, 'navigateTree')) throw new Error('Pi session navigation is unavailable');
         if (!session.sessionManager.getEntry(id)) throw new Error('Session entry no longer exists');
+        this._outputChannel.appendLine(`[tree] navigate entry=${id} summarize=${summarize}`);
         const result = await session.navigateTree(id, { summarize, customInstructions: instructions });
-        return result.cancelled || result.aborted ? {} : { changed: true, editorText: result.editorText };
+        if (result.cancelled || result.aborted) {
+            // Silent no-change exits (summarize aborted / extension cancel) must
+            // be diagnosable: log the exact exit reason.
+            this._outputChannel.appendLine(`[tree] navigate CANCELLED aborted=${!!result.aborted}`);
+            return { cancelled: true, aborted: !!result.aborted };
+        }
+        this._outputChannel.appendLine(`[tree] navigate OK`);
+        return { changed: true, editorText: result.editorText };
     }
 
     labelSessionTree(id: string, label: string): void {

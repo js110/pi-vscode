@@ -985,9 +985,15 @@ export class TabManager {
                         // the user on the conversation — do not re-open the tree
                         // on top of it. A cancelled navigation (changed falsy)
                         // keeps the tree where it was, refreshed below.
+                    } else {
+                        // A silently-cancelled navigation must never read as
+                        // "click did nothing".
+                        this._adapters.ui.showMessage(t('tree.navigateCancelled', {
+                            reason: result.aborted ? t('tree.navigateAborted') : t('tree.navigateIntercepted'),
+                        }));
+                        this._postSessionTree(tab);
                     }
                     if (result.editorText !== undefined) this._adapters.transport.post({ type: 'composerText', tabId: tab.id, text: result.editorText });
-                    if (!result.changed) this._postSessionTree(tab);
                 }
             } catch (error) { this._adapters.transport.post({ type: 'error', message: humanizeErrorMessage(error) ?? String(error) }); }
             return;
