@@ -944,7 +944,11 @@ async function updateMessages(): Promise<void> {
     }
 
     // Re-query after the await: a concurrent render() may have replaced the
-    // tree while we waited, so pre-await references can be stale.
+    // tree while we waited, so pre-await references can be stale. The await
+    // can also outlive the DOM: when a test host tears down its environment
+    // between dispatch and resume, `document` is gone — bail instead of
+    // throwing an unhandled rejection. A real webview always has a document.
+    if (typeof document === 'undefined') return;
     const container = document.getElementById('messages');
     if (!container) return;
 
