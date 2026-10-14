@@ -357,9 +357,9 @@ export async function activate(context: vscode.ExtensionContext) {
         const adapters: TabManagerAdapters = { transport, workspace, ui, agent };
 
         const factory: TabFactory = {
-            async create(): Promise<Tab> {
+            async create(options): Promise<Tab> {
                 const session = new PiSessionManager(outputChannel, bridgeExtensionPath, secrets);
-                await session.initialize();
+                await session.initialize({ cwd: options?.cwd });
                 const checkpointManager = new CheckpointManager();
                 const diffManager = new DiffManager(session, checkpointManager);
                 return { id: '', name: 'New Agent', session, diffManager, checkpointManager };
@@ -463,6 +463,15 @@ export async function activate(context: vscode.ExtensionContext) {
                 void inlineChat.discard();
             }),
 
+            vscode.commands.registerCommand('pi-agent.prototypeSecondCwd', async () => {
+                // T07 prototype (wayfinder): spawn a tab pinned to a scratch
+                // cwd to verify multi-SessionManager concurrency in F5.
+                // Removed when T09 lands the real worktree entry.
+                if (!tabManagerRef) return;
+                const protoDir = vscode.Uri.joinPath(context.globalStorageUri, 'proto-cwd');
+                await vscode.workspace.fs.createDirectory(protoDir);
+                await tabManagerRef.createTabInCwd({ cwd: protoDir.fsPath, name: 'Proto ⌗' });
+            }),
             vscode.commands.registerCommand('pi-agent.newChat', async () => {
                 await sidebarProvider.newSession();
             }),

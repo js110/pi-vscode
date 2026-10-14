@@ -74,7 +74,7 @@ export class PiSessionManager {
         return this._session !== undefined;
     }
 
-    async initialize(): Promise<void> {
+    async initialize(options?: { cwd?: string }): Promise<void> {
         this._outputChannel.appendLine('Initializing Pi session...');
         const { SessionManager: SM } = await loadPiSdk();
         const src = getSdkSource();
@@ -84,7 +84,9 @@ export class PiSessionManager {
             this._outputChannel.appendLine(`Pi SDK: ${src.source} copy, v${src.version}${location}${fallback}`);
         }
 
-        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+        // A tab-bound session may pin its cwd to a worktree; everything else
+        // (model runtime, registry, auth) is shared and cached by the SDK layer.
+        const cwd = options?.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
         this._modelRuntime = await getModelRuntime();
         await this._applyStoredApiKey();
         this._modelRegistry = await getModelRegistry();
