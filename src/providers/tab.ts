@@ -972,7 +972,15 @@ export class TabManager {
         if (msg.type === 'getSessionTree') { this._postSessionTree(tab); return; }
         if (msg.type === 'navigateSessionTree' || msg.type === 'labelSessionTree') {
             if (tab.isStreaming || tab.compactionInFlight || this._isReadOnlyLocked(tab)) {
-                this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: 'tree' }));
+                // Surface inline (panel-visible toast), not a fleeting corner
+                // notification — behind the full-height tree panel a corner
+                // toast reads as "click did nothing".
+                this._adapters.transport.post({
+                    type: 'error',
+                    message: this._isReadOnlyLocked(tab)
+                        ? t('occupancy.readOnlyBlocked')
+                        : t('slash.blockedStreaming', { name: 'tree' }),
+                });
                 return;
             }
             try {
