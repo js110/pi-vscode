@@ -222,6 +222,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const skinsUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles', 'skins.css')
         );
+        const codiconUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'codicon.css')
+        );
         const nonce = getNonce();
         const lang = resolveDisplayLang();
         const fontSize = clampFontSize(vscode.workspace.getConfiguration('pi-agent').get<number>('fontSize', 13));
@@ -237,7 +240,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' ${webview.cspSource};">
+          content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
+    <link rel="stylesheet" href="${codiconUri}">
     <link rel="stylesheet" href="${styleUri}">
     <link rel="stylesheet" href="${skinsUri}">
     <style>:root { --fs-base: ${fontSize}px; --custom-skin-opacity: ${opacity};${skinVars} }</style>

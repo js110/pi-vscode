@@ -76,10 +76,19 @@
     --fs-xs: calc(var(--fs-base) - 2px);
     --fs-micro: calc(var(--fs-base) - 3px);
 
-    /* Radius system — sharp prototype scale (ui/assets/tokens.css: 4/6px) */
+    /* Radius system — sharp prototype scale (ui/assets/tokens.css: 4/6px).
+       xxs is reserved for hairline elements (scrollbar thumbs); pill/circle
+       match Copilot's corner scale so chips and avatars round identically. */
+    --radius-xxs: 2px;
     --radius-sm: 4px;
     --radius-md: 6px;
     --radius-lg: 10px;
+    --radius-pill: 100px;
+    --radius-circle: 50%;
+
+    /* Codicon sizing scale (codicon.css sets 16px default) */
+    --icon-xs: 12px;
+    --icon-sm: 14px;
 
     /* Rail geometry: transcript gutter + the line position */
     --rail: 34px;
@@ -102,6 +111,18 @@ body {
     background: var(--bg);
     padding: 0 !important;
     -webkit-font-smoothing: antialiased;
+}
+
+/* Codicon sizing utilities — the font ships at 16px; these match the
+   previous inline-SVG scales so replacement is metric-neutral. */
+.codicon.codicon-xs { font-size: var(--icon-xs); }
+.codicon.codicon-sm { font-size: var(--icon-sm); }
+.codicon.codicon-spin {
+    animation: codicon-spin 1.2s linear infinite;
+}
+@keyframes codicon-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 #app {
@@ -183,7 +204,7 @@ body {
     align-items: center;
     gap: 6px;
     padding: 2px 10px 2px 8px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     font-size: var(--fs-micro);
     font-family: var(--font-mono);
     letter-spacing: 0.04em;
@@ -196,7 +217,7 @@ body {
 .status-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: var(--muted);
     flex-shrink: 0;
 }
@@ -234,9 +255,9 @@ body {
 }
 .icon-btn:hover { background: var(--surface-hover); color: var(--fg); }
 
-.header-icon-svg {
-    width: 16px;
-    height: 16px;
+.header-right .codicon {
+    font-size: 16px;
+    display: block;
 }
 
 /* Session tabs (under the brand row) */
@@ -291,9 +312,9 @@ body {
 .tab-active .tab-icon,
 .tab-streaming .tab-icon { opacity: 1; }
 
-.tab-icon-svg {
-    width: 14px;
-    height: 14px;
+.tab-icon .codicon {
+    font-size: 14px;
+    display: block;
 }
 
 /* Streaming status dot — static on purpose: a constantly spinning
@@ -303,7 +324,7 @@ body {
     display: inline-block;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: var(--accent);
 }
 
@@ -337,8 +358,6 @@ body {
     background: none;
     border: none;
     color: var(--faint);
-    font-size: 15px;
-    line-height: 1;
     cursor: pointer;
     padding: 2px 5px;
     border-radius: var(--radius-sm);
@@ -346,7 +365,10 @@ body {
     flex-shrink: 0;
     opacity: 0;
     transition: opacity 0.15s, background 0.15s, color 0.15s;
+    display: inline-flex;
+    align-items: center;
 }
+.tab-close .codicon { font-size: 14px; }
 .tab:hover .tab-close { opacity: 1; }
 .tab-close:hover {
     background: var(--surface-hover);
@@ -550,7 +572,7 @@ body {
 }
 .messages::-webkit-scrollbar { width: 6px; }
 .messages::-webkit-scrollbar-track { background: transparent; }
-.messages::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+.messages::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: var(--radius-sm); }
 
 .message { padding: 0; }
 .message.message-assistant { padding: 0; }
@@ -585,7 +607,7 @@ body {
     top: 14px;
     width: 20px;
     height: 20px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     border: 1px solid var(--accent);
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 10%, var(--bg));
@@ -633,7 +655,7 @@ body {
 }
 .u-av {
     padding: 1px 8px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     background: var(--tint-strong);
     color: var(--muted);
     font-family: var(--font-mono);
@@ -781,7 +803,7 @@ body {
 .message-content code:not(.hljs):not(.code-block-code) {
     background: var(--surface-strong);
     padding: 1px 5px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.88em;
     color: var(--fg);
@@ -842,7 +864,7 @@ body {
     tab-size: 4;
 }
 .code-block-pre::-webkit-scrollbar { height: 4px; }
-.code-block-pre::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
+.code-block-pre::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: var(--radius-xxs); }
 
 .code-block-actions {
     display: inline-flex;
@@ -959,7 +981,7 @@ body {
 .tool-status {
     font-size: var(--fs-micro);
     padding: 2px 9px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     font-weight: 500;
     font-family: var(--font-mono);
     letter-spacing: 0.06em;
@@ -1006,7 +1028,7 @@ body {
 .tool-args::-webkit-scrollbar,
 .tool-result::-webkit-scrollbar { width: 4px; }
 .tool-args::-webkit-scrollbar-thumb,
-.tool-result::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
+.tool-result::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: var(--radius-xxs); }
 
 /* ── Expandable tool cards ── */
 .tool-expandable { cursor: default; }
@@ -1019,13 +1041,11 @@ body {
 .tool-expandable > summary::marker { display: none; content: ''; }
 
 .tool-expand-arrow {
-    font-size: var(--fs-micro);
     color: var(--muted);
     flex-shrink: 0;
     transition: transform 0.15s, opacity 0.15s;
     display: inline-block;
     opacity: 0;
-    font-family: var(--font-mono);
 }
 .tool-expandable > summary:hover .tool-expand-arrow { opacity: 1; }
 .tool-expandable[open] .tool-expand-arrow {
@@ -1102,20 +1122,18 @@ body {
     display: inline-block;
     width: 7px;
     height: 7px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: color-mix(in srgb, var(--fg) 30%, transparent);
     flex-shrink: 0;
     transition: background 0.2s;
 }
 
 .thinking-chevron {
-    font-size: var(--fs-micro);
     color: var(--faint);
     flex-shrink: 0;
     transition: transform 0.15s, opacity 0.15s;
     display: inline-block;
     opacity: 0;
-    font-family: var(--font-mono);
 }
 .thinking-summary:hover .thinking-chevron { opacity: 1; }
 .thinking-block[open] .thinking-chevron {
@@ -1155,7 +1173,7 @@ body {
 .thinking-content code:not(.code-block-code) {
     background: var(--surface-strong);
     padding: 1px 5px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.9em;
 }
@@ -1166,6 +1184,29 @@ body {
     margin-right: 0;
     font-family: var(--font-mono);
     letter-spacing: 0.01em;
+}
+
+/* Copilot-style thinking shimmer (chatThinkingContent.css): a slow 400%
+   gradient sweeping through the label text while the block is actively
+   thinking — “alive” without motion noise. Colors stay on theme vars. */
+.thinking-block.active .thinking-summary .thinking-label {
+    background: linear-gradient(90deg,
+            var(--vscode-descriptionForeground) 0%,
+            var(--vscode-descriptionForeground) 30%,
+            var(--accent, var(--vscode-focusBorder)) 50%,
+            var(--vscode-descriptionForeground) 70%,
+            var(--vscode-descriptionForeground) 100%);
+    background-size: 400% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: thinking-shimmer 2s linear infinite;
+    will-change: background-position;
+}
+
+@keyframes thinking-shimmer {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
 }
 
 .thinking-block.active .thinking-summary { color: var(--warning-fg); }
@@ -1184,7 +1225,7 @@ body {
     top: 14px;
     width: 20px;
     height: 20px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     border: 1px solid var(--accent);
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 10%, var(--bg));
@@ -1287,7 +1328,7 @@ body {
 .diff-new-badge {
     font-size: var(--fs-micro);
     padding: 1px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--success-fg) 16%, transparent);
     color: var(--success-fg);
     font-weight: 700;
@@ -1308,7 +1349,7 @@ body {
     line-height: 1.5;
 }
 .diff-view::-webkit-scrollbar { width: 4px; height: 4px; }
-.diff-view::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
+.diff-view::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: var(--radius-xxs); }
 
 .apply-preview-card .diff-view { border-bottom: 1px solid var(--hairline); }
 
@@ -1518,7 +1559,7 @@ body {
     padding: 2px 9px;
     background: var(--surface-strong);
     color: var(--muted);
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     line-height: 1.3;
     white-space: nowrap;
     flex-shrink: 0;
@@ -1540,7 +1581,7 @@ body {
 .meter-track {
     width: 44px;
     height: 4px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     background: var(--surface-strong);
     overflow: hidden;
     flex-shrink: 0;
@@ -1569,7 +1610,7 @@ body {
     padding: 2px 9px;
     background: var(--surface-strong);
     color: var(--muted);
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     line-height: 1.3;
     white-space: nowrap;
     flex-shrink: 0;
@@ -1622,7 +1663,7 @@ body {
     padding: 0;
     flex-shrink: 0;
 }
-.send-btn svg { display: block; }
+.send-btn .codicon { display: block; font-size: 16px; }
 .send-btn:hover { opacity: 0.88; transform: translateY(-1px); }
 .send-btn:active { transform: translateY(0); }
 .send-btn:focus-visible {
@@ -1696,7 +1737,7 @@ body {
     height: 16px;
     padding: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: transparent;
     color: var(--muted);
     font-size: 9px;
@@ -1773,6 +1814,7 @@ body {
 }
 .selection-chip-icon {
     flex: none;
+    color: var(--muted);
 }
 .selection-chip-label {
     min-width: 0;
@@ -1786,7 +1828,7 @@ body {
     width: 14px;
     height: 14px;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: transparent;
     color: var(--muted);
     font-size: 9px;
@@ -1826,7 +1868,7 @@ body {
     height: 16px;
     padding: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: var(--vscode-button-background, #4a4a4a);
     color: var(--vscode-button-foreground, #ffffff);
     font-size: 9px;
@@ -1886,12 +1928,10 @@ body {
 .changed-files-summary::marker { display: none; content: ''; }
 .changed-files-summary:hover { background: var(--surface-hover); }
 .changed-files-arrow {
-    font-size: var(--fs-micro);
     color: var(--faint);
     display: inline-block;
     transition: transform 0.15s;
     flex-shrink: 0;
-    font-family: var(--font-mono);
 }
 .changed-files-section[open] .changed-files-arrow { transform: rotate(90deg); }
 .changed-files-count {
@@ -1935,7 +1975,7 @@ body {
     border-top: 1px solid var(--hairline);
 }
 .changed-files-list::-webkit-scrollbar { width: 4px; }
-.changed-files-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
+.changed-files-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: var(--radius-xxs); }
 .changed-file-item {
     display: flex;
     align-items: center;
@@ -1994,11 +2034,9 @@ body {
 .queued-summary::marker { display: none; content: ''; }
 .queued-summary:hover { color: var(--fg); background: var(--surface-hover); }
 .queued-chevron {
-    font-size: var(--fs-micro);
     display: inline-block;
     transition: transform 0.15s;
     flex-shrink: 0;
-    font-family: var(--font-mono);
 }
 .queued-section[open] .queued-chevron { transform: rotate(90deg); }
 .queued-count {
@@ -2233,7 +2271,7 @@ body {
     width: clamp(56px, 24%, 104px);
     height: clamp(4px, 1.2vh, 6px);
     margin-top: clamp(6px, 1.6vh, 10px);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     transform: rotate(-1.6deg);
     background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 30%, transparent));
 }
@@ -2246,7 +2284,7 @@ body {
 .w-hint kbd {
     background: var(--surface-strong);
     border: 1px solid var(--hairline);
-    border-radius: 5px;
+    border-radius: var(--radius-sm);
     padding: 2px 6px;
     font-size: var(--fs-xs);
     font-family: var(--font-mono);
@@ -2364,7 +2402,7 @@ body {
     right: 20px;
     width: 32px;
     height: 32px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: var(--surface-strong);
     backdrop-filter: blur(6px);
     border: 1px solid var(--hairline);
@@ -2476,7 +2514,7 @@ body {
 .memory-badge {
     padding: 1px 8px;
     margin-left: auto;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     font-size: var(--fs-micro);
     font-family: var(--font-mono);
     color: var(--accent);
@@ -2532,7 +2570,7 @@ body {
     padding: 4px 0;
 }
 .model-list::-webkit-scrollbar { width: 4px; }
-.model-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
+.model-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: var(--radius-xxs); }
 
 .config-banner {
     display: flex;
@@ -2702,7 +2740,7 @@ body {
 .tree-kind { color: var(--vscode-descriptionForeground); font-size: 0.85em; }
 .tree-text { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .native-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
-.native-option { border: 1px solid var(--vscode-button-border, var(--vscode-panel-border)); border-radius: 3px; padding: 5px 9px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); font: inherit; cursor: pointer; }
+.native-option { border: 1px solid var(--vscode-button-border, var(--vscode-panel-border)); border-radius: var(--radius-sm); padding: 5px 9px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); font: inherit; cursor: pointer; }
 .native-option:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .native-option.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
 .extension-options { display: grid; gap: 4px; }

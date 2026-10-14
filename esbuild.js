@@ -77,6 +77,12 @@ async function copyStyles() {
     for (const file of await fs.promises.readdir(srcDir)) {
         await fs.promises.copyFile(path.join(srcDir, file), path.join(stylesDir, file));
     }
+    // Codicon font + glyph classes ship next to the webview bundles; the
+    // stylesheet's relative url("codicon.ttf") resolves against this copy.
+    const codiconSrc = path.join('node_modules', '@vscode', 'codicons', 'dist');
+    for (const file of ['codicon.css', 'codicon.ttf']) {
+        await fs.promises.copyFile(path.join(codiconSrc, file), path.join('out', 'webview', file));
+    }
 }
 
 async function build() {

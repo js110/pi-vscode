@@ -331,6 +331,9 @@ export class SettingsPanel {
         const skinsUri = this._panel.webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'styles', 'skins.css'),
         );
+        const codiconUri = this._panel.webview.asWebviewUri(
+            vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'codicon.css'),
+        );
         const nonce = getNonce();
         const fontSize = clampFontSize(vscode.workspace.getConfiguration('pi-agent').get<number>('fontSize', 13));
         const configuredSkin = vscode.workspace.getConfiguration('pi-agent').get<string>('skin', 'default');
@@ -347,7 +350,8 @@ export class SettingsPanel {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; img-src ${this._panel.webview.cspSource} data:; script-src 'nonce-${nonce}';">
+          content="default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; img-src ${this._panel.webview.cspSource} data:; font-src ${this._panel.webview.cspSource}; script-src 'nonce-${nonce}';">
+    <link rel="stylesheet" href="${codiconUri}">
     <link rel="stylesheet" href="${styleUri}">
     <link rel="stylesheet" href="${skinsUri}">
     <style>:root { --fs-base: ${fontSize}px; --custom-skin-opacity: ${skinOpacity};${customVar} }</style>

@@ -818,20 +818,13 @@ function render(): void {
     const headerActions = el('div', 'header-right');
     headerActions.innerHTML = `
         <button class="icon-btn" id="btn-new-tab" title="${escHtml(t('header.newAgent'))}">
-            <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <path d="M8 3v10M3 8h10"/>
-            </svg>
+            <span class="codicon codicon-add"></span>
         </button>
         <button class="icon-btn" id="btn-sessions" title="${escHtml(t('header.sessions'))}">
-            <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <path d="M2 4h12M2 8h12M2 12h12"/>
-            </svg>
+            <span class="codicon codicon-list-unordered"></span>
         </button>
         <button class="icon-btn" id="btn-settings" title="${escHtml(t('header.settings'))}">
-            <svg class="header-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/>
-                <path d="M7 1h2l.3 1.6a5.5 5.5 0 0 1 1.5.9l1.5-.5 1 1.7-1.2 1.1a5.5 5.5 0 0 1 .5 1.7L15 7v2l-1.4.7a5.5 5.5 0 0 1-.5 1.7l1.2 1.1-1 1.7-1.5-.5a5.5 5.5 0 0 1-1.5.9L9 15H7l-.3-1.6a5.5 5.5 0 0 1-1.5-.9l-1.5.5-1-1.7 1.2-1.1a5.5 5.5 0 0 1-.5-1.7L1 9V7l1.4-.7a5.5 5.5 0 0 1 .5-1.7L1.7 3.5l1-1.7 1.5.5a5.5 5.5 0 0 1 1.5-.9L7 1z"/>
-            </svg>
+            <span class="codicon codicon-gear"></span>
         </button>
     `;
     railRow.appendChild(headerActions);
@@ -854,7 +847,7 @@ function render(): void {
     const scrollBtn = el('button', 'scroll-bottom-btn');
     scrollBtn.id = 'btn-scroll-bottom';
     scrollBtn.title = t('header.scrollToBottom');
-    scrollBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 13L3 8M8 13L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    scrollBtn.innerHTML = '<span class="codicon codicon-chevron-down"></span>';
     scrollWrap.appendChild(scrollBtn);
     app.appendChild(scrollWrap);
 
@@ -1010,9 +1003,9 @@ function updateTabs(): void {
         if (tab.isStreaming) {
             icon.innerHTML = '<span class="tab-spinner"></span>';
         } else if (tab.hasNotification) {
-            icon.innerHTML = `<svg class="tab-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5.5a4 4 0 0 1 8 0c0 2.5 1 4 2 5H2c1-1 2-2.5 2-5zM6.5 13a1.5 1.5 0 0 0 3 0"/></svg>`;
+            icon.innerHTML = `<span class="codicon codicon-bell codicon-sm"></span>`;
         } else {
-            icon.innerHTML = `<svg class="tab-icon-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 3h12v8H4l-2 2V3z"/></svg>`;
+            icon.innerHTML = `<span class="codicon codicon-comment codicon-sm"></span>`;
         }
 
         const name = el('span', 'tab-name');
@@ -1027,7 +1020,7 @@ function updateTabs(): void {
 
         if (state.tabs.length > 1) {
             const closeBtn = el('button', 'tab-close');
-            closeBtn.innerHTML = '&times;';
+            closeBtn.innerHTML = '<span class="codicon codicon-close"></span>';
             closeBtn.title = t('header.closeTab');
             closeBtn.dataset.tabId = tab.id;
             tabEl.appendChild(closeBtn);
@@ -1131,7 +1124,7 @@ function updateInputArea(): void {
 
     // Always visible (like the paperclip in Copilot/Claude Code): attaching on a
     // non-vision model surfaces image.unsupported instead of hiding the affordance.
-    const attachBtnHtml = `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.2l-5.3 5.3a3.4 3.4 0 0 1-4.8-4.8l5.4-5.4a2.3 2.3 0 0 1 3.2 3.2L6.6 10.9a1.15 1.15 0 0 1-1.6-1.6l4.9-4.9"/></svg></button>`;
+    const attachBtnHtml = `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><span class="codicon codicon-attach codicon-sm"></span></button>`;
 
     footer.innerHTML = `
         <div class="cstrip-left">
@@ -1142,7 +1135,7 @@ function updateInputArea(): void {
         <div class="cstrip-right">
         ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}
         ${attachBtnHtml}
-        <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.steer') : t('input.send'))}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L8 13M8 3L3 8M8 3L13 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.steer') : t('input.send'))}"><span class="codicon codicon-send"></span></button>
         </div>
     `;
 
@@ -1194,7 +1187,7 @@ function updateQueuedMessageBanner(): void {
         `<span class="queued-item-kind queued-item-kind-${kind}">${escHtml(t(kind === 'steer' ? 'queue.kindSteer' : 'queue.kindFollowUp'))}</span>`;
     section.innerHTML = `
         <summary class="queued-summary">
-            <span class="queued-chevron">&#9656;</span>
+            <span class="queued-chevron codicon codicon-chevron-right codicon-xs"></span>
             <span class="queued-count">${escHtml(t('queue.count', { n: count }))}</span>
         </summary>
         <div class="queued-list">
@@ -1211,8 +1204,8 @@ function updateQueuedMessageBanner(): void {
                     ${kindLabel(msg.kind)}
                     <span class="queued-item-text">${escHtml(msg.text)}</span>
                     <span class="queued-item-actions">
-                        <button class="queued-item-btn queued-item-edit" data-index="${i}" title="${escHtml(t('queue.edit'))}"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/></svg></button>
-                        <button class="queued-item-btn queued-item-delete" data-index="${i}" title="${escHtml(t('queue.remove'))}"><svg class="queued-btn-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M5.5 4V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1M6 7v4M8 7v4M10 7v4M4 4l.7 9.1a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4"/></svg></button>
+                        <button class="queued-item-btn queued-item-edit" data-index="${i}" title="${escHtml(t('queue.edit'))}"><span class="codicon codicon-edit codicon-xs"></span></button>
+                        <button class="queued-item-btn queued-item-delete" data-index="${i}" title="${escHtml(t('queue.remove'))}"><span class="codicon codicon-trash codicon-xs"></span></button>
                     </span>
                 </div>`;
             }).join('')}
@@ -1699,7 +1692,7 @@ function renderToolEnd(event: any): void {
         }
 
         const arrow = el('span', 'tool-expand-arrow');
-        arrow.innerHTML = '&#9656;';
+        arrow.innerHTML = '<span class="codicon codicon-chevron-right"></span>';
         details.querySelector('summary')?.appendChild(arrow);
 
         const body = el('div', 'tool-body');
@@ -2025,7 +2018,7 @@ function renderSessionList(sessions: any[], currentId?: string): void {
             <div class="session-header">
                 <span>${escHtml(t('sessions.title'))}</span>
                 <button class="native-option" id="btn-current-tree">${escHtml(t('sessions.branches'))}</button>
-                <button class="icon-btn" id="btn-close-sessions" title="${escHtml(t('sessions.close'))}">&times;</button>
+                <button class="icon-btn" id="btn-close-sessions" title="${escHtml(t('sessions.close'))}"><span class="codicon codicon-close"></span></button>
             </div>
             <div class="session-empty">${escHtml(t('sessions.empty'))}</div>
         `;
@@ -2053,10 +2046,10 @@ function renderSessionList(sessions: any[], currentId?: string): void {
         <div class="session-header">
             <span>${escHtml(t('sessions.title'))}</span>
             <button class="native-option" id="btn-current-tree">${escHtml(t('sessions.branches'))}</button>
-            <button class="icon-btn" id="btn-close-sessions" title="${escHtml(t('sessions.close'))}">&times;</button>
+            <button class="icon-btn" id="btn-close-sessions" title="${escHtml(t('sessions.close'))}"><span class="codicon codicon-close"></span></button>
         </div>
         <div class="session-search">
-            <svg class="session-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>
+            <span class="codicon codicon-search codicon-sm session-search-icon"></span>
             <input type="text" id="session-search-input" placeholder="${escHtml(t('sessions.search'))}" value="${escAttr(sessionSearchQuery ?? '')}" aria-label="${escHtml(t('sessions.search'))}">
         </div>
         <div class="session-list">
@@ -2074,10 +2067,10 @@ function renderSessionList(sessions: any[], currentId?: string): void {
                                 ${snippet}
                             </div>
                             <div class="session-item-actions">
-                                <button class="session-item-tree" title="${escHtml(t('sessions.viewBranches'))}" aria-label="${escHtml(t('sessions.viewBranches'))}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="4" cy="3.5" r="1.75" fill="currentColor" stroke="none"/><circle cx="4" cy="12.5" r="1.75" fill="currentColor" stroke="none"/><circle cx="12" cy="6.5" r="1.75" fill="currentColor" stroke="none"/><path d="M4 5.25v5.5M5.75 3.5h2.5A3.75 3.75 0 0 1 12 7.25"/></svg></button>
-                                <button class="session-item-pin" title="${escHtml(t('sessions.pinTitle'))}" data-pinned="${s.pinned ? '1' : '0'}">${s.pinned ? '📌' : '·'}</button>
-                                <button class="session-item-rename" title="${escHtml(t('header.renameSession'))}">✎</button>
-                                <button class="session-item-delete" title="${escHtml(t('sessions.deleteTitle'))}">🗑</button>
+                                <button class="session-item-tree" title="${escHtml(t('sessions.viewBranches'))}" aria-label="${escHtml(t('sessions.viewBranches'))}"><span class="codicon codicon-git-branch codicon-sm"></span></button>
+                                <button class="session-item-pin" title="${escHtml(t('sessions.pinTitle'))}" data-pinned="${s.pinned ? '1' : '0'}"><span class="codicon ${s.pinned ? 'codicon-pin' : 'codicon-circle-filled'} codicon-sm"></span></button>
+                                <button class="session-item-rename" title="${escHtml(t('header.renameSession'))}"><span class="codicon codicon-edit codicon-sm"></span></button>
+                                <button class="session-item-delete" title="${escHtml(t('sessions.deleteTitle'))}"><span class="codicon codicon-trash codicon-sm"></span></button>
                             </div>
                         </div>
                     `;
@@ -2880,7 +2873,7 @@ function updateSelectionChip(): void {
     const range = sel.startLine === sel.endLine ? `${sel.startLine}` : `${sel.startLine}-${sel.endLine}`;
     chip.style.display = '';
     chip.innerHTML = `
-        <svg class="selection-chip-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2v12M12 2v12M4 4h8M4 12h8"/></svg>
+        <span class="codicon codicon-code codicon-xs selection-chip-icon"></span>
         <span class="selection-chip-label">${escHtml(sel.path)}:${escHtml(range)}</span>
         <button class="selection-chip-close" title="${escHtml(t('selection.detach'))}">&#10005;</button>
     `;

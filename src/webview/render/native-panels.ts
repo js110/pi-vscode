@@ -61,7 +61,7 @@ export function buildSessionTreePanel(entries: SessionTreeEntryInfo[], query: st
         kind.textContent = `${role}${(children.get(entry.id) ?? 0) > 1 ? ` · ${t('tree.forkPoint')}` : ''}${entry.current ? ` · ${t('tree.current')}` : ''}`;
         const text = el('span', 'tree-text'); text.textContent = entry.label || entry.text.replace(/\s+/g, ' ').slice(0, 180) || entry.kind;
         navigate.append(kind, text); navigate.title = entry.text || entry.id;
-        const rename = el('button', 'icon-btn tree-label'); rename.dataset.action = 'label'; rename.title = t('tree.label'); rename.textContent = '✎';
+        const rename = el('button', 'icon-btn tree-label'); rename.dataset.action = 'label'; rename.title = t('tree.label'); rename.innerHTML = '<span class="codicon codicon-edit codicon-sm"></span>';
         row.append(fold, navigate, rename); list.appendChild(row);
     }
     panel.appendChild(list);

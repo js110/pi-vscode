@@ -98,7 +98,7 @@ export function buildStreamingSkeleton(): HTMLElement {
         <summary class="thinking-summary">
             <span class="thinking-indicator"></span>
             <span class="thinking-label"></span>
-            <span class="thinking-chevron">&#9656;</span>
+            <span class="thinking-chevron codicon codicon-chevron-right codicon-xs"></span>
         </summary>
         <div class="thinking-content"></div>
     `;
@@ -204,7 +204,7 @@ export function buildThinkingBlock(text: string, active: boolean, durationSec?: 
         <summary class="thinking-summary">
             <span class="thinking-indicator"></span>
             <span class="thinking-label">${escHtml(label)}</span>
-            <span class="thinking-chevron">&#9656;</span>
+            <span class="thinking-chevron codicon codicon-chevron-right codicon-xs"></span>
         </summary>
         <div class="thinking-content">${renderMarkdown(text)}</div>
     `;
@@ -471,7 +471,7 @@ function buildMessage(msg: any, index: number, turnNumber: number | undefined, c
             const regenBtn = el('button', 'regen-btn');
             regenBtn.title = t('msg.replayTitle');
             regenBtn.dataset.turn = String(turnNumber);
-            regenBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89"/><path d="M13.5 1.5v3.5h-3.5"/></svg>';
+            regenBtn.innerHTML = '<span class="codicon codicon-refresh codicon-xs"></span>';
             wrapper.appendChild(regenBtn);
             const editBtn = el('button', 'edit-btn');
             editBtn.title = t('msg.editTitle');
@@ -753,7 +753,7 @@ export function buildToolCard(msg: any, ctx: ToolCardContext): HTMLElement {
         details.innerHTML = `
             <summary class="tool-header">
                 ${buildToolCardHeaderHtml(toolName, label, buildStatusHtml(isError ? 'error' : 'done'))}
-                <span class="tool-expand-arrow">&#9656;</span>
+                <span class="tool-expand-arrow codicon codicon-chevron-right codicon-xs"></span>
             </summary>
         `;
 
@@ -858,7 +858,7 @@ export function buildChangedFilesSection(fileChanges: FileChangeInfo[], rollback
         ? `<button class="changed-files-link" id="btn-redo" title="${escHtml(t('files.redoTitle'))}">${escHtml(t('files.redo'))}</button>`
         : `<button class="changed-files-link" id="btn-undo" title="${escHtml(t('files.undoTitle'))}">${escHtml(t('files.undo'))}</button>`;
     summary.innerHTML = `
-        <span class="changed-files-arrow">&#9656;</span>
+        <span class="changed-files-arrow codicon codicon-chevron-right codicon-xs"></span>
         <span class="changed-files-count">${escHtml(t(count === 1 ? 'files.countOne' : 'files.countMany', { n: count }))}</span>
         <span class="changed-files-spacer"></span>
         ${undoRedoBtn}
