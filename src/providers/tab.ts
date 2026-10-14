@@ -1198,7 +1198,12 @@ export class TabManager {
                 this._emitStateChange();
                 break;
             case 'loadSession':
-                if (await tab.session.loadSession(msg.sessionPath) === false) break;
+                if (await tab.session.loadSession(msg.sessionPath) === false) {
+                    // A silent break here reads as "click did nothing" in the
+                    // webview — surface the failure like every other action.
+                    this._adapters.ui.showMessage(t('sessions.loadFailed', { path: msg.sessionPath }));
+                    break;
+                }
                 if (tab.lock) {
                     await tab.lock.adopt(msg.sessionPath);
                 }
