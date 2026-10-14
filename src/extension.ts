@@ -208,7 +208,10 @@ async function resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>
 
 export async function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('Pi Agent');
-    outputChannel.appendLine('Pi Agent extension activating...');
+    // Version self-identification: every activation logs the running build so
+    // diagnostics never have to guess whether a reload picked up a new vsix.
+    const runningVersion = (require('../package.json') as { version: string }).version;
+    outputChannel.appendLine(`Pi Agent extension v${runningVersion} activating...`);
 
     // Persist the SDK system-probe result under global storage so repeat
     // launches skip `where/which pi` and `npm root -g`.
