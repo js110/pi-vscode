@@ -151,6 +151,9 @@ export interface SerializedAgentState {
     streamingThinkingDuration?: number;
     queuedMessages?: QueuedMessage[];
     compactionPrompt?: number | null;
+    /** True while a compaction run (manual /compact or accepted prompt) is in
+     *  flight — drives the in-progress banner in the webview. */
+    compactionInFlight?: boolean;
     supportsImages?: boolean;
     occupancy?: SessionOccupancy;
     cacheWarmingStatus?: CacheWarmingStatusInfo;

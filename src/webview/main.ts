@@ -566,6 +566,7 @@ function applyStateSync(s: SerializedAgentState): void {
     state.streamingThinkingDuration = s.streamingThinkingDuration ?? 0;
     state.queuedMessages = s.queuedMessages ?? [];
     state.compactionPrompt = s.compactionPrompt ?? null;
+    state.compactionBusy = s.compactionInFlight === true;
     state.supportsImages = s.supportsImages ?? false;
     state.occupancy = s.occupancy ?? null;
     state.cacheWarmingStatus = s.cacheWarmingStatus ?? state.cacheWarmingStatus;
@@ -578,13 +579,17 @@ function applyStateSync(s: SerializedAgentState): void {
     }
     const tabSwitched = prevTab !== state.activeTabId;
     if (!tabSwitched && prevSession !== state.sessionId) {
-        const wasTreeOpen = treeOpen;
+        // The user jumped to another session (list click, tree navigation,
+        // /resume): land on the conversation, not on the browser panel.
+        // Close the whole session panel (tree or list) — the old behavior of
+        // re-opening the session list kept the full-height panel in the way.
+        const wasPanelOpen = treeOpen || document.getElementById('session-panel') !== null;
         collapsedTreeEntries.clear();
         treeOpen = false;
         treeEntries = [];
         treeQuery = '';
         document.getElementById('tree-panel')?.remove();
-        if (wasTreeOpen) openSessionList();
+        if (wasPanelOpen) document.getElementById('session-panel')?.remove();
     }
 
     // Transient cards live in the per-tab streaming area; they are wiped on a
@@ -1220,13 +1225,12 @@ function updateQueuedMessageBanner(): void {
 function updateCompactionBanner(): void {
     const banner = document.getElementById('compaction-banner');
     if (!banner) return;
-    if (state.compactionPrompt == null) {
-        banner.style.display = 'none';
-        banner.innerHTML = '';
-        return;
-    }
-    banner.style.display = '';
+    // A manual /compact runs with compactionPrompt == null: the busy banner
+    // must show on its own, or the run is completely silent until the result.
+    // Order matters — the busy branch returns first so the null check below
+    // can narrow compactionPrompt to number.
     if (state.compactionBusy) {
+        banner.style.display = '';
         banner.innerHTML = `
             <span class="compaction-banner-title">${escHtml(t('compact.compacting'))}</span>
             <span class="compaction-banner-actions">
@@ -1241,6 +1245,12 @@ function updateCompactionBanner(): void {
         });
         return;
     }
+    if (state.compactionPrompt == null) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
+    }
+    banner.style.display = '';
     banner.innerHTML = `
         <span class="compaction-banner-title">${escHtml(t('compact.bannerTitle', { n: Math.round(state.compactionPrompt) }))}</span>
         <span class="compaction-banner-hint">${escHtml(t('compact.bannerHint'))}</span>

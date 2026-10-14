@@ -55,7 +55,16 @@ export interface Tab {
 }
 
 export interface TabFactory {
-    create(): Promise<Tab>;
+    create(options?: CreateTabOptions): Promise<Tab>;
+}
+
+/** Per-tab creation options: a tab may pin its session cwd to a git worktree
+ *  and carry a display name chosen up front (worktree task name). */
+export interface CreateTabOptions {
+    cwd?: string;
+    name?: string;
+    /** Worktree metadata when this tab is bound to a managed worktree. */
+    worktree?: { path: string; branch: string; baseBranch: string };
 }
 
 /** Push channel: TabManager → webview. */
@@ -448,6 +457,7 @@ export class TabManager {
             state.queuedMessages = tab.queuedMessages.map(({ text, kind }) => ({ text, kind }));
         }
         state.compactionPrompt = tab.compactionPrompt;
+        state.compactionInFlight = tab.compactionInFlight;
         state.runOutcome = tab.runOutcome;
         state.supportsImages = tab.session.supportsImages();
         if (tab.cacheWarmingDecision) {
@@ -480,8 +490,8 @@ export class TabManager {
         });
     }
 
-    private async _createTabState() {
-        const tab = await this._factory.create();
+    private async _createTabState(options?: CreateTabOptions) {
+        const tab = await this._factory.create(options);
         return {
             ...tab,
             id: nextTabId(),
@@ -969,9 +979,15 @@ export class TabManager {
                 if (msg.type === 'labelSessionTree') { tab.session.labelSessionTree(msg.entryId, msg.label); this._postSessionTree(tab); }
                 else {
                     const result = await tab.session.navigateSessionTree(msg.entryId, msg.summarize, msg.instructions);
-                    if (result.changed) await this._syncNativeSession(tab);
+                    if (result.changed) {
+                        await this._syncNativeSession(tab);
+                        // The stateSync above closes the session panel and lands
+                        // the user on the conversation — do not re-open the tree
+                        // on top of it. A cancelled navigation (changed falsy)
+                        // keeps the tree where it was, refreshed below.
+                    }
                     if (result.editorText !== undefined) this._adapters.transport.post({ type: 'composerText', tabId: tab.id, text: result.editorText });
-                    this._postSessionTree(tab);
+                    if (!result.changed) this._postSessionTree(tab);
                 }
             } catch (error) { this._adapters.transport.post({ type: 'error', message: humanizeErrorMessage(error) ?? String(error) }); }
             return;
@@ -1685,6 +1701,20 @@ export class TabManager {
         this._emitStateChange();
     }
 
+    /** Create a tab pinned to an explicit cwd (worktree prototype/feature).
+     *  Mirrors _createTab but threads creation options and applies the
+     *  user-chosen name after the tab exists. */
+    async createTabInCwd(options: CreateTabOptions): Promise<string | undefined> {
+        await this.initialize();
+        const tab = await this._createTabState(options);
+        this._tabs.set(tab.id, tab);
+        this._subscribeTab(tab);
+        this._activeTabId = tab.id;
+        if (options.name) tab.name = options.name;
+        this._emitStateChange();
+        return tab.id;
+    }
+
     private async _closeTab(tabId: string): Promise<void> {
         if (this._tabs.size <= 1) return;
 
@@ -1761,6 +1791,9 @@ export class TabManager {
     private async _runManualCompaction(tab: TabState, customInstructions?: string): Promise<void> {
         if (tab.compactionInFlight) return;
         tab.compactionInFlight = true;
+        // Ship the in-flight flag immediately: the webview shows a
+        // "compacting…" banner from it, so a manual /compact is never silent.
+        this._emitStateChange();
         try {
             await tab.session.compact(customInstructions);
             tab.compactionInFlight = false;
