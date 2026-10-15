@@ -4,6 +4,18 @@
 
 **pi Agent By js** (extension ID `jiangsheng666.piByue`) puts the [Pi coding agent](https://github.com/earendil-works/pi) into a native VS Code panel. It is not another model/agent protocol: the panel runs Pi's own SDK, so authentication, the model registry, sessions, skills, tools, event streaming, follow-up queueing, and context compaction all behave exactly like the Pi CLI — because they *are* Pi.
 
+![Pi panel wearing a custom photo skin](media/panel-custom-skin-demo.png)
+
+## Highlights
+
+- **A real Pi kernel, not a wrapper** — auth, model registry, sessions, skills, compaction, and the follow-up queue are the Pi SDK itself; your `~/.pi/agent` config, login, and sessions are shared with the Pi CLI.
+- **A panel you can make your own** — follow the VS Code theme, pick a built-in skin (Aurora / Graphite / Sunset), or upload your own image as a dimmable, cover-cropped backdrop; set custom avatars for yourself and Pi.
+- **Every tab is a full Pi session** — run several independent agents side by side, each with its own model, history, diffs, and checkpoints.
+- **Talk to a busy agent** — steer the turn in flight or queue follow-ups while Pi is still streaming; queue state comes from Pi's native events.
+- **The agent can see your IDE** — a localhost token bridge exposes selection, diagnostics, symbols, definitions, references, Code Actions, and more as Pi tools.
+- **Review-grade change tooling** — every edit lands in a native VS Code diff with per-file undo; per-turn checkpoints roll changes back or forward; inline chat gets an accept/discard flow in the status bar.
+- **English & 简体中文 UI** — follows VS Code by default, pinnable via `pi-agent.displayLanguage`.
+
 The panel opens in VS Code's secondary side bar from the Pi icon and can be dragged anywhere. UI derived from [Zetaphor/pi-vscode-extension](https://github.com/Zetaphor/pi-vscode-extension); IDE bridge derived from [pithings/pi-vscode](https://github.com/pithings/pi-vscode). Both upstreams are MIT licensed — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Features
@@ -20,6 +32,13 @@ The panel opens in VS Code's secondary side bar from the Pi icon and can be drag
 - **Session management**: history, load, naming, `/export` to Markdown (thinking, tool output, and images rendered), custom session directories.
 - **Completion notifications** when the panel is in the background and the turn took at least 5 seconds.
 - **English & 简体中文** UI — follows VS Code by default, pinnable via `pi-agent.displayLanguage`.
+
+### Appearance
+
+![Pi panel with a custom skin and custom avatar](media/panel-custom-skin.png)
+
+- **Panel skins**: follow the VS Code theme, or pick Aurora, Graphite, Sunset, or a custom image you upload (with adjustable opacity, cover-cropped so it never stretches).
+- **Custom avatars**: upload your own avatar and one for the Pi agent in Settings > Appearance; both show up next to chat messages, and re-uploading takes effect immediately.
 
 ### Code changes and review
 

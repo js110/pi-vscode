@@ -4,6 +4,18 @@
 
 **pi Agent By js**（扩展 ID `jiangsheng666.piByue`）把 [Pi 编码代理](https://github.com/earendil-works/pi)装进一个原生的 VS Code 面板。它没有另起炉灶实现一套模型/代理协议：面板直接运行 Pi 官方 SDK，因此认证、模型注册表、会话、技能、工具、事件流、追问队列与上下文压缩的行为和 Pi CLI 完全一致——因为它们本来就是 Pi 本身。
 
+![穿上自定义照片皮肤的 Pi 面板](media/panel-custom-skin-demo.png)
+
+## 特色
+
+- **真·Pi 内核，不是套壳** —— 认证、模型注册表、会话、技能、上下文压缩与追问队列就是 Pi SDK 本身；`~/.pi/agent` 的配置、登录态与会话和 Pi CLI 完全共享。
+- **面板随你打扮** —— 跟随 VS Code 主题，或选内置皮肤（Aurora / Graphite / Sunset），或上传自己的图片做可调透明度、等比裁切的背景；你和 Pi 的头像都可以自定义。
+- **每个标签页都是完整的 Pi 会话** —— 多个独立代理并排运行，各自的模型、历史、diff 与检查点互不干扰。
+- **边跑边说** —— 对正在执行的轮次转向（steer），或在流式输出时排队追问；队列状态来自 Pi 原生事件。
+- **代理看得见你的 IDE** —— localhost 令牌桥接把选区、诊断、符号、定义、引用、Code Action 等以 Pi 工具的形式暴露给代理。
+- **审查级变更工具** —— 每个文件变更进入原生 VS Code diff、支持逐文件撤销；按轮次的检查点可回滚/重做；内联聊天在状态栏走接受/丢弃流程。
+- **中英文界面** —— 默认跟随 VS Code，也可通过 `pi-agent.displayLanguage` 固定。
+
 面板通过 Pi 图标在 VS Code 的**右侧辅助栏**（Secondary Side Bar）打开，也可拖拽到其他位置。UI 派生自 [Zetaphor/pi-vscode-extension](https://github.com/Zetaphor/pi-vscode-extension)，IDE 桥接派生自 [pithings/pi-vscode](https://github.com/pithings/pi-vscode)。两个上游项目均为 MIT 协议，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 功能
@@ -20,6 +32,13 @@
 - **会话管理**：历史、加载、命名、`/export` 导出 Markdown（渲染思考块、工具输出与图片）、自定义会话目录。
 - **完成通知**：面板在后台且该轮耗时至少 5 秒时提醒。
 - **中英文界面**——默认跟随 VS Code，也可通过 `pi-agent.displayLanguage` 固定。
+
+### 外观
+
+![使用自定义皮肤与自定义头像的 Pi 面板](media/panel-custom-skin.png)
+
+- **面板皮肤**：可完全跟随 VS Code 主题，也可选 Aurora、Graphite、Sunset，或上传自定义图片作为皮肤（透明度可调，等比裁切、绝不拉伸变形）。
+- **自定义头像**：在「设置 > 外观」中可分别上传你自己的头像与 Pi 代理的头像，聊天消息旁会显示；重新上传立即生效。
 
 ### 代码变更与审查
 
