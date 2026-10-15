@@ -123,7 +123,7 @@ code --new-window --extensionDevelopmentPath="$PWD" "$PWD"
 npm run package
 ```
 
-The generated VSIX excludes sources, tests, planning documents (`prd/`), design prototypes (`ui/`, `docs/`), dev scripts, local scratch space (`.cache/`), and the local test profiles.
+The generated VSIX excludes sources, tests, planning documents and design prototypes, dev scripts, local scratch space (`.cache/`), and the local test profiles.
 
 ## Source research
 

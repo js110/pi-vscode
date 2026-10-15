@@ -12,4 +12,5 @@ design-qa.md
 .github
 skills-lock.json
 .env
+.DS_Store
 

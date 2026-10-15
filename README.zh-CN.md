@@ -123,7 +123,7 @@ code --new-window --extensionDevelopmentPath="$PWD" "$PWD"
 npm run package
 ```
 
-生成的 VSIX 已排除源码、测试、规划文档（`prd/`）、设计原型（`ui/`、`docs/`）、开发脚本、本地临时目录（`.cache/`）与本地测试配置。
+生成的 VSIX 已排除源码、测试、规划文档与设计原型、开发脚本、本地临时目录（`.cache/`）与本地测试配置。
 
 ## 源码研究
 
