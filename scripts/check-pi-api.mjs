@@ -150,6 +150,14 @@ if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.1.0')) {
     checkTypeToken('dist/core/extensions/types.d.ts', 'durationMs');
 }
 
+// --- Version-gated APIs (Pi 1.2.0+): tools panel (getTools/setActiveTools) ---
+// The webview tools panel reads getAllTools()/getActiveToolNames() and writes
+// setActiveToolsByName(); all are feature-detected in src/pi/session.ts, so an
+// older pinned copy only degrades to an empty panel.
+if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.2.0')) {
+    ['getActiveToolNames', 'getAllTools', 'setActiveToolsByName'].forEach((m) => checkProto('AgentSession', m));
+}
+
 // AgentSession instance methods cannot be checked without creating a live
 // session (needs a model); they are covered by `npm run typecheck` (SDK .d.ts)
 // and the unit tests, which build a real session. Its cache-warming and

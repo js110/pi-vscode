@@ -96,6 +96,11 @@ function render(data: SettingsData): void {
             { value: 'streaming', label: t('settings.warm.streaming') },
             { value: 'idle', label: t('settings.warm.idle') },
         ], t('settings.cacheWarmingDesc')),
+        buildSelect('sessionShareDestination', t('settings.shareDestination'), data.sessionShareDestination, [
+            { value: 'auto', label: t('settings.share.auto') },
+            { value: 'gist', label: t('settings.share.gist') },
+            { value: 'radius', label: t('settings.share.radius') },
+        ], t('settings.shareDestinationDesc')),
     ]));
 
     container.appendChild(buildSection(t('settings.section.appearance'), [

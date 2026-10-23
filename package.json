@@ -2,7 +2,7 @@
   "name": "piByue",
   "displayName": "pi Agent By js",
   "description": "A first-class VS Code interface powered by the native Pi coding agent SDK.",
-  "version": "0.7.10",
+  "version": "0.8.0",
   "publisher": "jiangsheng666",
   "license": "MIT",
   "repository": {
@@ -348,6 +348,21 @@
             "Also warm the cache while the agent is idle"
           ],
           "description": "Pi prompt-cache warming mode. Applies Pi's global cache-warming setting; only applied when explicitly set here, so a mode you configured through Pi's CLI is never overridden."
+        },
+        "pi-agent.sessionShareDestination": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "gist",
+            "radius"
+          ],
+          "enumDescriptions": [
+            "Let Pi pick (Radius when signed in, otherwise a private GitHub gist)",
+            "Always upload as a private GitHub gist (requires the gh CLI)",
+            "Upload to Radius (Pi 1.3.0+; uploads happen through the Pi CLI)"
+          ],
+          "description": "Where session /share uploads go. Applied to Pi's own sessionShareDestination setting for sessions created after the change (Pi 1.3.0+ only)."
         }
       }
     }
@@ -366,7 +381,7 @@
     "test:all": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@earendil-works/pi-coding-agent": "^1.4.0",
     "@vscode/codicons": "^0.0.46-24",
     "highlight.js": "^11.12.0",
     "marked": "^18.0.11"

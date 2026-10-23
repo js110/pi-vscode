@@ -1,6 +1,7 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo, QueuedMessage } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo, QueuedMessage, ToolDetailInfo } from '../shared/protocol';
 import { buildOccupancyBannerHtml } from './render/occupancy';
 import { buildSessionTreePanel, buildExtensionDialog } from './render/native-panels';
+import { buildToolsPanel } from './render/tools-panel';
 import { buildToolOutput, formatDuration } from './render/messages';
 import { getRunOutcome } from '../shared/run-outcome';
 import type { ExtensionUiState, SessionTreeEntryInfo } from '../shared/protocol';
@@ -34,6 +35,8 @@ const state: {
     availableThinkingLevels?: string[];
     supportsThinking?: boolean;
     tools: string[];
+    /** Full configured tool catalog (tools panel); empty until first getTools. */
+    toolsList: ToolDetailInfo[];
     sessionId?: string;
     sessionName?: string;
     streamingText: string;
@@ -73,6 +76,7 @@ const state: {
     messages: [],
     isStreaming: false,
     tools: [],
+    toolsList: [],
     streamingText: '',
     streamingThinking: '',
     isThinking: false,
@@ -356,6 +360,25 @@ function handleMessage(msg: ServerMessage): void {
         case 'skills':
             state.skills = msg.skills;
             state.commands = msg.commands ?? [];
+            break;
+        case 'tools':
+            state.toolsList = msg.tools;
+            state.tools = msg.active;
+            renderToolsPanel();
+            updateInputArea();
+            break;
+        case 'toolsUpdateResult':
+            if (msg.ok && msg.active) {
+                state.tools = msg.active;
+                renderToolsPanel();
+            } else if (!msg.ok) {
+                showToast({
+                    containerId: activeToastContainerId(),
+                    className: 'notice-toast',
+                    message: t('tools.updateFailed', { message: msg.message ?? '' }),
+                    durationMs: 4000,
+                });
+            }
             break;
         case 'configState':
             state.config = msg.config;
@@ -666,6 +689,10 @@ function applyStateSync(s: SerializedAgentState): void {
         treeQuery = '';
         document.getElementById('tree-panel')?.remove();
         if (wasPanelOpen) document.getElementById('session-panel')?.remove();
+        toolsOpen = false;
+        toolsQuery = '';
+        state.toolsList = [];
+        document.getElementById('tools-panel')?.remove();
     }
 
     // Transient cards live in the per-tab streaming area; they are wiped on a
@@ -675,6 +702,9 @@ function applyStateSync(s: SerializedAgentState): void {
         if (prevTab && previousDraft !== undefined) composerDrafts.set(prevTab, previousDraft);
         treeOpen = false;
         treeEntries = [];
+        toolsOpen = false;
+        toolsQuery = '';
+        state.toolsList = [];
         state.pendingApprovals = [];
         state.applyPreviews = [];
         state.compactionBusy = false;
@@ -717,6 +747,11 @@ function applyStateSync(s: SerializedAgentState): void {
                 treeOpen = false;
                 document.getElementById('tree-panel')?.remove();
                 document.getElementById('session-panel')?.remove();
+                toolsOpen = false;
+                toolsQuery = '';
+                state.toolsList = [];
+                document.getElementById('tools-panel')?.remove();
+                vscode.postMessage({ type: 'getTools' });
                 userHasScrolled = false;
                 scrollToBottom(true);
                 updateScrollButton();
@@ -1213,6 +1248,7 @@ function updateInputArea(): void {
     footer.innerHTML = `
         <div class="cstrip-left">
             <span class="footer-model" title="${escHtml(t('models.selectPlaceholder'))}">${escHtml(modelName)}</span>
+            <button id="btn-tools" class="footer-tools" title="${escHtml(t('tools.title'))}"><span class="codicon codicon-tools codicon-sm"></span> ${escHtml(t('tools.chip', { n: state.tools.length }))}</button>
             ${meterHtml}
             ${buildWarmChipHtml()}
         </div>
@@ -1245,6 +1281,11 @@ function updateInputArea(): void {
     document.querySelector('.footer-model')?.addEventListener('click', (e) => {
         e.stopPropagation();
         toggleModelPicker();
+    });
+
+    document.getElementById('btn-tools')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleToolsPanel();
     });
 
     updateQueuedMessageBanner();
@@ -2078,6 +2119,50 @@ function updateFooterModel(): void {
     if (el) {
         el.textContent = state.model?.name ?? state.model?.id ?? '';
     }
+}
+
+// ── Tools panel ──
+
+let toolsOpen = false;
+let toolsQuery = '';
+
+function toggleToolsPanel(): void {
+    toolsOpen = !toolsOpen;
+    if (toolsOpen) vscode.postMessage({ type: 'getTools' });
+    renderToolsPanel();
+}
+
+/** Rebuild the open tools panel from `state.toolsList`/`state.tools`.
+ *  Keeps search focus and scroll position across re-renders. */
+function renderToolsPanel(): void {
+    const previous = document.getElementById('tools-panel');
+    if (!toolsOpen) { previous?.remove(); return; }
+    const focused = previous?.querySelector('input[type=search]') === document.activeElement;
+    const scrollTop = previous?.querySelector('.tools-list')?.scrollTop ?? 0;
+    const panel = buildToolsPanel(state.toolsList, new Set(state.tools), toolsQuery);
+    mountNativePanel(panel);
+    const list = panel.querySelector<HTMLElement>('.tools-list');
+    if (list) list.scrollTop = scrollTop;
+    const search = panel.querySelector<HTMLInputElement>('input[type=search]');
+    if (focused && search) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
+    search?.addEventListener('input', () => { toolsQuery = search.value; renderToolsPanel(); });
+    panel.addEventListener('click', (event) => {
+        if ((event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action="close"]')) {
+            toolsOpen = false;
+            renderToolsPanel();
+        }
+    });
+    // One change event carries the whole checked set: setActiveToolsByName
+    // replaces the active toolset, so partial updates are not an option.
+    panel.addEventListener('change', (event) => {
+        const toggle = (event.target as HTMLElement).closest<HTMLInputElement>('.tools-item-toggle');
+        if (!toggle) return;
+        const names = Array.from(panel.querySelectorAll<HTMLInputElement>('.tools-item-toggle'))
+            .filter((box) => box.checked)
+            .map((box) => box.dataset.toolName ?? '')
+            .filter(Boolean);
+        vscode.postMessage({ type: 'setActiveTools', toolNames: [...new Set(names)] });
+    });
 }
 
 // ── Session list ──

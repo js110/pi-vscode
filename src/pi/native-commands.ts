@@ -169,6 +169,17 @@ export async function executeNativeCommand(
             return { changed: true };
         }
         case 'share': {
+            // Radius uploads run through Pi's TUI (shareSession needs one), so
+            // the extension only serves the gist path; steer radius users to
+            // the CLI instead of silently uploading somewhere else.
+            const settings = (session as { settingsManager?: unknown }).settingsManager;
+            const destination = settings && hasFunction(settings, 'getSessionShareDestination')
+                ? (settings as { getSessionShareDestination(): string }).getSessionShareDestination()
+                : 'auto';
+            if (destination === 'radius') {
+                void vscode.window.showInformationMessage('Share destination is set to Radius — run "pi" and use /share in its terminal to upload.');
+                return {};
+            }
             const choice = await vscode.window.showWarningMessage('Upload this session transcript as a secret GitHub gist? Anyone with the link can read it.', { modal: true }, 'Upload');
             if (!choice) return {};
             const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-vscode-share-'));

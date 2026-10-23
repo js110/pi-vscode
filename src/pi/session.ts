@@ -7,7 +7,7 @@ import type {
     ModelRegistry,
     ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
-import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo, CacheWarmingStatusInfo, QueuedMessage } from '../shared/protocol';
+import type { SerializedAgentState, ModelInfo, SessionInfo, ContextUsageInfo, SkillInfo, CommandInfo, CacheWarmingStatusInfo, QueuedMessage, ToolDetailInfo } from '../shared/protocol';
 import { API_KEY_PREFIX } from '../shared/protocol';
 import { modelSupportsImages, type ImagePayload } from '../shared/image-input';
 import { EventRouter } from './events';
@@ -405,6 +405,16 @@ export class PiSessionManager {
 
         const agentDir = getAgentDir();
         const settingsManager = SettingsManager.create(cwd, agentDir);
+        // Mirror the VS Code share-destination choice into Pi's own settings
+        // (Pi 1.3.0+; older copies simply keep their native default).
+        const shareDestination = vscode.workspace.getConfiguration('pi-agent').get<string>('sessionShareDestination', 'auto');
+        if (shareDestination !== 'auto' && hasFunction(settingsManager, 'setSessionShareDestination')) {
+            try {
+                (settingsManager as any).setSessionShareDestination(shareDestination);
+            } catch (err: any) {
+                this._outputChannel.appendLine(`[pi-compat] setSessionShareDestination failed: ${err?.message ?? err}`);
+            }
+        }
         const resourceLoader = new DefaultResourceLoader({
             cwd,
             agentDir,
@@ -781,6 +791,26 @@ export class PiSessionManager {
     getActiveToolNames(): string[] {
         if (!this._session || !hasFunction(this._session, 'getActiveToolNames')) { return []; }
         return this._session.getActiveToolNames();
+    }
+
+    /** Full configured tool catalog (tools panel). Empty when the installed
+     *  SDK predates `getAllTools` or no session exists yet. */
+    getAllTools(): ToolDetailInfo[] {
+        if (!this._session || !hasFunction(this._session, 'getAllTools')) { return []; }
+        try {
+            const infos = this._session.getAllTools();
+            return infos.map((info) => ({
+                name: info.name,
+                description: info.description ?? '',
+                ...(info.exposure ? { exposure: String(info.exposure) } : {}),
+                ...(info.namespace?.name ? { namespace: info.namespace.name } : {}),
+                ...(info.namespace?.description ? { namespaceDescription: info.namespace.description } : {}),
+                ...(info.sourceInfo?.source != null ? { source: String(info.sourceInfo.source) } : {}),
+            }));
+        } catch (err: any) {
+            this._outputChannel.appendLine(`[pi-compat] getAllTools failed: ${err?.message ?? err}`);
+            return [];
+        }
     }
 
     /** Restrict the active toolset (takes effect on the next agent turn). */

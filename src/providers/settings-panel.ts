@@ -236,6 +236,7 @@ export class SettingsPanel {
                 : undefined,
             customSkinOpacity: config.get<number>('customSkinOpacity', 40),
             cacheWarming: config.get<string>('cacheWarming', 'streaming'),
+            sessionShareDestination: config.get<string>('sessionShareDestination', 'auto'),
             piAvatarUrl: piAvatar
                 ? this._avatarUrl(piAvatar)
                 : undefined,
