@@ -75,6 +75,10 @@ The local IDE bridge starts with extension activation. `src/bridge/` exposes tok
 - `ModelRuntime` is owned by `src/pi/auth.ts`; `ModelRegistry` and sessions must share it so SecretStorage overrides and Pi's native auth/model behavior stay consistent.
 - When adding new settings, update both `package.json` (`contributes.configuration`) and `src/shared/protocol.ts` (`SettingsData` interface), then wire them in `settings-panel.ts` and `settings.ts`.
 
+## Non-Goals
+
+- **Tools panel UI** (composer "N tools" chip + per-tool toggle panel): removed by user decision after v0.9.0. Tool enable/disable belongs to Pi's own settings, not this sidebar. Do not reintroduce `getTools`/`setActiveTools` webview plumbing or the `buildToolsPanel` renderer; `getActiveToolNames()` stays only as the informational stateSync mirror.
+
 ## Pi SDK Upgrade Compatibility
 
 The Pi SDK ships minor releases every 1–2 weeks. The extension must survive (and adopt) upstream changes without manual firefighting:

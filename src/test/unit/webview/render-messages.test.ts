@@ -126,6 +126,23 @@ describe('buildThinkingBlock', () => {
         expect(node.querySelector('.thinking-label')?.textContent).toBe('Thinking...');
     });
 
+    it('rotates the activity verb while thinking (VS Code defaultThinkingMessages parity)', () => {
+        // Elapsed seconds drive the rotation, no timer involved.
+        expect(buildThinkingBlock('x', true, 3).querySelector('.thinking-label')?.textContent).toBe('Thinking...');
+        expect(buildThinkingBlock('x', true, 5).querySelector('.thinking-label')?.textContent).toBe('Reasoning...');
+        expect(buildThinkingBlock('x', true, 9).querySelector('.thinking-label')?.textContent).toBe('Considering...');
+        expect(buildThinkingBlock('x', true, 17).querySelector('.thinking-label')?.textContent).toBe('Evaluating...');
+        // Wraps around after the full cycle.
+        expect(buildThinkingBlock('x', true, 26).querySelector('.thinking-label')?.textContent).toBe('Thinking...');
+    });
+
+    it('marks finished blocks with a check icon, active blocks with a dot', () => {
+        // Both markers live in the DOM; CSS shows exactly one based on .active.
+        const active = buildThinkingBlock('x', true);
+        expect(active.querySelector('.thinking-indicator')).toBeTruthy();
+        expect(active.querySelector('.thinking-check.codicon-check')).toBeTruthy();
+    });
+
     it('labels completed blocks with a duration', () => {
         const node = buildThinkingBlock('done', false, 3);
         expect(node.querySelector('.thinking-label')?.textContent).toBe('Thought for 3 seconds');

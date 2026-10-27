@@ -83,6 +83,17 @@ async function copyStyles() {
     for (const file of ['codicon.css', 'codicon.ttf']) {
         await fs.promises.copyFile(path.join(codiconSrc, file), path.join('out', 'webview', file));
     }
+    // KaTeX stylesheet + fonts (woff2 only: the webview is Chromium, and the
+    // CSS picks the first format it supports). Same relative-url rule as codicon.
+    const katexSrc = path.join('node_modules', 'katex', 'dist');
+    await fs.promises.copyFile(path.join(katexSrc, 'katex.min.css'), path.join('out', 'webview', 'katex.min.css'));
+    const katexFontsDir = path.join('out', 'webview', 'fonts');
+    await fs.promises.mkdir(katexFontsDir, { recursive: true });
+    for (const file of await fs.promises.readdir(path.join(katexSrc, 'fonts'))) {
+        if (file.endsWith('.woff2')) {
+            await fs.promises.copyFile(path.join(katexSrc, 'fonts', file), path.join(katexFontsDir, file));
+        }
+    }
 }
 
 async function build() {

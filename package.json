@@ -2,7 +2,7 @@
   "name": "piByue",
   "displayName": "pi Agent By js",
   "description": "A first-class VS Code interface powered by the native Pi coding agent SDK.",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "publisher": "jiangsheng666",
   "license": "MIT",
   "repository": {
@@ -384,6 +384,7 @@
     "@earendil-works/pi-coding-agent": "^1.4.0",
     "@vscode/codicons": "^0.0.46-24",
     "highlight.js": "^11.12.0",
+    "katex": "^0.19.1",
     "marked": "^18.0.11"
   },
   "devDependencies": {

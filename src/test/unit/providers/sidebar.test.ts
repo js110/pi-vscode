@@ -58,6 +58,20 @@ function makeSelectionTracker(overrides: Partial<{
 }
 
 describe('SidebarProvider webview lifecycle', () => {
+    it('serves HTML with katex styles and an https-friendly image CSP', () => {
+        // Markdown chat can embed remote https images and KaTeX fonts; the
+        // CSP and the katex stylesheet link must stay in place (regression guard).
+        const tm = makeTabManager();
+        const provider = new SidebarProvider({} as any, tm, makeSelectionTracker());
+        const { view } = makeWebviewView();
+
+        provider.resolveWebviewView(view, {} as any, {} as any);
+
+        const html = (view.webview as any).html as string;
+        expect(html).toContain('katex.min.css');
+        expect(html).toMatch(/img-src [^;"]*https:/);
+    });
+
     it('does not tear down the TabManager when the webview is disposed', () => {
         // VS Code destroys sidebar webviews whenever the view is hidden; the
         // TabManager (and its sessions) must survive hide/show cycles.

@@ -1190,29 +1190,6 @@ export class TabManager {
                 tab.session.setThinkingLevel(msg.level);
                 this._emitStateChange();
                 break;
-            case 'getTools': {
-                this._adapters.transport.post({
-                    type: 'tools',
-                    tools: tab.session.getAllTools(),
-                    active: tab.session.getActiveToolNames(),
-                });
-                break;
-            }
-            case 'setActiveTools': {
-                try {
-                    tab.session.setActiveToolsByName(msg.toolNames);
-                    this._adapters.transport.post({
-                        type: 'toolsUpdateResult',
-                        ok: true,
-                        active: tab.session.getActiveToolNames(),
-                    });
-                    this._emitStateChange();
-                } catch (err: unknown) {
-                    const message = err instanceof Error ? err.message : String(err);
-                    this._adapters.transport.post({ type: 'toolsUpdateResult', ok: false, message });
-                }
-                break;
-            }
             case 'newSession':
                 if (await tab.session.newSession() === false) break;
                 if (tab.lock) {

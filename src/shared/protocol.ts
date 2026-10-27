@@ -215,22 +215,6 @@ export interface CommandInfo {
     label?: string;
 }
 
-/** One configured tool in the tools panel (host-side mirror of SDK `ToolInfo`). */
-export interface ToolDetailInfo {
-    name: string;
-    /** Human-readable label; falls back to `name` in the UI. */
-    label?: string;
-    description: string;
-    /** How the model reaches the tool: `direct`, `codemode`, `deferred`, … */
-    exposure?: string;
-    /** Owning group name, e.g. the MCP server (`mcp__docs`). */
-    namespace?: string;
-    /** Short group summary shown once per MCP server section. */
-    namespaceDescription?: string;
-    /** Where the tool was registered from (builtin / extension path / …). */
-    source?: string;
-}
-
 export interface SessionInfo {
     id: string;
     name?: string;
@@ -308,10 +292,6 @@ export type ClientMessage =
     | { type: 'switchTab'; tabId: string }
     | { type: 'openSettings' }
     | { type: 'getSkills' }
-    /** Ask for the full configured tool list (tools panel). */
-    | { type: 'getTools' }
-    /** Replace the active toolset for the current session (next agent turn). */
-    | { type: 'setActiveTools'; toolNames: string[] }
     | { type: 'queueMessage'; text: string; images?: string[] }
     | { type: 'editQueuedMessage'; index: number; text: string }
     | { type: 'removeQueuedMessage'; index: number }
@@ -399,10 +379,6 @@ export type ServerMessage =
     | { type: 'toolCallResolved'; toolCallId: string }
     | { type: 'approvalTrace'; toolCallId: string; toolName: string; scope: ApprovalScope }
     | { type: 'skills'; skills: SkillInfo[]; commands?: CommandInfo[] }
-    /** Full tool catalog + which are currently active (tools panel). */
-    | { type: 'tools'; tools: ToolDetailInfo[]; active: string[] }
-    /** Result of a setActiveTools round-trip; ok=false carries a message. */
-    | { type: 'toolsUpdateResult'; ok: boolean; active?: string[]; message?: string }
     | { type: 'configState'; config: PiConfigSnapshot }
     | { type: 'langChanged'; lang: Lang }
     /** The user picked another skin; swap `data-skin` without reloading. */

@@ -97,6 +97,7 @@ export function buildStreamingSkeleton(): HTMLElement {
     thinking.innerHTML = `
         <summary class="thinking-summary">
             <span class="thinking-indicator"></span>
+            <span class="thinking-check codicon codicon-check codicon-xs"></span>
             <span class="thinking-label"></span>
             <span class="thinking-chevron codicon codicon-chevron-right codicon-xs"></span>
         </summary>
@@ -187,11 +188,25 @@ export function buildWelcome(): HTMLElement {
     return w;
 }
 
+// Rotating activity verbs while thinking (VS Code's defaultThinkingMessages):
+// the label switches every few seconds so a long reasoning phase doesn't read
+// as "stuck on Thinking...". The current verb is derived from the elapsed
+// seconds, so streaming updates rotate it without extra timers.
+const THINKING_VERB_KEYS = [
+    'stream.thinking.verb.1', 'stream.thinking.verb.2', 'stream.thinking.verb.3',
+    'stream.thinking.verb.4', 'stream.thinking.verb.5', 'stream.thinking.verb.6',
+] as const;
+const THINKING_VERB_INTERVAL_SEC = 4;
+
 export function thinkingLabel(active: boolean, durationSec?: number): string {
-    if (active) return t('stream.thinking');
+    if (active) {
+        const elapsed = Math.max(0, Math.floor(durationSec ?? 0));
+        const key = THINKING_VERB_KEYS[Math.floor(elapsed / THINKING_VERB_INTERVAL_SEC) % THINKING_VERB_KEYS.length];
+        return t(key);
+    }
     if (durationSec && durationSec > 0) {
-        const key = durationSec === 1 ? 'stream.thoughtForOne' : 'stream.thoughtForMany';
-        return t(key, { n: durationSec });
+        const k = durationSec === 1 ? 'stream.thoughtForOne' : 'stream.thoughtForMany';
+        return t(k, { n: durationSec });
     }
     return t('stream.thought');
 }
@@ -203,6 +218,7 @@ export function buildThinkingBlock(text: string, active: boolean, durationSec?: 
     details.innerHTML = `
         <summary class="thinking-summary">
             <span class="thinking-indicator"></span>
+            <span class="thinking-check codicon codicon-check codicon-xs"></span>
             <span class="thinking-label">${escHtml(label)}</span>
             <span class="thinking-chevron codicon codicon-chevron-right codicon-xs"></span>
         </summary>

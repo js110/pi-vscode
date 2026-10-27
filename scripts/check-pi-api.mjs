@@ -150,12 +150,11 @@ if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.1.0')) {
     checkTypeToken('dist/core/extensions/types.d.ts', 'durationMs');
 }
 
-// --- Version-gated APIs (Pi 1.2.0+): tools panel (getTools/setActiveTools) ---
-// The webview tools panel reads getAllTools()/getActiveToolNames() and writes
-// setActiveToolsByName(); all are feature-detected in src/pi/session.ts, so an
-// older pinned copy only degrades to an empty panel.
+// --- Version-gated APIs (Pi 1.2.0+): active-tools mirror in stateSync ---
+// getActiveToolNames feeds the stateSync tools list; feature-detected in
+// src/pi/session.ts, so an older pinned copy just reports no active tools.
 if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.2.0')) {
-    ['getActiveToolNames', 'getAllTools', 'setActiveToolsByName'].forEach((m) => checkProto('AgentSession', m));
+    ['getActiveToolNames'].forEach((m) => checkProto('AgentSession', m));
 }
 
 // AgentSession instance methods cannot be checked without creating a live

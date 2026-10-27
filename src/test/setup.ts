@@ -28,7 +28,10 @@ vi.mock('vscode', () => {
         Uri: {
             file: (p: string) => ({ fsPath: p } as any),
             parse: (s: string) => ({ toString: () => s } as any),
-            joinPath: (a: any, ...p: string[]) => ({ fsPath: [a?.fsPath, ...p].join('/') } as any),
+            joinPath: (a: any, ...p: string[]) => {
+                const joined = [a?.fsPath, ...p].join('/');
+                return { fsPath: joined, toString: () => joined } as any;
+            },
         },
         EventEmitter: class { fire = noop; dispose = noop; event = noop; },
         Disposable: { from: () => ({ dispose: noop }) },
