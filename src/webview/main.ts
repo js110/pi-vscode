@@ -17,6 +17,7 @@ import { looksBinary, normalizeAttachContent, MAX_ATTACH_FILE_BYTES, type Attach
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
 import { ClipboardBridge } from './clipboard';
+import { installComposerFocus } from './composer-focus';
 import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown, setAvatarImages } from './render/messages';
 
 declare function acquireVsCodeApi(): {
@@ -187,13 +188,6 @@ function renderSessionTree(): void {
 
 function updateNativeUi(): void {
     const ui = state.extensionUi;
-    let strip = document.getElementById('extension-status');
-    if (!strip) { strip = el('div', 'extension-status'); strip.id = 'extension-status'; mountNativePanel(strip); }
-    const texts = Object.values(ui?.statuses ?? {});
-    if (ui?.title) texts.unshift(ui.title);
-    if (state.isStreaming && ui?.workingVisible !== false && ui?.workingMessage) texts.unshift(ui.workingMessage);
-    if (!state.isStreaming && state.runOutcome) texts.unshift(t(`run.${state.runOutcome}`));
-    strip.textContent = texts.join(' · '); strip.hidden = !texts.length;
     const inputContainer = document.querySelector('.input-container');
     for (const placement of ['aboveEditor', 'belowEditor'] as const) {
         const id = `extension-widgets-${placement}`;
@@ -937,13 +931,13 @@ function render(): void {
     railRow.appendChild(statusChip);
     const headerActions = el('div', 'header-right');
     headerActions.innerHTML = `
-        <button class="icon-btn" id="btn-new-tab" title="${escHtml(t('header.newAgent'))}">
+        <button class="icon-btn" id="btn-new-tab" title="${escHtml(t('header.newAgent'))}" aria-label="${escAttr(t('header.newAgent'))}">
             <span class="codicon codicon-add"></span>
         </button>
-        <button class="icon-btn" id="btn-sessions" title="${escHtml(t('header.sessions'))}">
+        <button class="icon-btn" id="btn-sessions" title="${escHtml(t('header.sessions'))}" aria-label="${escAttr(t('header.sessions'))}">
             <span class="codicon codicon-list-unordered"></span>
         </button>
-        <button class="icon-btn" id="btn-settings" title="${escHtml(t('header.settings'))}">
+        <button class="icon-btn" id="btn-settings" title="${escHtml(t('header.settings'))}" aria-label="${escAttr(t('header.settings'))}">
             <span class="codicon codicon-gear"></span>
         </button>
     `;
@@ -1298,7 +1292,7 @@ function updateInputArea(): void {
 
     // Always visible (like the paperclip in Copilot/Claude Code): attaching on a
     // non-vision model surfaces image.unsupported instead of hiding the affordance.
-    const attachBtnHtml = `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}"><span class="codicon codicon-attach codicon-sm"></span></button>`;
+    const attachBtnHtml = `<button id="btn-attach" class="attach-btn" title="${escHtml(t('image.attach'))}" aria-label="${escAttr(t('image.attach'))}"><span class="codicon codicon-attach codicon-sm" aria-hidden="true"></span></button>`;
 
     footer.innerHTML = `
         <div class="cstrip-left">
@@ -1309,7 +1303,7 @@ function updateInputArea(): void {
         <div class="cstrip-right">
         ${state.isStreaming ? `<button id="btn-abort" class="abort-btn" title="${escHtml(t('input.stop'))}">&#9632; ${escHtml(t('input.stop'))}</button>` : ''}
         ${attachBtnHtml}
-        <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.steer') : t('input.send'))}"><span class="codicon codicon-send"></span></button>
+        <button id="btn-send" class="send-btn" title="${escHtml(state.isStreaming ? t('input.steer') : t('input.send'))}" aria-label="${escAttr(state.isStreaming ? t('input.steer') : t('input.send'))}"><span class="codicon codicon-send" aria-hidden="true"></span></button>
         </div>
     `;
 
@@ -3849,6 +3843,7 @@ function bindScrollListener(): void {
 // Preload the markdown engine chunk in parallel with the shell render so the
 // first content frame can highlight immediately.
 void prepareMarkdown();
+installComposerFocus();
 render();
 // The host pushes the full snapshot when it resolves the view, but those
 // posts race the document reload whenever VS Code re-creates the webview

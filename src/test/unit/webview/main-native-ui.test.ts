@@ -37,6 +37,7 @@ it('wires tree navigation, extension dialogs, MCP keys and tab isolation through
     expect(sent).toContainEqual({ type: 'navigateSessionTree', entryId: 'branch', summarize: false, instructions: undefined });
 
     dispatch({ type: 'stateSync', state: { ...base, extensionUi: { statuses: { native: 'Connected' }, widgets: {}, dialog: { id: 'confirm', kind: 'confirm', title: 'Proceed?' } } } });
+    expect(document.getElementById('extension-status')).toBeNull();
     document.querySelector<HTMLButtonElement>('#extension-dialog [data-action=accept]')!.click();
     expect(sent).toContainEqual({ type: 'extensionUiResponse', id: 'confirm', value: 'yes', cancelled: undefined });
     dispatch({ type: 'stateSync', state: { ...base, extensionUi: { statuses: {}, widgets: {}, custom: { id: 'mcp', title: 'MCP', lines: ['→ example: connected'] } } } });
@@ -57,7 +58,7 @@ it('wires tree navigation, extension dialogs, MCP keys and tab isolation through
     dispatch({ type: 'stateSync', state: { ...base, sessionId: 's2', activeTabId: 't2', runOutcome: 'cancelled', extensionUi: { statuses: {}, widgets: {} } } });
     expect(document.getElementById('extension-custom')).toBeNull();
     expect(document.getElementById('tree-panel')).toBeNull();
-    expect(document.getElementById('extension-status')!.textContent).toContain('Cancelled');
+    expect(document.getElementById('extension-status')).toBeNull();
     const input = document.querySelector<HTMLTextAreaElement>('#input')!;
     input.value = 'B draft';
     dispatch({ type: 'composerText', tabId: 't1', text: 'A navigation draft' });

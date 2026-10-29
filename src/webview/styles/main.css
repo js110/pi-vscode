@@ -2935,9 +2935,8 @@ body {
 .extension-options { display: grid; gap: 4px; }
 .extension-options .native-option { text-align: left; }
 .native-terminal { font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.45; white-space: pre; overflow-x: auto; margin: 0; }
-.extension-status { flex: none; font-size: 0.85em; padding: 5px 10px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
 .extension-widgets { white-space: pre-wrap; font-size: 0.9em; padding: 4px 8px; max-height: 110px; overflow: auto; color: var(--vscode-descriptionForeground); }
-.extension-status[hidden], .extension-widgets[hidden] { display: none; }
+.extension-widgets[hidden] { display: none; }
 .tool-output .tool-result + .tool-result { border-top: 1px solid var(--vscode-panel-border); margin-top: 6px; padding-top: 6px; }
 .tool-image { max-width: 100%; height: auto; }
 .nested-tools, .codemode-calls { border-left: 1px solid var(--vscode-panel-border); padding-left: 8px; margin-top: 6px; }
