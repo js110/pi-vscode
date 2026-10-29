@@ -8,6 +8,7 @@ import { effectiveSkin, type SkinId } from '../shared/skins';
 import { customSkinPathSync } from '../utils/custom-skin';
 import { avatarInfoSync, type AvatarSlot } from '../utils/custom-avatar';
 import { t } from '../shared/i18n';
+import { buildQuotePrompt, isQuoteTooLarge, MAX_QUOTE_CHARS } from '../shared/quote';
 import { humanizeErrorMessage } from '../shared/error-copy';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -160,11 +161,33 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             // carry their own file context. Built-in slash commands opt out
             // too: prepending a selection would break the host's slash
             // interception and burn the chip on a command message.
+            // A conversation quote (text marked inside the chat transcript)
+            // takes precedence over the editor selection: the user marked it
+            // explicitly for THIS question, so the editor chip stays for a
+            // later prompt instead of being consumed underneath it.
             const mentions = msg.type === 'prompt' ? msg.mentions : undefined;
+            let carriesQuote = false;
+            if (
+                (msg.type === 'prompt' || msg.type === 'queueMessage' || msg.type === 'steer' || msg.type === 'followUp')
+                && typeof msg.quotedText === 'string'
+                && msg.quotedText.length > 0
+                && !msg.text.trimStart().startsWith('/')
+            ) {
+                carriesQuote = true;
+                const quoted = msg.quotedText;
+                if (isQuoteTooLarge(quoted)) {
+                    // Defensive: the webview caps at capture time; a payload
+                    // this size only arrives from a tampered/legacy client.
+                    this.post({ type: 'error', message: t('quote.tooLarge', { n: MAX_QUOTE_CHARS }) });
+                } else {
+                    msg = { ...msg, text: `${buildQuotePrompt(quoted)}\n\n${msg.text}` } as typeof msg;
+                }
+            }
             let wrapped: string | null = null;
             let priorSelection: SelectionContextInfo | null = null;
             if (
-                (msg.type === 'prompt' || msg.type === 'queueMessage')
+                !carriesQuote
+                && (msg.type === 'prompt' || msg.type === 'queueMessage')
                 && !mentions
                 && !msg.text.trimStart().startsWith('/')
                 && this._selectionTracker

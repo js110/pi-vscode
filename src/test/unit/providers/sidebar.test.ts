@@ -187,6 +187,60 @@ describe('SidebarProvider webview lifecycle', () => {
         expect(tracker.reinstate).toHaveBeenCalledWith({ path: 'src/a.ts', startLine: 1, endLine: 2 });
     });
 
+    it('wraps a prompt carrying a conversation quote and leaves the editor chip alone', async () => {
+        // The quote is an explicit mark for THIS question: it wins over the
+        // editor selection, which must not be consumed underneath it.
+        const tm = makeTabManager();
+        const tracker = makeSelectionTracker({
+            current: { path: 'src/a.ts', startLine: 1, endLine: 2 },
+            consumePrompt: vi.fn((text: string) => `SELECTION\n\n${text}`),
+        });
+        const provider = new SidebarProvider({} as any, tm, tracker);
+        const { view } = makeWebviewView();
+        provider.resolveWebviewView(view, {} as any, {} as any);
+
+        const handler = view.webview.onDidReceiveMessage.mock.calls[0][0] as (m: ClientMessage) => void;
+        handler({ type: 'prompt', text: 'what does this mean', quotedText: 'marked passage' });
+        await flush();
+
+        expect(tracker.consumePrompt).not.toHaveBeenCalled();
+        const dispatched = (tm.dispatch as ReturnType<typeof vi.fn>).mock.calls[0][0] as ClientMessage;
+        expect(dispatched.type).toBe('prompt');
+        expect((dispatched as any).text).toContain('marked passage');
+        expect((dispatched as any).text).toContain('what does this mean');
+        expect((dispatched as any).text.indexOf('marked passage')).toBeLessThan((dispatched as any).text.indexOf('what does this mean'));
+    });
+
+    it('never wraps a slash command with a quote', async () => {
+        const tm = makeTabManager();
+        const provider = new SidebarProvider({} as any, tm, makeSelectionTracker());
+        const { view } = makeWebviewView();
+        provider.resolveWebviewView(view, {} as any, {} as any);
+
+        const handler = view.webview.onDidReceiveMessage.mock.calls[0][0] as (m: ClientMessage) => void;
+        handler({ type: 'prompt', text: '/model', quotedText: 'marked passage' });
+        await flush();
+
+        expect(tm.dispatch).toHaveBeenCalledWith({ type: 'prompt', text: '/model', quotedText: 'marked passage' });
+    });
+
+    it('wraps queued messages and steers with a quote too', async () => {
+        const tm = makeTabManager();
+        const provider = new SidebarProvider({} as any, tm, makeSelectionTracker());
+        const { view } = makeWebviewView();
+        provider.resolveWebviewView(view, {} as any, {} as any);
+
+        const handler = view.webview.onDidReceiveMessage.mock.calls[0][0] as (m: ClientMessage) => void;
+        handler({ type: 'queueMessage', text: 'next step', quotedText: 'passage' });
+        handler({ type: 'steer', text: 'go on', quotedText: 'passage2' });
+        await flush();
+
+        const queued = (tm.dispatch as ReturnType<typeof vi.fn>).mock.calls[0][0] as any;
+        expect(queued.text).toContain('passage');
+        const steered = (tm.dispatch as ReturnType<typeof vi.fn>).mock.calls[1][0] as any;
+        expect(steered.text).toContain('passage2');
+    });
+
     it('routes dismissSelection to the tracker without dispatching', async () => {
         const tm = makeTabManager();
         const tracker = makeSelectionTracker();

@@ -256,12 +256,12 @@ export type ClientMessage =
     | { type: 'extensionUiInput'; id: string; data: string; width?: number }
     | { type: 'extensionUiClose'; id: string }
     | { type: 'composerChanged'; text: string }
-    | { type: 'prompt'; text: string; images?: string[]; mentions?: string[]; attachContents?: { name: string; content: string }[]; bypassSlashCommands?: boolean }
+    | { type: 'prompt'; text: string; images?: string[]; mentions?: string[]; attachContents?: { name: string; content: string }[]; bypassSlashCommands?: boolean; quotedText?: string }
     /** Roll the session back to the start of `turn` (user-turn ordinal) and
      *  send `text` as the replacement prompt (edit / regenerate). */
     | { type: 'replayTurn'; turn: number; text: string; images?: string[] }
-    | { type: 'steer'; text: string; images?: string[] }
-    | { type: 'followUp'; text: string; images?: string[] }
+    | { type: 'steer'; text: string; images?: string[]; quotedText?: string }
+    | { type: 'followUp'; text: string; images?: string[]; quotedText?: string }
     | { type: 'abort' }
     | { type: 'getModels' }
     /** Lazily ask the host to run Pi config discovery (model picker banner).
@@ -292,7 +292,7 @@ export type ClientMessage =
     | { type: 'switchTab'; tabId: string }
     | { type: 'openSettings' }
     | { type: 'getSkills' }
-    | { type: 'queueMessage'; text: string; images?: string[] }
+    | { type: 'queueMessage'; text: string; images?: string[]; quotedText?: string }
     | { type: 'editQueuedMessage'; index: number; text: string }
     | { type: 'removeQueuedMessage'; index: number }
     | { type: 'cancelQueue' }

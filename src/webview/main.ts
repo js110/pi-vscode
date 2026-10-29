@@ -12,6 +12,7 @@ import { t, setLang, type TextKey } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseUriList } from '../shared/drop-files';
 import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
+import { isQuoteTooLarge, MAX_QUOTE_CHARS } from '../shared/quote';
 import { looksBinary, normalizeAttachContent, MAX_ATTACH_FILE_BYTES, type AttachFileEntry } from '../shared/attach';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
@@ -62,6 +63,10 @@ const state: {
     supportsImages: boolean;
     mentions: string[];
     selection: SelectionContextInfo | null;
+    /** Text marked inside the chat transcript (selectionchange): rides the
+     *  next non-slash prompt as a fenced quote, one-shot like the editor
+     *  selection chip. Pure webview state — the host only sees quotedText. */
+    quotedSelection: { text: string } | null;
     occupancy: SessionOccupancy | null;
     cacheWarmingStatus?: CacheWarmingStatusInfo;
     cacheWarmingDecision?: CacheWarmingDecisionInfo;
@@ -97,6 +102,7 @@ const state: {
     supportsImages: false,
     mentions: [],
     selection: null,
+    quotedSelection: null,
     occupancy: null,
     imageCache: {},
 };
@@ -684,6 +690,10 @@ function applyStateSync(s: SerializedAgentState): void {
         state.pendingImages = [];
         state.pendingAttachments = [];
         state.mentions = [];
+        // A quote marks text in THIS tab's transcript; it must not ride a
+        // prompt for a different conversation.
+        state.quotedSelection = null;
+        updateQuoteChip();
         hideMentionMenu();
         dropPendingRequestId = -1;
         cancelEditMode({ keepDraft: true });
@@ -969,6 +979,10 @@ function render(): void {
     selectionChip.id = 'selection-chip';
     selectionChip.style.display = 'none';
     inputContainer.appendChild(selectionChip);
+    const quoteChip = el('div', 'selection-chip quote-chip');
+    quoteChip.id = 'quote-chip';
+    quoteChip.style.display = 'none';
+    inputContainer.appendChild(quoteChip);
     const imageChips = el('div', 'image-chips');
     imageChips.id = 'image-chips';
     imageChips.style.display = 'none';
@@ -2356,6 +2370,9 @@ function bindStableEvents(): void {
     const sessionsBtn = document.getElementById('btn-sessions');
     const settingsBtn = document.getElementById('btn-settings');
 
+    // Transcript selections become quote context (debounced; see capture).
+    document.addEventListener('selectionchange', scheduleQuoteCapture);
+
     input?.addEventListener('keydown', (e) => {
         if (e.isComposing || e.keyCode === 229) return;
         if (isMentionMenuVisible()) {
@@ -2858,17 +2875,20 @@ function sendWhileStreaming(queue: boolean, opts: { allowAbort?: boolean } = {})
         return;
     }
     const images = hasImages ? [...state.pendingImages] : undefined;
+    const quotedText = consumeQuoteForSend(text);
     if (queue) {
-        vscode.postMessage({ type: 'queueMessage', text, images });
+        vscode.postMessage({ type: 'queueMessage', text, images, quotedText });
     } else {
-        vscode.postMessage({ type: 'steer', text, images });
+        vscode.postMessage({ type: 'steer', text, images, quotedText });
     }
     imageReadGeneration++;
     input.value = '';
     input.style.height = 'auto';
     state.pendingImages = [];
     updateImageChips();
-    userHasScrolled = false;
+    // Sending must not yank the viewport: a user reading history (or asking
+    // about a marked passage up-thread) keeps their scroll position. At the
+    // bottom userHasScrolled is already false, so live-following is unchanged.
     updateScrollButton();
     rememberMessage(text);
 }
@@ -2907,6 +2927,7 @@ function sendMessage(): void {
     // Only refs still present in the draft as whole tokens are real; the rest
     // were deleted by the user while editing.
     const mentions = state.mentions.filter((tok) => hasMentionToken(text, tok));
+    const quotedText = consumeQuoteForSend(text);
     state.mentions = [];
     hideMentionMenu();
     imageReadGeneration++;
@@ -2916,7 +2937,9 @@ function sendMessage(): void {
     state.pendingAttachments = [];
     updateImageChips();
     updateAttachChips();
-    userHasScrolled = false;
+    // Sending must not yank the viewport: a user reading history (or asking
+    // about a marked passage up-thread) keeps their scroll position. At the
+    // bottom userHasScrolled is already false, so live-following is unchanged.
     updateScrollButton();
     rememberMessage(text);
     vscode.postMessage({
@@ -2925,6 +2948,7 @@ function sendMessage(): void {
         images,
         mentions: mentions.length > 0 ? mentions : undefined,
         attachContents: attachments,
+        quotedText,
     });
 }
 
@@ -3034,6 +3058,92 @@ function updateSelectionChip(): void {
     chip.querySelector('.selection-chip-close')?.addEventListener('click', () => {
         vscode.postMessage({ type: 'dismissSelection' });
     });
+}
+
+// ── Conversation quote (text marked inside the transcript) ──
+// Mirrors the editor-selection chip: mark text in a chat message, a chip
+// above the composer shows what rides the next prompt, and the send path
+// attaches it one-shot as quotedText (the host wraps it into a fenced
+// block). Collapse (clicking elsewhere) keeps the last mark — only an
+// explicit dismiss, a new mark, or sending consumes it.
+
+const QUOTE_CAPTURE_DEBOUNCE_MS = 250;
+const QUOTE_PREVIEW_CHARS = 60;
+let quoteCaptureTimer: ReturnType<typeof setTimeout> | undefined;
+
+function nodeInsideMessageContent(node: Node | null): boolean {
+    if (!node) return false;
+    const element = node.nodeType === 3 ? node.parentElement : (node as Element);
+    return !!element?.closest?.('.message-content');
+}
+
+/** Debounced selectionchange handler: capture a non-collapsed selection that
+ *  lives entirely inside the transcript's message content. */
+function scheduleQuoteCapture(): void {
+    if (quoteCaptureTimer !== undefined) clearTimeout(quoteCaptureTimer);
+    quoteCaptureTimer = setTimeout(captureQuoteFromSelection, QUOTE_CAPTURE_DEBOUNCE_MS);
+}
+
+function captureQuoteFromSelection(): void {
+    quoteCaptureTimer = undefined;
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    if (!nodeInsideMessageContent(selection.anchorNode) || !nodeInsideMessageContent(selection.focusNode)) return;
+    const text = selection.toString().replace(/\u00a0/g, ' ').trim();
+    if (!text) return;
+    if (isQuoteTooLarge(text)) {
+        showToast({
+            containerId: activeToastContainerId(),
+            className: 'notice-toast',
+            message: t('quote.tooLarge', { n: MAX_QUOTE_CHARS }),
+            durationMs: 4000,
+        });
+        return;
+    }
+    if (state.quotedSelection?.text === text) return; // same mark, no churn
+    state.quotedSelection = { text };
+    updateQuoteChip();
+}
+
+/** Chip preview: first line-ish slice of the marked text. */
+function quotePreview(text: string): string {
+    const singleLine = text.replace(/\s+/g, ' ').trim();
+    return singleLine.length > QUOTE_PREVIEW_CHARS
+        ? `${singleLine.slice(0, QUOTE_PREVIEW_CHARS)}…`
+        : singleLine;
+}
+
+function updateQuoteChip(): void {
+    const chip = document.getElementById('quote-chip');
+    if (!chip) return;
+    const quote = state.quotedSelection;
+    if (!quote) {
+        chip.style.display = 'none';
+        chip.innerHTML = '';
+        return;
+    }
+    chip.style.display = '';
+    chip.innerHTML = `
+        <span class="codicon codicon-quote codicon-xs selection-chip-icon"></span>
+        <span class="selection-chip-label" title="${escAttr(quotePreview(quote.text))}">${escHtml(quotePreview(quote.text))}</span>
+        <button class="selection-chip-close" title="${escHtml(t('quote.detach'))}">&#10005;</button>
+    `;
+    chip.querySelector('.selection-chip-close')?.addEventListener('click', () => {
+        state.quotedSelection = null;
+        updateQuoteChip();
+    });
+}
+
+/** One-shot consume for the send paths: slash commands never carry the
+ *  quote (the host would refuse to intercept them behind a wrap); every
+ *  other send drains it. Returns undefined when nothing should ride. */
+function consumeQuoteForSend(text: string): string | undefined {
+    const quote = state.quotedSelection;
+    if (!quote) return undefined;
+    if (text.trimStart().startsWith('/')) return undefined;
+    state.quotedSelection = null;
+    updateQuoteChip();
+    return quote.text;
 }
 
 function updateImageChips(): void {

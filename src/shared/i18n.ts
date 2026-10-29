@@ -254,6 +254,10 @@ const EN = {
 
     // Selection context chip (Copilot-style auto-attach)
     'selection.detach': "Don't attach the selection",
+    'quote.attach': 'Quoted from the conversation',
+    'quote.detach': 'Remove quote',
+    'quote.intro': 'Regarding this selection from the conversation:',
+    'quote.tooLarge': 'Selection too long to quote (max {n} characters).',
 
     // Send to Pi (editor context menu)
     'sendToPi.intro': 'Here is a code selection from `{path}:{range}`:',
@@ -697,6 +701,10 @@ const ZH: Record<TextKey, string> = {
 
     // Selection context chip (Copilot-style auto-attach)
     'selection.detach': '不附加选中代码',
+    'quote.attach': '引用对话选段',
+    'quote.detach': '移除引用',
+    'quote.intro': '针对对话中选中的以下内容：',
+    'quote.tooLarge': '选段过长，无法引用（最多 {n} 字符）。',
 
     // Send to Pi (editor context menu)
     'sendToPi.intro': '这是 `{path}:{range}` 处的选区代码：',
