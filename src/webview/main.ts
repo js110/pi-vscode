@@ -390,7 +390,7 @@ function handleMessage(msg: ServerMessage): void {
             piAvatarUrl = msg.piAvatarUrl;
             setAvatarImages({ pi: msg.piAvatarUrl, user: msg.userAvatarUrl });
             applyStreamingAvatar(document.getElementById('streaming-message'));
-            void updateMessages();
+            void updateMessages(true);
             break;
         }
         case 'langChanged': {
@@ -1006,7 +1006,7 @@ function render(): void {
     // Populate all dynamic sections
     updateTabs();
     updateStatusChip();
-    updateMessages();
+    updateMessages(true);
     updateInputArea();
     updateChangedFiles();
     updateCompactionBanner();
@@ -1018,7 +1018,57 @@ function render(): void {
     scrollToBottom();
 }
 
-async function updateMessages(): Promise<void> {
+// ── Message tree render input tracking ──
+// updateMessages() rebuilds the whole tree, which destroys the user's text
+// selection mid-drag and any hover/flash state on the old nodes. Idle
+// stateSync frames (context usage, session name, queue cosmetics…) carry no
+// tree-visible change, so the rebuild is skipped unless one of the tree's
+// inputs actually moved. Explicit re-renders (render(), avatarChanged) pass
+// force=true.
+
+interface TreeInputs {
+    messages: any[];
+    isStreaming: boolean;
+    rollbackPoint: number | null;
+    fileChangesCount: number;
+    approvalTracesSize: number;
+    imageCacheCount: number;
+}
+
+let lastTreeInputs: TreeInputs | undefined;
+
+function currentTreeInputs(): TreeInputs {
+    return {
+        messages: state.messages,
+        isStreaming: state.isStreaming,
+        rollbackPoint: state.rollbackPoint,
+        fileChangesCount: state.fileChanges.length,
+        approvalTracesSize: state.approvalTraces.size,
+        imageCacheCount: Object.keys(state.imageCache).length,
+    };
+}
+
+function treeInputsChanged(next: TreeInputs): boolean {
+    const last = lastTreeInputs;
+    if (!last) return true;
+    // Reference identity for messages is the T16 contract: the host ships a
+    // fresh array whenever the history changed and omits the field (keeping
+    // our previous reference) when it did not. The remaining inputs are
+    // mutated in place on the webview side (fileChanges entries, approval
+    // traces, image cache), so they fall back to cardinality checks; the
+    // events that mutate them always land alongside a new messages array.
+    return last.messages !== next.messages
+        || last.isStreaming !== next.isStreaming
+        || last.rollbackPoint !== next.rollbackPoint
+        || last.fileChangesCount !== next.fileChangesCount
+        || last.approvalTracesSize !== next.approvalTracesSize
+        || last.imageCacheCount !== next.imageCacheCount;
+}
+
+async function updateMessages(force = false): Promise<void> {
+    const inputs = currentTreeInputs();
+    if (!force && !treeInputsChanged(inputs)) return;
+    lastTreeInputs = inputs;
     // First call loads the markdown chunk; later calls resolve immediately.
     // A frame that cannot load the engine falls back to plain-escaped message
     // rendering rather than stalling the whole conversation view.
