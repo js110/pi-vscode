@@ -275,6 +275,9 @@ function handleMessage(msg: ServerMessage): void {
         case 'agentEvent':
             handleAgentEvent(msg.event);
             break;
+        case 'clipboardResult':
+            resolvePendingCopy(msg.ok, msg.message);
+            break;
         case 'models':
             state.availableModels = msg.models ?? [];
             state.availableThinkingLevels = msg.availableThinkingLevels ?? [];
@@ -1058,6 +1061,7 @@ async function updateMessages(): Promise<void> {
 
     bindCopyButtons();
     bindCodeBlockActions();
+    bindMessageCopyButtons();
     bindCheckpointButtons();
     bindMessageActionButtons();
     bindRedoButtons();
@@ -3042,6 +3046,62 @@ function updateAttachChips(): void {
     });
 }
 
+// ── Clipboard ──
+// navigator.clipboard.writeText is rejected or undefined inside VS Code's
+// cross-origin webview iframe (microsoft/vscode#182642: the iframe lacks
+// clipboard-write permission; writes also require document focus), so every
+// copy path keeps a host bridge fallback: the extension host writes through
+// vscode.env.clipboard, which always works. Local success short-circuits the
+// round-trip; local failure silently defers to the host and its
+// clipboardResult ack decides the user-visible outcome.
+
+/** Single inflight host-copy ack slot; the latest click wins. */
+let pendingCopyAck: { onCopied: () => void } | undefined;
+
+function requestHostCopy(text: string, onCopied: () => void): void {
+    pendingCopyAck = { onCopied };
+    vscode.postMessage({ type: 'copyText', text });
+}
+
+function resolvePendingCopy(ok: boolean, message?: string): void {
+    const pending = pendingCopyAck;
+    pendingCopyAck = undefined;
+    if (!pending) return;
+    if (ok) {
+        pending.onCopied();
+    } else {
+        showToast({
+            containerId: activeToastContainerId(),
+            className: 'notice-toast',
+            message: t('clipboard.writeFailed', { message: message ?? '' }),
+            durationMs: 4000,
+        });
+    }
+}
+
+/** Copy `text`, preferring the local Clipboard API and falling back to the
+ *  host bridge when the webview sandbox rejects it. */
+function copyText(text: string, onCopied: () => void): void {
+    const clipboard = (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+    if (clipboard?.writeText) {
+        clipboard.writeText(text).then(
+            () => onCopied(),
+            () => requestHostCopy(text, onCopied),
+        );
+    } else {
+        requestHostCopy(text, onCopied);
+    }
+}
+
+const TRANSIENT_FEEDBACK_MS = 1500;
+
+/** Flash a "copied" state, then restore the resting label/icon. Shared by the
+ *  code-block and whole-reply copy actions so the timing cannot drift apart. */
+function flashTransientFeedback(apply: () => void, restore: () => void): void {
+    apply();
+    setTimeout(restore, TRANSIENT_FEEDBACK_MS);
+}
+
 function bindCopyButtons(): void {
     document.querySelectorAll('.copy-btn:not([data-bound])').forEach((btn) => {
         btn.setAttribute('data-bound', '1');
@@ -3050,9 +3110,41 @@ function bindCopyButtons(): void {
             if (!id) return;
             const codeEl = document.getElementById(id);
             if (!codeEl) return;
-            navigator.clipboard.writeText(codeEl.textContent ?? '').then(() => {
-                btn.textContent = t('code.copied');
-                setTimeout(() => { btn.textContent = t('code.copy'); }, 1500);
+            copyText(codeEl.textContent ?? '', () => {
+                flashTransientFeedback(
+                    () => { btn.textContent = t('code.copied'); },
+                    () => { btn.textContent = t('code.copy'); },
+                );
+            });
+        });
+    });
+}
+
+/** Whole-reply copy: the hover action on each assistant turn head. The raw
+ *  markdown comes from state.messages (the rendered DOM would carry syntax
+ * spans and diff markers). */
+function bindMessageCopyButtons(): void {
+    document.querySelectorAll('.msg-copy-btn:not([data-bound])').forEach((btn) => {
+        btn.setAttribute('data-bound', '1');
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt((btn as HTMLElement).dataset.msgIndex ?? '-1', 10);
+            const msg = state.messages[idx];
+            const text = msg ? extractText(msg).trim() : '';
+            if (!text) return;
+            copyText(text, () => {
+                const icon = btn.querySelector('.codicon');
+                if (!icon) return;
+                flashTransientFeedback(
+                    () => {
+                        icon.className = 'codicon codicon-check codicon-xs';
+                        btn.setAttribute('title', t('msg.copied'));
+                    },
+                    () => {
+                        icon.className = 'codicon codicon-copy codicon-xs';
+                        btn.setAttribute('title', t('msg.copy'));
+                    },
+                );
             });
         });
     });

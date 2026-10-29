@@ -305,7 +305,12 @@ export type ClientMessage =
     | { type: 'mentionQuery'; query: string; requestId: number }
     | { type: 'dropFiles'; uris: string[]; requestId: number }
     | { type: 'sessionTakeover' }
-    | { type: 'dismissSelection' };
+    | { type: 'dismissSelection' }
+    /** Clipboard write routed through the extension host: navigator.clipboard
+     *  is rejected/absent inside VS Code's cross-origin webview iframe
+     *  (microsoft/vscode#182642), so the webview falls back to this bridge
+     *  where vscode.env.clipboard always works. */
+    | { type: 'copyText'; text: string };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =
@@ -390,6 +395,8 @@ export type ServerMessage =
     | { type: 'compactionResult'; ok: boolean; message?: string; benign?: boolean }
     | { type: 'mentionResults'; requestId: number; files: string[]; symbols: MentionSymbolItem[] }
     | { type: 'dropResolved'; requestId: number; results: DropResolveResult[] }
+    /** Result of a host-side copyText write; ok=false carries the reason. */
+    | { type: 'clipboardResult'; ok: boolean; message?: string }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages

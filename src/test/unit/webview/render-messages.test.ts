@@ -330,6 +330,31 @@ describe('buildMessageTree', () => {
         expect(nodes[1].querySelector('.message-assistant')?.textContent).toContain('hi there');
     });
 
+    it('puts a copy action on the first assistant message of a turn', () => {
+        const nodes = buildMessageTree(baseRenderState({
+            messages: [
+                { role: 'user', content: 'hello', timestamp: 1000 },
+                { role: 'assistant', content: 'part one', timestamp: 2000 },
+                { role: 'assistant', content: 'part two', timestamp: 3000 },
+            ],
+        }));
+        const buttons = nodes.flatMap((n) => [...n.querySelectorAll('.msg-copy-btn')]) as HTMLButtonElement[];
+        // Only the turn-start message carries it; continuations do not.
+        expect(buttons.length).toBe(1);
+        expect(buttons[0].dataset.msgIndex).toBe('1');
+        expect(buttons[0].querySelector('.codicon-copy')).toBeTruthy();
+    });
+
+    it('omits the copy action on thinking-only assistant turns', () => {
+        const nodes = buildMessageTree(baseRenderState({
+            messages: [
+                { role: 'user', content: 'hello', timestamp: 1000 },
+                { role: 'assistant', content: [{ type: 'thinking', thinking: 'hm' }], timestamp: 2000 },
+            ],
+        }));
+        expect(nodes.every((n) => n.querySelector('.msg-copy-btn') === null)).toBe(true);
+    });
+
     it('renders user images resolved through the image cache', () => {
         const nodes = buildMessageTree(baseRenderState({
             messages: [

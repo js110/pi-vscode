@@ -445,6 +445,17 @@ function buildTurnMarker(turnNumber: number | undefined, isTurnStart: boolean): 
     return holder;
 }
 
+/** Hover copy action for a finished assistant reply. Carries only the message
+ *  index; main.ts resolves the text and routes the clipboard write. */
+function buildMessageCopyButton(index: number): HTMLButtonElement {
+    const btn = el('button', 'msg-copy-btn') as HTMLButtonElement;
+    btn.type = 'button';
+    btn.title = t('msg.copy');
+    btn.dataset.msgIndex = String(index);
+    btn.innerHTML = '<span class="codicon codicon-copy codicon-xs"></span>';
+    return btn;
+}
+
 /** Compact "Me" avatar chip above the user bubble. Always rendered, including
  *  while streaming, so the user's avatar stays visible during a live turn. */
 function buildUserHead(): HTMLElement {
@@ -531,6 +542,12 @@ function buildMessage(msg: any, index: number, turnNumber: number | undefined, c
 
     const isTurnStart = index === 0 || (ctx.messages[index - 1]?.role ?? 'unknown') !== 'assistant';
     group.appendChild(buildTurnMarker(turnNumber, isTurnStart));
+    // One-click copy for the whole reply (hover action on the turn head). The
+    // click handler lives in main.ts; the button only carries the index so the
+    // builder stays free of clipboard side effects.
+    if (isTurnStart && text) {
+        group.querySelector('.turn-head')?.appendChild(buildMessageCopyButton(index));
+    }
 
     const wrapper = el('div', `message message-${role}`);
 

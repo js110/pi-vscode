@@ -208,6 +208,31 @@ describe('TabManager', () => {
         expect(adapters.ui.openSettings).toHaveBeenCalled();
     });
 
+    it('bridges copyText through the host clipboard and acks the webview', async () => {
+        const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
+        const adapters = makeAdapters();
+        const manager = new TabManager(factory, adapters);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'copyText', text: 'copy me' });
+        expect(adapters.ui.writeClipboard).toHaveBeenCalledWith('copy me');
+        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'clipboardResult', ok: true });
+    });
+
+    it('reports a failed copyText ack with the error message', async () => {
+        const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
+        const adapters = makeAdapters({
+            ui: { writeClipboard: vi.fn(async () => { throw new Error('denied'); }) },
+        });
+        const manager = new TabManager(factory, adapters);
+        await manager.initialize();
+
+        await manager.dispatch({ type: 'copyText', text: 'copy me' });
+        expect(adapters.transport.post).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'clipboardResult', ok: false, message: 'denied' }),
+        );
+    });
+
     it('gets the current agentEvent to the webview on a message for the active tab', async () => {
         const factory: TabFactory = { create: vi.fn(async () => makeTab()) };
         const adapters = makeAdapters();

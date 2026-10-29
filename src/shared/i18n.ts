@@ -71,6 +71,9 @@ const EN = {
     'msg.pi': 'Pi',
     'msg.me': 'Me',
     'msg.turn': 'Turn {n}',
+    'msg.copy': 'Copy reply',
+    'msg.copied': 'Copied!',
+    'clipboard.writeFailed': 'Copy to clipboard failed: {message}',
 
     // Composer
     'input.ask': 'Ask Pi anything... (type / for commands)',
@@ -525,6 +528,9 @@ const ZH: Record<TextKey, string> = {
     'msg.pi': 'Pi',
     'msg.me': '我',
     'msg.turn': '第 {n} 轮',
+    'msg.copy': '复制回复',
+    'msg.copied': '已复制！',
+    'clipboard.writeFailed': '复制到剪贴板失败：{message}',
 
     'input.ask': '向 Pi 提出任何请求...（输入 / 唤出命令）',
     'input.queue': '给当前轮次发消息...',

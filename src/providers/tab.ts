@@ -969,6 +969,17 @@ export class TabManager {
         if (msg.type === 'extensionUiInput') { tab.session.extensionUi.input(msg.id, msg.data, msg.width); return; }
         if (msg.type === 'extensionUiClose') { tab.session.extensionUi.close(msg.id); return; }
         if (msg.type === 'composerChanged') { tab.session.extensionUi?.updateComposer(msg.text); return; }
+        // Clipboard bridge: not tab-scoped — vscode.env.clipboard works
+        // regardless of session state, so no streaming/lock guards apply.
+        if (msg.type === 'copyText') {
+            try {
+                await this._adapters.ui.writeClipboard(msg.text);
+                this._adapters.transport.post({ type: 'clipboardResult', ok: true });
+            } catch (err: any) {
+                this._adapters.transport.post({ type: 'clipboardResult', ok: false, message: String(err?.message ?? err) });
+            }
+            return;
+        }
         if (msg.type === 'getSessionTree') { this._postSessionTree(tab); return; }
         if (msg.type === 'navigateSessionTree' || msg.type === 'labelSessionTree') {
             if (tab.isStreaming || tab.compactionInFlight || this._isReadOnlyLocked(tab)) {
