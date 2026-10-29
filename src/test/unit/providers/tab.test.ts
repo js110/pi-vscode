@@ -214,9 +214,9 @@ describe('TabManager', () => {
         const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
-        await manager.dispatch({ type: 'copyText', text: 'copy me' });
+        await manager.dispatch({ type: 'copyText', text: 'copy me', requestId: 7 });
         expect(adapters.ui.writeClipboard).toHaveBeenCalledWith('copy me');
-        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'clipboardResult', ok: true });
+        expect(adapters.transport.post).toHaveBeenCalledWith({ type: 'clipboardResult', requestId: 7, ok: true });
     });
 
     it('reports a failed copyText ack with the error message', async () => {
@@ -227,9 +227,9 @@ describe('TabManager', () => {
         const manager = new TabManager(factory, adapters);
         await manager.initialize();
 
-        await manager.dispatch({ type: 'copyText', text: 'copy me' });
+        await manager.dispatch({ type: 'copyText', text: 'copy me', requestId: 7 });
         expect(adapters.transport.post).toHaveBeenCalledWith(
-            expect.objectContaining({ type: 'clipboardResult', ok: false, message: 'denied' }),
+            expect.objectContaining({ type: 'clipboardResult', requestId: 7, ok: false, message: 'denied' }),
         );
     });
 
@@ -688,6 +688,24 @@ describe('TabManager', () => {
         expect(adapters.transport.post).not.toHaveBeenCalledWith(
             expect.objectContaining({ type: 'toolCallPending' } as any),
         );
+    });
+
+    it('restores a background approval in its tab snapshot and rejects it on close', async () => {
+        const handlers: Array<(id: string, tool: string, args: any) => Promise<boolean>> = [];
+        const manager = new TabManager({ create: vi.fn(async () => makeTab({
+            setToolApprovalHandler: (h: any) => { handlers.push(h); },
+        })) }, makeAdapters());
+        await manager.initialize();
+        const firstId = manager.getState().activeTabId!;
+        await manager.dispatch({ type: 'createTab' });
+        const pending = handlers[0]('approval-1', 'write', { path: 'test.txt' });
+        expect(manager.getSnapshot(true).state.pendingApprovals).toEqual([]);
+        await manager.dispatch({ type: 'switchTab', tabId: firstId });
+        expect(manager.getSnapshot(true).state.pendingApprovals).toEqual([
+            { toolCallId: 'approval-1', toolName: 'write', args: { path: 'test.txt' } },
+        ]);
+        await manager.dispatch({ type: 'closeTab', tabId: firstId });
+        expect(await pending).toBe(false);
     });
 
     it('never auto-approves dangerous tools from memory', async () => {

@@ -673,6 +673,37 @@ body {
 .msg-copy-btn:focus-visible { opacity: 1; }
 .msg-copy-btn:hover { color: var(--fg); background: var(--surface-hover); }
 
+/* ── Transcript context menu (copy defense layer 3) ──
+   VS Code's own context-menu Copy acts on the workbench focus, which never
+   holds the transcript selection; this menu copies through the host bridge. */
+.ctx-menu {
+    position: fixed;
+    z-index: 100;
+    min-width: 150px;
+    padding: 4px;
+    background: var(--widget-bg);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+}
+.ctx-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 10px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    cursor: pointer;
+    font-size: var(--fs-sm);
+    font-family: var(--font-ui);
+    text-align: left;
+}
+.ctx-menu-item:hover { background: var(--surface-hover); }
+.ctx-menu-item .codicon { color: var(--muted); }
+
 /* Compact "Me" chip above a user bubble */
 .user-head {
     display: flex;

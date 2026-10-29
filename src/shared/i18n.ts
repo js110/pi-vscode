@@ -258,6 +258,7 @@ const EN = {
     'quote.detach': 'Remove quote',
     'quote.intro': 'Regarding this selection from the conversation:',
     'quote.tooLarge': 'Selection too long to quote (max {n} characters).',
+    'ctx.copySelection': 'Copy selection',
 
     // Send to Pi (editor context menu)
     'sendToPi.intro': 'Here is a code selection from `{path}:{range}`:',
@@ -705,6 +706,7 @@ const ZH: Record<TextKey, string> = {
     'quote.detach': '移除引用',
     'quote.intro': '针对对话中选中的以下内容：',
     'quote.tooLarge': '选段过长，无法引用（最多 {n} 字符）。',
+    'ctx.copySelection': '复制选段',
 
     // Send to Pi (editor context menu)
     'sendToPi.intro': '这是 `{path}:{range}` 处的选区代码：',

@@ -16,6 +16,7 @@ import { isQuoteTooLarge, MAX_QUOTE_CHARS } from '../shared/quote';
 import { looksBinary, normalizeAttachContent, MAX_ATTACH_FILE_BYTES, type AttachFileEntry } from '../shared/attach';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
+import { ClipboardBridge } from './clipboard';
 import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown, setAvatarImages } from './render/messages';
 
 declare function acquireVsCodeApi(): {
@@ -25,6 +26,11 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscode = acquireVsCodeApi();
+const clipboardBridge = new ClipboardBridge(
+    (text, requestId) => vscode.postMessage({ type: 'copyText', text, requestId }),
+    (message) => showToast({ containerId: activeToastContainerId(), className: 'notice-toast',
+        message: t('clipboard.writeFailed', { message: message ?? '' }), durationMs: 4000 }),
+);
 // ── State ──
 
 const state: {
@@ -108,6 +114,7 @@ const state: {
 };
 
 let sessionSearchQuery = '';
+let sessionSearchRequestId = 0;
 let sessionSearchTimer = 0;
 let fullSessionList: any[] = [];
 let currentSessionId: string | undefined;
@@ -282,7 +289,7 @@ function handleMessage(msg: ServerMessage): void {
             handleAgentEvent(msg.event);
             break;
         case 'clipboardResult':
-            resolvePendingCopy(msg.ok, msg.message);
+            clipboardBridge.resolve(msg.requestId, msg.ok, msg.message);
             break;
         case 'models':
             state.availableModels = msg.models ?? [];
@@ -308,6 +315,7 @@ function handleMessage(msg: ServerMessage): void {
             updateFooterModel();
             break;
         case 'sessions':
+            if (sessionSearchQuery.trim()) break;
             if (!sessionSearchQuery) fullSessionList = msg.sessions;
             currentSessionId = msg.currentSessionId ?? currentSessionId;
             // Refresh only when the user already opened the panel; a
@@ -316,6 +324,10 @@ function handleMessage(msg: ServerMessage): void {
             if (document.getElementById('session-panel') && !treeOpen) {
                 renderSessionList(msg.sessions, msg.currentSessionId);
             }
+            break;
+        case 'sessionSearchResults':
+            if (msg.tabId !== state.activeTabId || msg.requestId !== sessionSearchRequestId || !sessionSearchQuery.trim()) break;
+            if (document.getElementById('session-panel') && !treeOpen) renderSessionList(msg.sessions, msg.currentSessionId);
             break;
         case 'hunksApplied':
             if (msg.ok) {
@@ -419,7 +431,8 @@ function handleMessage(msg: ServerMessage): void {
             break;
         }
         case 'applyPreviewResult':
-            renderApplyPreviewCard(msg.preview);
+            if (msg.tabId === state.activeTabId) renderApplyPreviewCard(msg.preview);
+            else vscode.postMessage({ type: 'applyCancel', previewId: msg.preview.previewId });
             break;
         case 'applyResult': {
             removeApplyPreviewCard(msg.previewId);
@@ -654,8 +667,8 @@ function applyStateSync(s: SerializedAgentState): void {
     state.compactionBusy = s.compactionInFlight === true;
     state.supportsImages = s.supportsImages ?? false;
     state.occupancy = s.occupancy ?? null;
-    state.cacheWarmingStatus = s.cacheWarmingStatus ?? state.cacheWarmingStatus;
-    state.cacheWarmingDecision = s.cacheWarmingDecision ?? state.cacheWarmingDecision;
+    state.cacheWarmingStatus = s.cacheWarmingStatus;
+    state.cacheWarmingDecision = s.cacheWarmingDecision;
     if (!state.supportsImages && state.pendingImages.length > 0) {
         // The model can switch under attached images; drop them rather than
         // delivering to a text-only model.
@@ -680,6 +693,7 @@ function applyStateSync(s: SerializedAgentState): void {
     // Transient cards live in the per-tab streaming area; they are wiped on a
     // tab switch and must not resurrect on a later langChanged.
     if (tabSwitched) {
+        sessionSearchRequestId++;
         collapsedTreeEntries.clear();
         if (prevTab && previousDraft !== undefined) composerDrafts.set(prevTab, previousDraft);
         treeOpen = false;
@@ -693,6 +707,8 @@ function applyStateSync(s: SerializedAgentState): void {
         // A quote marks text in THIS tab's transcript; it must not ride a
         // prompt for a different conversation.
         state.quotedSelection = null;
+        lastLiveTranscriptSelection = null;
+        if (quoteCaptureTimer !== undefined) clearTimeout(quoteCaptureTimer);
         updateQuoteChip();
         hideMentionMenu();
         dropPendingRequestId = -1;
@@ -745,6 +761,13 @@ function applyStateSync(s: SerializedAgentState): void {
             ensurePreparingPlaceholder();
         }
         updateScrollButton();
+    }
+    if (s.pendingApprovals) {
+        const pendingIds = new Set(s.pendingApprovals.map(p => p.toolCallId));
+        for (const pending of [...state.pendingApprovals]) {
+            if (!pendingIds.has(pending.toolCallId)) removeToolApprovalCard(pending.toolCallId);
+        }
+        for (const pending of s.pendingApprovals) renderToolApprovalCard(pending);
     }
     updateNativeUi();
 }
@@ -2248,12 +2271,13 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     const searchInput = document.getElementById('session-search-input') as HTMLInputElement | null;
     searchInput?.addEventListener('input', () => {
         sessionSearchQuery = searchInput.value;
+        const requestId = ++sessionSearchRequestId;
         renderSessionList(sessionSearchQuery ? sessions : fullSessionList, currentId);
         clearTimeout(sessionSearchTimer);
         const q = searchInput.value.trim();
         sessionSearchTimer = window.setTimeout(() => {
             vscode.postMessage(
-                q ? { type: 'searchSessions', query: q } : { type: 'getSessions' },
+                q ? { type: 'searchSessions', query: q, requestId } : { type: 'getSessions' },
             );
         }, 250);
         const input = document.getElementById('session-search-input') as HTMLInputElement | null;
@@ -2370,8 +2394,15 @@ function bindStableEvents(): void {
     const sessionsBtn = document.getElementById('btn-sessions');
     const settingsBtn = document.getElementById('btn-settings');
 
-    // Transcript selections become quote context (debounced; see capture).
-    document.addEventListener('selectionchange', scheduleQuoteCapture);
+    // Transcript selections become quote context (debounced; see capture)
+    // and are snapshotted synchronously for the copy defense.
+    document.addEventListener('selectionchange', () => {
+        rememberLiveTranscriptSelection();
+        scheduleQuoteCapture();
+    });
+    // Copy defense: make Cmd/Ctrl+C and right-click Copy actually copy the
+    // transcript selection despite VS Code's focus restoration (see above).
+    installCopyDefense();
 
     input?.addEventListener('keydown', (e) => {
         if (e.isComposing || e.keyCode === 229) return;
@@ -3071,10 +3102,33 @@ const QUOTE_CAPTURE_DEBOUNCE_MS = 250;
 const QUOTE_PREVIEW_CHARS = 60;
 let quoteCaptureTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** Snapshot of the last non-empty transcript selection, taken SYNCHRONOUSLY
+ *  on selectionchange: focusing the composer (which VS Code does after
+ *  intercepting Cmd/Ctrl+C) collapses the document selection, so any
+ *  deferred read comes back empty. The copy defense and the debounced quote
+ *  capture both read this snapshot instead of the live selection. */
+let lastLiveTranscriptSelection: string | null = null;
+
+function rememberLiveTranscriptSelection(): void {
+    const text = transcriptSelectionText();
+    if (text) lastLiveTranscriptSelection = text;
+}
+
 function nodeInsideMessageContent(node: Node | null): boolean {
     if (!node) return false;
     const element = node.nodeType === 3 ? node.parentElement : (node as Element);
     return !!element?.closest?.('.message-content');
+}
+
+/** The text currently marked inside the transcript (message content only),
+ *  or null when nothing usable is selected. Shared by the quote capture and
+ *  the copy paths. */
+function transcriptSelectionText(): string | null {
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+    if (!nodeInsideMessageContent(selection.anchorNode) || !nodeInsideMessageContent(selection.focusNode)) return null;
+    const text = selection.toString().replace(/\u00a0/g, ' ').trim();
+    return text || null;
 }
 
 /** Debounced selectionchange handler: capture a non-collapsed selection that
@@ -3086,10 +3140,7 @@ function scheduleQuoteCapture(): void {
 
 function captureQuoteFromSelection(): void {
     quoteCaptureTimer = undefined;
-    const selection = document.getSelection();
-    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
-    if (!nodeInsideMessageContent(selection.anchorNode) || !nodeInsideMessageContent(selection.focusNode)) return;
-    const text = selection.toString().replace(/\u00a0/g, ' ').trim();
+    const text = lastLiveTranscriptSelection;
     if (!text) return;
     if (isQuoteTooLarge(text)) {
         showToast({
@@ -3144,6 +3195,146 @@ function consumeQuoteForSend(text: string): string | undefined {
     state.quotedSelection = null;
     updateQuoteChip();
     return quote.text;
+}
+
+// ── Copy defense for transcript selections ──
+// VS Code intercepts Cmd/Ctrl+C (and the context menu's Copy) while a webview
+// view has focus and afterwards restores focus to the webview's last focused
+// element — the composer input. Focusing the input COLLAPSES the document
+// selection, so by the time any copy command runs the transcript selection
+// is already gone. Four layers, all inside the webview, make the copy work:
+//   1. a 'copy' event hook forces the transcript text into any copy command
+//      that reaches the iframe while the selection is still alive,
+//   2. a capture-phase Cmd/Ctrl+C hook performs the copy ourselves — the
+//      live selection wins, and the last captured mark (the quote snapshot,
+//      kept alive on purpose through focus changes) stands in once VS Code
+//      has already collapsed the selection onto the input,
+//   3. a small in-page context menu offers a Copy action that cannot be
+//      intercepted (right-click on the transcript with a mark present),
+//   4. everything falls back to the host clipboard bridge, which works in
+//      the webview iframe no matter what.
+
+/** The text a copy action should use: the live transcript selection, or the
+ *  last live one once focus restoration has collapsed the selection. */
+function copyTargetText(): string | null {
+    return transcriptSelectionText() ?? lastLiveTranscriptSelection ?? null;
+}
+
+function notifyCopied(): void {
+    showToast({
+        containerId: activeToastContainerId(),
+        className: 'notice-toast',
+        message: t('msg.copied'),
+        durationMs: 1500,
+    });
+}
+
+function installCopyDefense(): void {
+    // A new click abandons the old mark. Keep it for right-click so the
+    // context menu can still copy the selection.
+    document.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        lastLiveTranscriptSelection = null;
+        if (quoteCaptureTimer !== undefined) {
+            clearTimeout(quoteCaptureTimer);
+            quoteCaptureTimer = undefined;
+        }
+    }, true);
+    // A selection inside the composer wins: the user is explicitly editing
+    // there. Only when the focused field has nothing selected do we take over
+    // on behalf of the (still alive) transcript selection.
+    const focusedFieldHasSelection = (target: EventTarget | null): boolean => {
+        const el0 = target as HTMLElement | null;
+        const tag = el0?.tagName;
+        if (tag !== 'TEXTAREA' && tag !== 'INPUT') return false;
+        const start = (el0 as HTMLTextAreaElement).selectionStart;
+        const end = (el0 as HTMLTextAreaElement).selectionEnd;
+        return start != null && end != null && start !== end;
+    };
+
+    document.addEventListener('copy', (event) => {
+        if (focusedFieldHasSelection(event.target)) return;
+        const text = transcriptSelectionText();
+        if (!text || !event.clipboardData) return;
+        event.clipboardData.setData('text/plain', text);
+        event.preventDefault();
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+        if (event.key.toLowerCase() !== 'c') return;
+        if (focusedFieldHasSelection(event.target)) return;
+        const text = copyTargetText();
+        if (!text) return;
+        // The user's mark is the copy target, not whatever element VS Code
+        // restored focus to. Stop the default path and copy it ourselves.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        copyText(text, notifyCopied);
+    }, true);
+
+    document.getElementById('messages')?.addEventListener('contextmenu', (event) => {
+        // Only take over when a selection is visibly alive: a dead-selection
+        // right-click keeps the native menu (which still offers Select All
+        // etc.), and the keyboard path covers the collapsed case.
+        const text = transcriptSelectionText();
+        if (!text) return;
+        event.preventDefault();
+        showTranscriptContextMenu((event as MouseEvent).clientX, (event as MouseEvent).clientY, text);
+    });
+}
+
+let transcriptMenu: HTMLElement | null = null;
+
+function hideTranscriptContextMenu(): void {
+    transcriptMenu?.remove();
+    transcriptMenu = null;
+}
+
+function showTranscriptContextMenu(x: number, y: number, text: string): void {
+    hideTranscriptContextMenu();
+    const menu = el('div', 'ctx-menu');
+    menu.setAttribute('role', 'menu');
+    const item = el('button', 'ctx-menu-item') as HTMLButtonElement;
+    item.type = 'button';
+    item.setAttribute('role', 'menuitem');
+    item.innerHTML = `<span class="codicon codicon-copy codicon-xs"></span><span>${escHtml(t('ctx.copySelection'))}</span>`;
+    item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyText(text, notifyCopied);
+        hideTranscriptContextMenu();
+    });
+    menu.appendChild(item);
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    if (x + rect.width > window.innerWidth - 4) x = Math.max(4, x - rect.width);
+    if (y + rect.height > window.innerHeight - 4) y = Math.max(4, y - rect.height);
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    transcriptMenu = menu;
+    // Dismiss on any pointerdown outside the menu, on Escape, on scroll, and
+    // on resize — the menu is ephemeral by design.
+    const onDown = (e: Event): void => {
+        if (!transcriptMenu?.contains(e.target as Node)) hideTranscriptContextMenu();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+        if (e.key === 'Escape') hideTranscriptContextMenu();
+    };
+    const onHide = (): void => hideTranscriptContextMenu();
+    setTimeout(() => {
+        document.addEventListener('pointerdown', onDown, true);
+        document.addEventListener('keydown', onKey, true);
+        document.getElementById('messages')?.addEventListener('scroll', onHide);
+        window.addEventListener('resize', onHide);
+    });
+    const cleanup = (): void => {
+        document.removeEventListener('pointerdown', onDown, true);
+        document.removeEventListener('keydown', onKey, true);
+        document.getElementById('messages')?.removeEventListener('scroll', onHide);
+        window.removeEventListener('resize', onHide);
+    };
+    const originalRemove = menu.remove.bind(menu);
+    menu.remove = (): void => { cleanup(); originalRemove(); };
 }
 
 function updateImageChips(): void {
@@ -3207,50 +3398,9 @@ function updateAttachChips(): void {
 }
 
 // ── Clipboard ──
-// navigator.clipboard.writeText is rejected or undefined inside VS Code's
-// cross-origin webview iframe (microsoft/vscode#182642: the iframe lacks
-// clipboard-write permission; writes also require document focus), so every
-// copy path keeps a host bridge fallback: the extension host writes through
-// vscode.env.clipboard, which always works. Local success short-circuits the
-// round-trip; local failure silently defers to the host and its
-// clipboardResult ack decides the user-visible outcome.
 
-/** Single inflight host-copy ack slot; the latest click wins. */
-let pendingCopyAck: { onCopied: () => void } | undefined;
-
-function requestHostCopy(text: string, onCopied: () => void): void {
-    pendingCopyAck = { onCopied };
-    vscode.postMessage({ type: 'copyText', text });
-}
-
-function resolvePendingCopy(ok: boolean, message?: string): void {
-    const pending = pendingCopyAck;
-    pendingCopyAck = undefined;
-    if (!pending) return;
-    if (ok) {
-        pending.onCopied();
-    } else {
-        showToast({
-            containerId: activeToastContainerId(),
-            className: 'notice-toast',
-            message: t('clipboard.writeFailed', { message: message ?? '' }),
-            durationMs: 4000,
-        });
-    }
-}
-
-/** Copy `text`, preferring the local Clipboard API and falling back to the
- *  host bridge when the webview sandbox rejects it. */
 function copyText(text: string, onCopied: () => void): void {
-    const clipboard = (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
-    if (clipboard?.writeText) {
-        clipboard.writeText(text).then(
-            () => onCopied(),
-            () => requestHostCopy(text, onCopied),
-        );
-    } else {
-        requestHostCopy(text, onCopied);
-    }
+    clipboardBridge.copy(text, onCopied);
 }
 
 const TRANSIENT_FEEDBACK_MS = 1500;

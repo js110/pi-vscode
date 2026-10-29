@@ -114,6 +114,7 @@ describe('Protocol types', () => {
 
         const preview: ServerMessage = {
             type: 'applyPreviewResult',
+            tabId: 't1',
             preview: {
                 previewId: 'ap-1',
                 targetPath: '/w/src/a.ts',

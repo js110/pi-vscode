@@ -97,10 +97,11 @@ describe('webview copy paths', () => {
 
         // No local clipboard → the write must go through the host bridge, and
         // until the ack arrives the button must not claim success.
-        expect(posted).toContainEqual({ type: 'copyText', text: 'const x = 1;' });
+        const request = posted.find((m) => m.type === 'copyText');
+        expect(request).toMatchObject({ type: 'copyText', text: 'const x = 1;' });
         expect(btn.textContent).toBe('Copy');
 
-        dispatch({ type: 'clipboardResult', ok: true });
+        dispatch({ type: 'clipboardResult', requestId: request.requestId, ok: true });
         expect(btn.textContent).toBe('Copied!');
     });
 
@@ -136,7 +137,22 @@ describe('webview copy paths', () => {
         const bridge = posted.find((m) => m.type === 'copyText');
         expect(bridge.text).toBe('Here you go:\n\n```js\nconst x = 1;\n```\n\nDone.');
 
-        dispatch({ type: 'clipboardResult', ok: true });
+        dispatch({ type: 'clipboardResult', requestId: bridge.requestId, ok: true });
         expect(btn.querySelector('.codicon-check')).toBeTruthy();
+    });
+
+    it('routes out-of-order acknowledgements to the matching copy button', () => {
+        const code = document.querySelector('.copy-btn') as HTMLButtonElement;
+        const reply = document.querySelector('.msg-copy-btn') as HTMLButtonElement;
+        code.textContent = 'Copy';
+        code.click();
+        reply.click();
+        const requests = posted.filter((m) => m.type === 'copyText');
+        expect(requests).toHaveLength(2);
+        dispatch({ type: 'clipboardResult', requestId: requests[1].requestId, ok: true });
+        expect(reply.querySelector('.codicon-check')).toBeTruthy();
+        expect(code.textContent).toBe('Copy');
+        dispatch({ type: 'clipboardResult', requestId: requests[0].requestId, ok: true });
+        expect(code.textContent).toBe('Copied!');
     });
 });

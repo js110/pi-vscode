@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { EventRouter } from '../../../pi/events';
 import { createTestSession } from '../../setup';
 import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent';
@@ -46,6 +46,7 @@ describe('EventRouter', () => {
     });
 
     it('swallows listener errors without crashing', () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
         const router = new EventRouter();
         const received: any[] = [];
         router.onAll(() => { throw new Error('boom'); });
@@ -53,6 +54,8 @@ describe('EventRouter', () => {
 
         router.dispatch({ type: 'agent_start' } as AgentSessionEvent);
         expect(received).toHaveLength(1);
+        expect(log).toHaveBeenCalledWith('[pi-vscode] global event listener failed:', 'agent_start', expect.any(Error));
+        log.mockRestore();
     });
 
     it('clear removes all handlers', () => {

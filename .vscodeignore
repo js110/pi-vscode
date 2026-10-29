@@ -5,6 +5,7 @@
 .upstream/**
 legacy-rpc-prototype/**
 .cache/**
+.tmp-ego/**
 src/**
 node_modules/**
 .github/**

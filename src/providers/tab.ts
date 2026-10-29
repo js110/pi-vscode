@@ -120,6 +120,7 @@ export interface TabManagerAdapters {
 interface PendingApproval {
     resolve: (approved: boolean) => void;
     toolName: string;
+    args: unknown;
 }
 
 interface MessageMeta {
@@ -444,6 +445,9 @@ export class TabManager {
         }
 
         state.fileChanges = tab.diffManager.fileChanges;
+        state.pendingApprovals = [...tab.pendingApprovals.entries()].map(([toolCallId, pending]) => ({
+            toolCallId, toolName: pending.toolName, args: pending.args,
+        }));
         state.rollbackPoint = tab.checkpointManager.rollbackPoint;
         state.tabs = this._getTabInfos();
         state.activeTabId = this._activeTabId;
@@ -974,9 +978,9 @@ export class TabManager {
         if (msg.type === 'copyText') {
             try {
                 await this._adapters.ui.writeClipboard(msg.text);
-                this._adapters.transport.post({ type: 'clipboardResult', ok: true });
+                this._adapters.transport.post({ type: 'clipboardResult', requestId: msg.requestId, ok: true });
             } catch (err: any) {
-                this._adapters.transport.post({ type: 'clipboardResult', ok: false, message: String(err?.message ?? err) });
+                this._adapters.transport.post({ type: 'clipboardResult', requestId: msg.requestId, ok: false, message: String(err?.message ?? err) });
             }
             return;
         }
@@ -1335,7 +1339,7 @@ export class TabManager {
                     ? await this._searchSessions(tab, query)
                     : await this._listSessions(tab);
                 const currentId = tab.session.getSessionId();
-                this._adapters.transport.post({ type: 'sessions', sessions, currentSessionId: currentId });
+                this._adapters.transport.post({ type: 'sessionSearchResults', tabId: tab.id, requestId: msg.requestId, sessions, currentSessionId: currentId });
                 break;
             }
             case 'applyHunks': {
@@ -1360,8 +1364,10 @@ export class TabManager {
             case 'applyPreview': {
                 try {
                     const preview = await this._adapters.agent.applyPreview(msg.code, msg.lang, tab.id);
-                    if (preview) {
-                        this._adapters.transport.post({ type: 'applyPreviewResult', preview });
+                    if (preview && this._activeTabId === tab.id && this._tabs.get(tab.id) === tab) {
+                        this._adapters.transport.post({ type: 'applyPreviewResult', tabId: tab.id, preview });
+                    } else if (preview) {
+                        this._adapters.agent.applyCancel(preview.previewId);
                     }
                 } catch (err: unknown) {
                     this._adapters.transport.post({
@@ -1701,7 +1707,7 @@ export class TabManager {
         }
 
         return new Promise<boolean>((resolve) => {
-            tab.pendingApprovals.set(toolCallId, { resolve, toolName });
+            tab.pendingApprovals.set(toolCallId, { resolve, toolName, args: safeSerialize(args) });
 
             if (tab.id === this._activeTabId) {
                 this._adapters.transport.post({
@@ -1750,6 +1756,8 @@ export class TabManager {
 
         const tab = this._tabs.get(tabId);
         if (!tab) return;
+        for (const pending of tab.pendingApprovals.values()) pending.resolve(false);
+        tab.pendingApprovals.clear();
 
         const wasActive = tabId === this._activeTabId;
 
@@ -2103,6 +2111,8 @@ export class TabManager {
         }
         this._tabSubscriptions.clear();
         for (const tab of this._tabs.values()) {
+            for (const pending of tab.pendingApprovals.values()) pending.resolve(false);
+            tab.pendingApprovals.clear();
             tab.diffManager.dispose();
             tab.checkpointManager.dispose();
             void tab.lock?.release();

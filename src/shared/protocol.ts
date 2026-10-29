@@ -160,6 +160,7 @@ export interface SerializedAgentState {
     occupancy?: SessionOccupancy;
     cacheWarmingStatus?: CacheWarmingStatusInfo;
     cacheWarmingDecision?: CacheWarmingDecisionInfo;
+    pendingApprovals?: ToolCallPendingInfo[];
 }
 
 export interface SessionTreeEntryInfo {
@@ -275,7 +276,7 @@ export type ClientMessage =
     | { type: 'getSessions' }
     | { type: 'deleteSession'; sessionPath: string }
     | { type: 'togglePinSession'; sessionPath: string }
-    | { type: 'searchSessions'; query: string }
+    | { type: 'searchSessions'; query: string; requestId: number }
     | { type: 'getState' }
     | { type: 'approveToolCall'; toolCallId: string }
     | { type: 'rejectToolCall'; toolCallId: string }
@@ -310,7 +311,7 @@ export type ClientMessage =
      *  is rejected/absent inside VS Code's cross-origin webview iframe
      *  (microsoft/vscode#182642), so the webview falls back to this bridge
      *  where vscode.env.clipboard always works. */
-    | { type: 'copyText'; text: string };
+    | { type: 'copyText'; text: string; requestId: number };
 
 // Settings webview -> Extension messages
 export type SettingsClientMessage =
@@ -375,6 +376,7 @@ export type ServerMessage =
     | { type: 'models'; models: ModelInfo[]; current?: ModelInfo; thinkingLevel?: string; availableThinkingLevels?: string[]; supportsThinking?: boolean }
     | { type: 'modelChanged'; model: ModelInfo; thinkingLevel?: string }
     | { type: 'sessions'; sessions: SessionInfo[]; currentSessionId?: string }
+    | { type: 'sessionSearchResults'; tabId: string; requestId: number; sessions: SessionInfo[]; currentSessionId?: string }
     /** User applied a subset of a diff's hunks in the chat panel. */
     | { type: 'hunksApplied'; toolCallId: string; ok: boolean; message?: string }
     | { type: 'sessionChanged'; sessionId: string }
@@ -390,13 +392,13 @@ export type ServerMessage =
     | { type: 'skinChanged'; skin: string; customSkinUrl?: string; customSkinOpacity?: number }
     /** An avatar (re)uploaded or cleared; swap the CSS variables live. */
     | { type: 'avatarChanged'; piAvatarUrl?: string; userAvatarUrl?: string }
-    | { type: 'applyPreviewResult'; preview: ApplyPreviewInfo }
+    | { type: 'applyPreviewResult'; tabId: string; preview: ApplyPreviewInfo }
     | { type: 'applyResult'; previewId: string; ok: boolean; message?: string }
     | { type: 'compactionResult'; ok: boolean; message?: string; benign?: boolean }
     | { type: 'mentionResults'; requestId: number; files: string[]; symbols: MentionSymbolItem[] }
     | { type: 'dropResolved'; requestId: number; results: DropResolveResult[] }
     /** Result of a host-side copyText write; ok=false carries the reason. */
-    | { type: 'clipboardResult'; ok: boolean; message?: string }
+    | { type: 'clipboardResult'; requestId: number; ok: boolean; message?: string }
     | { type: 'error'; message: string };
 
 // Extension -> Settings webview messages

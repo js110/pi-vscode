@@ -25,14 +25,14 @@ export class EventRouter {
         for (const handler of this._globalHandlers) {
             try {
                 handler(event);
-            } catch (_) { /* swallow listener errors */ }
+            } catch (error) { console.error('[pi-vscode] global event listener failed:', event.type, error); }
         }
         const set = this._handlers.get(event.type);
         if (set) {
             for (const handler of set) {
                 try {
                     handler(event);
-                } catch (_) { /* swallow listener errors */ }
+                } catch (error) { console.error('[pi-vscode] event listener failed:', event.type, error); }
             }
         }
     }
