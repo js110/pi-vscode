@@ -33,8 +33,8 @@ import { createSessionPins } from './utils/session-pins';
 import { parseGlobalRules, type GlobalRuleStore } from './pi/approval-memory';
 import { createBridge } from './bridge/server';
 import type { BridgeContext } from './bridge/types';
-import type { DropResolveResult, MentionSymbolItem, ServerMessage } from './shared/protocol';
-import { relativeToWorkspace, uriToPath } from './shared/drop-files';
+import type { MentionSymbolItem, ServerMessage } from './shared/protocol';
+import { resolveDroppedFiles } from './providers/drop-files';
 
 let bridgeContext: BridgeContext | undefined;
 
@@ -162,49 +162,6 @@ async function readMentionFile(fsPath: string): Promise<string | null> {
 
 // ── Drag-and-drop file references (AC-FN-21) ──
 
-async function resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]> {
-    const roots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
-    const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
-    return Promise.all(
-        uris.map(async (uri): Promise<DropResolveResult> => {
-            const fsPath = uriToPath(uri);
-            if (!fsPath) return { status: 'invalid' };
-            const rel = relativeToWorkspace(fsPath, roots);
-            const ext = fsPath.split('.').pop()?.toLowerCase() ?? '';
-            if (rel && !IMAGE_EXTS.has(ext)) {
-                // Workspace files: return relative path for @-mention injection.
-                try {
-                    const stat = await vscode.workspace.fs.stat(vscode.Uri.file(fsPath));
-                    if (stat.type !== vscode.FileType.File) return { status: 'invalid' };
-                } catch {
-                    return { status: 'invalid' };
-                }
-                return { status: 'file', path: rel };
-            }
-            // Images (workspace or external) and external files: read the
-            // content on the host side and return it to the webview. Workspace
-            // images land here too so they attach as thumbnail chips instead
-            // of falling through an unhandled 'image' status.
-            try {
-                const stat = await vscode.workspace.fs.stat(vscode.Uri.file(fsPath));
-                if (stat.type !== vscode.FileType.File) return { status: 'invalid' };
-                if (stat.size > 5 * 1024 * 1024) return { status: 'invalid' }; // 5 MB cap
-                const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(fsPath));
-                if (IMAGE_EXTS.has(ext)) {
-                    const base64 = Buffer.from(bytes).toString('base64');
-                    const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png'
-                        : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp'
-                        : ext === 'bmp' ? 'image/bmp' : 'image/png';
-                    return { status: 'external', dataUrl: `data:${mime};base64,${base64}`, name: fsPath.split(/[\\/]/).pop() };
-                }
-                const text = new TextDecoder('utf-8').decode(bytes);
-                return { status: 'external', content: text, name: fsPath.split(/[\\/]/).pop() };
-            } catch {
-                return { status: 'invalid' };
-            }
-        }),
-    );
-}
 
 export async function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('Pi Agent');
@@ -274,6 +231,24 @@ export async function activate(context: vscode.ExtensionContext) {
             openSettings: () => void vscode.commands.executeCommand('pi-agent.openSettings'),
             writeClipboard: async (text: string) => {
                 await vscode.env.clipboard.writeText(text);
+            },
+            chooseDroppedPaths: async (kinds: ('file' | 'directory' | 'unknown')[]) => {
+                const paths: string[] = [];
+                for (const kind of [...new Set(kinds)]) {
+                    let resolvedKind: 'file' | 'directory' = kind === 'directory' ? 'directory' : 'file';
+                    if (kind === 'unknown') {
+                        const choice = await vscode.window.showQuickPick([
+                            { label: t('attach.chooseFile'), pathKind: 'file' as const },
+                            { label: t('attach.chooseFolder'), pathKind: 'directory' as const },
+                        ], { placeHolder: t('attach.chooseType') });
+                        if (!choice) continue;
+                        resolvedKind = choice.pathKind;
+                    }
+                    const directory = resolvedKind === 'directory';
+                    const selected = await vscode.window.showOpenDialog({ canSelectFiles: !directory, canSelectFolders: directory, canSelectMany: true, openLabel: t(directory ? 'attach.selectFolder' : 'attach.selectFile') });
+                    paths.push(...(selected?.filter(uri => uri.scheme === 'file').map(uri => uri.fsPath) ?? []));
+                }
+                return paths;
             },
         };
 

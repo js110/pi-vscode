@@ -5,15 +5,15 @@ import { buildToolOutput, formatDuration } from './render/messages';
 import { getRunOutcome } from '../shared/run-outcome';
 import type { ExtensionUiState, SessionTreeEntryInfo } from '../shared/protocol';
 import { MAX_IMAGES_PER_PROMPT, MAX_IMAGE_BYTES } from '../shared/image-input';
-import { normalizeImageFile, imageMimeFromName } from './image-resize';
+import { normalizeImageFile } from './image-resize';
 import { matchesModelFilter } from '../shared/model-filter';
 import { rankSlashMenuItems } from '../shared/slash-commands';
 import { t, setLang, type TextKey } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
-import { parseUriList } from '../shared/drop-files';
+import { parseUriList, MAX_DROPPED_FILES } from '../shared/drop-files';
 import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
 import { isQuoteTooLarge, MAX_QUOTE_CHARS } from '../shared/quote';
-import { looksBinary, normalizeAttachContent, MAX_ATTACH_FILE_BYTES, type AttachFileEntry } from '../shared/attach';
+import type { AttachFileEntry } from '../shared/attach';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
 import { ClipboardBridge } from './clipboard';
@@ -460,30 +460,14 @@ function handleMessage(msg: ServerMessage): void {
             }
             break;
         case 'dropResolved':
-            if (msg.requestId !== dropPendingRequestId) break;
-            dropPendingRequestId = -1;
+            if (!dropPendingRequestIds.delete(msg.requestId)) break;
             {
                 let invalid = 0;
                 for (const result of msg.results) {
-                    if (result.status === 'file' && result.path) {
-                        insertMentionTokenAtCursor(result.path);
-                    } else if (result.status === 'image' && result.path) {
-                        // Defensive: pre-unification hosts may still answer
-                        // workspace images with this status.
-                        insertMentionTokenAtCursor(result.path);
-                    } else if (result.status === 'external') {
-                        if (result.dataUrl && state.supportsImages && !state.isStreaming) {
-                            if (state.pendingImages.length < MAX_IMAGES_PER_PROMPT) {
-                                state.pendingImages.push(result.dataUrl);
-                                updateImageChips();
-                            }
-                        } else if (result.content && !state.isStreaming) {
-                            state.pendingAttachments.push({
-                                name: result.name ?? 'dropped-file',
-                                content: normalizeAttachContent(result.content),
-                            });
-                            updateAttachChips();
-                        }
+                    if (result.status === 'path' && result.path) {
+                        insertDroppedPathAtCursor(result.path);
+                    } else if (result.status === 'limit') {
+                        showNotice(t('attach.dropLimit', { n: MAX_DROPPED_FILES }));
                     } else if (result.status === 'invalid') {
                         invalid++;
                     }
@@ -671,6 +655,8 @@ function applyStateSync(s: SerializedAgentState): void {
     }
     const tabSwitched = prevTab !== state.activeTabId;
     if (!tabSwitched && prevSession !== state.sessionId) {
+        imageReadGeneration++;
+        dropPendingRequestIds.clear();
         // The user jumped to another session (list click, tree navigation,
         // /resume): land on the conversation, not on the browser panel.
         // Close the whole session panel (tree or list) — the old behavior of
@@ -687,6 +673,7 @@ function applyStateSync(s: SerializedAgentState): void {
     // Transient cards live in the per-tab streaming area; they are wiped on a
     // tab switch and must not resurrect on a later langChanged.
     if (tabSwitched) {
+        imageReadGeneration++;
         sessionSearchRequestId++;
         collapsedTreeEntries.clear();
         if (prevTab && previousDraft !== undefined) composerDrafts.set(prevTab, previousDraft);
@@ -705,7 +692,7 @@ function applyStateSync(s: SerializedAgentState): void {
         if (quoteCaptureTimer !== undefined) clearTimeout(quoteCaptureTimer);
         updateQuoteChip();
         hideMentionMenu();
-        dropPendingRequestId = -1;
+        dropPendingRequestIds.clear();
         cancelEditMode({ keepDraft: true });
     }
 
@@ -1008,13 +995,6 @@ function render(): void {
     attachChips.id = 'attach-chips';
     attachChips.style.display = 'none';
     inputContainer.appendChild(attachChips);
-    const imageFileInput = document.createElement('input');
-    imageFileInput.type = 'file';
-    imageFileInput.id = 'image-file-input';
-    // Any file type: images ride the image pipeline, text files are inlined.
-    imageFileInput.multiple = true;
-    imageFileInput.style.display = 'none';
-    inputContainer.appendChild(imageFileInput);
     const area = el('div', 'input-area');
     area.innerHTML = `<textarea id="input" placeholder="${escHtml(t('input.ask'))}" rows="1"></textarea>`;
     inputContainer.appendChild(area);
@@ -1322,8 +1302,7 @@ function updateInputArea(): void {
 
     const attachBtn = document.getElementById('btn-attach');
     attachBtn?.addEventListener('click', () => {
-        const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
-        fileInput?.click();
+        requestPathPicker(['file']);
     });
 
     document.querySelector('.footer-model')?.addEventListener('click', (e) => {
@@ -2527,59 +2506,57 @@ function bindStableEvents(): void {
     sessionsBtn?.addEventListener('click', () => openSessionList());
     settingsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
 
-    const fileInput = document.getElementById('image-file-input') as HTMLInputElement | null;
-    fileInput?.addEventListener('change', () => {
-        if (fileInput.files && fileInput.files.length > 0) {
-            addAttachments(Array.from(fileInput.files));
-        }
-        fileInput.value = '';
-    });
-
     input?.addEventListener('paste', (e) => {
-        const files: File[] = [];
-        for (const item of Array.from(e.clipboardData?.items ?? [])) {
-            if (item.kind === 'file') {
-                const f = item.getAsFile();
-                if (f) files.push(f);
-            }
-        }
-        if (files.length > 0) {
-            e.preventDefault();
-            addAttachments(files);
-        }
+        const items = Array.from(e.clipboardData?.items ?? []);
+        // Text supplied by the clipboard must retain the native paste path.
+        if (items.some(item => item.kind === 'string' && item.type === 'text/plain')) return;
+        const images = items.filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+            .map(item => item.getAsFile()).filter((file): file is File => !!file);
+        if (images.length) { e.preventDefault(); addClipboardImages(images); }
+        else if (items.some(item => item.kind === 'file')) { e.preventDefault(); requestPathPicker(['file']); }
     });
 
     const inputContainer = document.querySelector('.input-container');
+    const dropSurface = document.getElementById('app');
     let dragDepth = 0;
-    inputContainer?.addEventListener('dragenter', (e) => {
+    const acceptsDrop = (e: DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).some(type => type === 'Files' || type === 'text/uri-list');
+    if (dropSurface) dropSurface.ondragenter = (e) => {
+        if (!acceptsDrop(e)) return;
         e.preventDefault();
         dragDepth++;
-        inputContainer.classList.add('drag-over');
-    });
-    inputContainer?.addEventListener('dragover', (e) => {
+        inputContainer?.classList.add('drag-over');
+    };
+    if (dropSurface) dropSurface.ondragover = (e) => {
+        if (!acceptsDrop(e)) return;
         e.preventDefault();
-    });
-    inputContainer?.addEventListener('dragleave', () => {
+    };
+    if (dropSurface) dropSurface.ondragleave = () => {
         dragDepth = Math.max(0, dragDepth - 1);
-        if (dragDepth === 0) inputContainer.classList.remove('drag-over');
-    });
-    inputContainer?.addEventListener('drop', (e) => {
-        e.preventDefault();
+        if (dragDepth === 0) inputContainer?.classList.remove('drag-over');
+    };
+    if (dropSurface) dropSurface.ondrop = (e) => {
+        if (!acceptsDrop(e)) return;
         dragDepth = 0;
-        inputContainer.classList.remove('drag-over');
-        const dt = (e as DragEvent).dataTransfer;
-        const files = Array.from(dt?.files ?? []);
-        if (files.length > 0) {
-            addAttachments(files);
-        }
-        // VS Code explorer drags carry paths in text/uri-list (no File
-        // objects); they ride the same injection path as @-mention.
-        const uris = parseUriList(dt?.getData('text/uri-list') ?? '');
+        inputContainer?.classList.remove('drag-over');
+        const dt = e.dataTransfer;
+        const uris = parseUriList(dt?.getData('text/uri-list') ?? '').filter(uri => /^file:\/\//i.test(uri));
+        if (!uris.length && !Array.from(dt?.types ?? []).includes('Files')) return;
+        e.preventDefault();
+        // A drag can expose both representations; process it only once.
         if (uris.length > 0) {
-            dropPendingRequestId = ++mentionQuerySeq;
-            vscode.postMessage({ type: 'dropFiles', uris, requestId: dropPendingRequestId });
+            const requestId = ++mentionQuerySeq;
+            dropPendingRequestIds.add(requestId);
+            vscode.postMessage({ type: 'dropFiles', uris, requestId });
+            return;
         }
-    });
+        const items = Array.from(dt?.items ?? []).filter(item => item.kind === 'file');
+        const entries = items.map(item => item.webkitGetAsEntry?.());
+        const kinds: ('file' | 'directory' | 'unknown')[] = [];
+        if (entries.some(entry => entry?.isDirectory)) kinds.push('directory');
+        if (entries.some(entry => entry?.isFile)) kinds.push('file');
+        if (entries.some(entry => !entry) || !items.length) kinds.push('unknown');
+        if (kinds.length) requestPathPicker(kinds);
+    };
 }
 
 function bindTabEvents(): void {
@@ -2907,6 +2884,7 @@ function sendWhileStreaming(queue: boolean, opts: { allowAbort?: boolean } = {})
         vscode.postMessage({ type: 'steer', text, images, quotedText });
     }
     imageReadGeneration++;
+    dropPendingRequestIds.clear();
     input.value = '';
     input.style.height = 'auto';
     state.pendingImages = [];
@@ -2956,6 +2934,7 @@ function sendMessage(): void {
     state.mentions = [];
     hideMentionMenu();
     imageReadGeneration++;
+    dropPendingRequestIds.clear();
     input.value = '';
     input.style.height = 'auto';
     state.pendingImages = [];
@@ -2979,62 +2958,12 @@ function sendMessage(): void {
 
 let imageReadGeneration = 0;
 
-/** Route picked/ dragged/ pasted files: images keep the image pipeline,
- *  non-image files are read as text and appended to the prompt. */
-function addAttachments(files: File[]): void {
-    const images = files.filter(isImageFile);
-    const others = files.filter((f) => !isImageFile(f));
-    if (images.length > 0) {
-        addImageFiles(images);
-    }
-    if (others.length > 0) {
-        void addTextAttachments(others);
-    }
-}
-
-/**
- * OS-dragged files on Windows arrive with an EMPTY `type`; fall back to the
- * filename so images still ride the attach path instead of the text one.
- */
-function isImageFile(file: File): boolean {
-    if (file.type.startsWith('image/')) return true;
-    return imageMimeFromName(file.name) !== null;
-}
-
-/** Read non-image files as text and pin them to the composer (if readable). */
-async function addTextAttachments(files: File[]): Promise<void> {
-    if (state.isStreaming) {
-        showNotice(t('attach.streamingUnsupported'));
-        return;
-    }
-    for (const file of files) {
-        if (file.size > MAX_ATTACH_FILE_BYTES) {
-            showError(t('attach.tooLarge', { name: file.name }), ERROR_HINT_MS);
-            continue;
-        }
-        try {
-            const prefix = await file.slice(0, 8192).arrayBuffer();
-            if (looksBinary(prefix)) {
-                showNotice(t('attach.binaryUnsupported', { name: file.name }));
-                continue;
-            }
-            state.pendingAttachments.push({
-                name: file.name,
-                content: normalizeAttachContent(await file.text()),
-            });
-            updateAttachChips();
-        } catch {
-            showNotice(t('attach.binaryUnsupported', { name: file.name }));
-        }
-    }
-}
-
-function addImageFiles(files: File[]): void {
+function addClipboardImages(files: File[]): void {
     if (!state.supportsImages) {
         showNotice(t('image.unsupported'));
         return;
     }
-    const candidates = files.filter(isImageFile);
+    const candidates = files;
     const slots = MAX_IMAGES_PER_PROMPT - state.pendingImages.length;
     if (candidates.length > slots) {
         showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }), ERROR_HINT_MS);
@@ -3622,7 +3551,13 @@ let mentionSymbols: MentionSymbolItem[] = [];
 let mentionAnchor = -1;
 let mentionQuerySeq = 0;
 let mentionPendingRequestId = -1;
-let dropPendingRequestId = -1;
+const dropPendingRequestIds = new Set<number>();
+
+function requestPathPicker(kinds: ('file' | 'directory' | 'unknown')[]): void {
+    const requestId = ++mentionQuerySeq;
+    dropPendingRequestIds.add(requestId);
+    vscode.postMessage({ type: 'chooseDroppedPaths', kinds, requestId });
+}
 let mentionDebounce: ReturnType<typeof setTimeout> | undefined;
 
 /** The active `@query` fragment ending at the caret, or null. */
@@ -3742,18 +3677,20 @@ function selectMentionItem(index: number): void {
     input.focus();
 }
 
-/** Insert a dropped file's reference at the caret (AC-FN-21): the token
- *  joins state.mentions so the host expands it exactly like @-mention. */
-function insertMentionTokenAtCursor(token: string): void {
-    const input = document.getElementById('input') as HTMLTextAreaElement | null;
-    if (!input) return;
+/** Insert a filesystem path as ordinary prompt text. */
+function insertDroppedPathAtCursor(path: string): void {
+    const input = document.querySelector<HTMLTextAreaElement>('#input');
+    if (!input || input.disabled) return;
     const start = input.selectionStart ?? input.value.length;
     const end = input.selectionEnd ?? start;
-    const replacement = `@${token} `;
+    const prefix = start > 0 && !/\s/.test(input.value[start - 1]) ? ' ' : '';
+    // A bare absolute path such as /new could otherwise be dispatched as a
+    // slash command when it is the first item in the composer.
+    const value = `"${path.replace(/"/g, '\\"')}"`;
+    const replacement = `${prefix}${value} `;
     input.value = input.value.slice(0, start) + replacement + input.value.slice(end);
-    const newPos = start + replacement.length;
-    input.setSelectionRange(newPos, newPos);
-    if (!state.mentions.includes(token)) state.mentions.push(token);
+    input.setSelectionRange(start + replacement.length, start + replacement.length);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     input.focus();
 }
 function hideMentionMenu(): void {

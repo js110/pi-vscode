@@ -45,6 +45,7 @@ import { inMemorySessionPins } from '../utils/session-pins';
 import { getRunOutcome, type RunOutcome } from '../shared/run-outcome';
 import { deriveProgramStatus, type ProgramStatus } from '../shared/program-status';
 import { probeSessionFile, readSessionChunk, findSnippet, trashSessionFile } from '../utils/session-files';
+import { MAX_DROPPED_FILES } from '../shared/drop-files';
 
 export interface Tab {
     id: string;
@@ -90,6 +91,7 @@ export interface UIAdapter {
     confirmDialog(message: string): Promise<boolean>;
     openSettings(): void;
     writeClipboard(text: string): Promise<void>;
+    chooseDroppedPaths?(kinds: ('file' | 'directory' | 'unknown')[]): Promise<string[]>;
 }
 
 /** Agent lifecycle capabilities: apply flow, compaction, export, notify. */
@@ -1410,6 +1412,13 @@ export class TabManager {
             }
             case 'dropFiles': {
                 const results = await this._adapters.workspace.resolveDroppedFiles(msg.uris);
+                this._adapters.transport.post({ type: 'dropResolved', requestId: msg.requestId, results });
+                break;
+            }
+            case 'chooseDroppedPaths': {
+                const paths = await this._adapters.ui.chooseDroppedPaths?.(msg.kinds) ?? [];
+                const results: DropResolveResult[] = paths.slice(0, MAX_DROPPED_FILES).map(path => ({ status: 'path', path }));
+                if (paths.length > MAX_DROPPED_FILES) results.push({ status: 'limit' });
                 this._adapters.transport.post({ type: 'dropResolved', requestId: msg.requestId, results });
                 break;
             }

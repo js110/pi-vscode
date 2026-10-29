@@ -761,8 +761,8 @@ describe('TabManager', () => {
         const adapters = makeAdapters({
             workspace: {
                 resolveDroppedFiles: vi.fn(async (): Promise<DropResolveResult[]> => [
-                    { status: 'file', path: 'src/a.ts' },
-                    { status: 'image' },
+                    { status: 'path', path: '/w/src/a.ts' },
+                    { status: 'path', path: '/w/img.png' },
                     { status: 'invalid' },
                 ]),
             },
@@ -785,8 +785,8 @@ describe('TabManager', () => {
             type: 'dropResolved',
             requestId: 9,
             results: [
-                { status: 'file', path: 'src/a.ts' },
-                { status: 'image' },
+                { status: 'path', path: '/w/src/a.ts' },
+                { status: 'path', path: '/w/img.png' },
                 { status: 'invalid' },
             ],
         });

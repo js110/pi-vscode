@@ -1,9 +1,9 @@
 /**
- * Drag-and-drop file references (PRD C7 / AC-FN-21): the webview forwards
- * `text/uri-list` entries from drop events; the host decodes them to
- * workspace-relative paths that ride the same @-mention injection path.
- * Pure URI and path logic lives here so it stays unit-testable.
+ * Drag-and-drop path helpers. The host validates local URIs and sends paths
+ * to the composer without reading the files.
  */
+
+export const MAX_DROPPED_FILES = 100;
 
 const IMAGE_EXTENSIONS = new Set([
     'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp',

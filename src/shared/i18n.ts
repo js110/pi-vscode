@@ -273,7 +273,13 @@ const EN = {
     'mention.noResults': 'No matching files or symbols',
     'mention.groupFiles': 'Files',
     'mention.groupSymbols': 'Symbols',
-    'mention.dropInvalid': 'Some dropped files cannot be referenced (must be files inside the workspace).',
+    'mention.dropInvalid': 'Some dropped paths could not be accessed.',
+    'attach.dropLimit': 'Only the first {n} files can be added from a drop.',
+    'attach.selectFolder': 'Select the dropped folder',
+    'attach.selectFile': 'Select files',
+    'attach.chooseType': 'Select the type of item you dropped',
+    'attach.chooseFile': 'File',
+    'attach.chooseFolder': 'Folder',
 
     // Commit message generation
     'commit.generatingPlaceholder': 'Generating commit message…',
@@ -720,7 +726,13 @@ const ZH: Record<TextKey, string> = {
     'mention.noResults': '没有匹配的文件或符号',
     'mention.groupFiles': '文件',
     'mention.groupSymbols': '符号',
-    'mention.dropInvalid': '部分拖入的文件无法引用（需为工作区内的文件）。',
+    'mention.dropInvalid': '部分拖入的路径无法访问。',
+    'attach.dropLimit': '一次拖入最多添加前 {n} 个文件。',
+    'attach.selectFolder': '选择刚拖入的文件夹',
+    'attach.selectFile': '选择文件',
+    'attach.chooseType': '选择拖入项目的类型',
+    'attach.chooseFile': '文件',
+    'attach.chooseFolder': '文件夹',
 
     // Commit message generation
     'commit.generatingPlaceholder': '正在生成 commit message…',

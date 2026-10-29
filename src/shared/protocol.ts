@@ -277,6 +277,7 @@ export type ClientMessage =
     | { type: 'deleteSession'; sessionPath: string }
     | { type: 'togglePinSession'; sessionPath: string }
     | { type: 'searchSessions'; query: string; requestId: number }
+    | { type: 'chooseDroppedPaths'; kinds: ('file' | 'directory' | 'unknown')[]; requestId: number }
     | { type: 'getState' }
     | { type: 'approveToolCall'; toolCallId: string }
     | { type: 'rejectToolCall'; toolCallId: string }
@@ -346,15 +347,9 @@ export interface MentionSymbolItem {
 
 /** Per-URI outcome of a drag-and-drop file resolution. */
 export interface DropResolveResult {
-    status: 'file' | 'image' | 'external' | 'invalid';
-    /** Workspace-relative posix path when status === 'file'. */
+    status: 'path' | 'invalid' | 'limit';
+    /** Absolute filesystem path. */
     path?: string;
-    /** File content when status === 'external' (file outside workspace, read by host). */
-    content?: string;
-    /** Base64 data-URL when status === 'external' and the file is an image. */
-    dataUrl?: string;
-    /** Original file name for display. */
-    name?: string;
 }
 
 /** Display info for the active editor selection (Copilot-style chip). */
