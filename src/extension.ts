@@ -375,7 +375,7 @@ export async function activate(context: vscode.ExtensionContext) {
         });
 
         const selectionTracker = new SelectionContextTracker(
-            (msg) => providerRef?.post(msg),
+            (msg) => providerRef?.focusSelection(msg),
             (message) => void vscode.window.showInformationMessage(message),
         );
 
@@ -416,6 +416,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('pi-agent.chat', sidebarProvider),
+            vscode.window.onDidChangeActiveTextEditor(editor => sidebarProvider.updateEditorFile(editor)),
             // Skin changes (and the custom-image strength slider) repaint
             // the open chat webview in place.
             vscode.workspace.onDidChangeConfiguration((e) => {

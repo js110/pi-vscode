@@ -182,6 +182,17 @@ describe('SelectionContextTracker', () => {
         expect(posted).toHaveLength(1);
     });
 
+    it('broadcasts a changed selection within the same line', async () => {
+        const { posted } = makeTracker();
+        h.activeEditor = makeEditor('abcdef', { endChar: 2 });
+        h.selectionCbs.forEach(cb => cb({}));
+        await flush();
+        h.activeEditor.selection.end.character = 4;
+        h.selectionCbs.forEach(cb => cb({}));
+        await flush();
+        expect(posted.filter(message => message.type === 'selectionChanged')).toHaveLength(2);
+    });
+
     it('wraps the next prompt and clears the chip', async () => {
         const { tracker, posted } = makeTracker();
         h.activeEditor = makeEditor('const a = 1;\nconst b = 2;\n', { startLine: 0, endLine: 1, endChar: 11 });

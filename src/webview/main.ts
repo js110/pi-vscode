@@ -10,7 +10,7 @@ import { matchesModelFilter } from '../shared/model-filter';
 import { rankSlashMenuItems } from '../shared/slash-commands';
 import { t, setLang, type TextKey } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
-import { parseUriList, MAX_DROPPED_FILES } from '../shared/drop-files';
+import { parseCodeDropUris, parseUriList, MAX_DROPPED_FILES } from '../shared/drop-files';
 import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
 import { isQuoteTooLarge, MAX_QUOTE_CHARS } from '../shared/quote';
 import type { AttachFileEntry } from '../shared/attach';
@@ -27,6 +27,9 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscode = acquireVsCodeApi();
+let focusView = vscode.getState()?.focusView === true;
+let editorFilePath: string | null = null;
+let editorFileDisplayPath: string | undefined;
 const clipboardBridge = new ClipboardBridge(
     (text, requestId) => vscode.postMessage({ type: 'copyText', text, requestId }),
     (message) => showToast({ containerId: activeToastContainerId(), className: 'notice-toast',
@@ -278,6 +281,12 @@ function handleMessage(msg: ServerMessage): void {
         case 'selectionChanged':
             state.selection = msg.selection;
             updateSelectionChip();
+            if (msg.selection && msg.focusComposer) document.querySelector<HTMLTextAreaElement>('#input:not(:disabled)')?.focus({ preventScroll: true });
+            break;
+        case 'editorFileChanged':
+            editorFilePath = msg.path;
+            editorFileDisplayPath = msg.displayPath;
+            updateEditorFileChip();
             break;
         case 'agentEvent':
             handleAgentEvent(msg.event);
@@ -507,7 +516,7 @@ function handleConfirmResult(action: string, confirmed: boolean, payload?: any):
 // id only — a same-id frame may be an interim streaming frame, and scrolling
 // it would yank the user; checkpoint rewrites and the startup getState never
 // change the session, so they resolve on the first messages frame.
-let historyReplacePending: { from: string | undefined; rewrite: boolean } | null = null;
+let historyReplacePending: { from: string | undefined; rewrite: boolean; preserveScroll?: boolean } | null = null;
 
 // Turn currently being edited in the composer; null when not editing.
 let editingTurn: number | null = null;
@@ -708,6 +717,7 @@ function applyStateSync(s: SerializedAgentState): void {
         // not consume it, or the full frame behind it lands unscrolled at the
         // top.
         if (s.messages !== undefined) historyReplacePending = null;
+        holdAutoScroll = false;
         userHasScrolled = false;
         scrollToBottom(true);
         updateScrollButton();
@@ -716,7 +726,7 @@ function applyStateSync(s: SerializedAgentState): void {
         renderStreamingContent();
         updateMessages();
         if (historyReplacePending && s.messages !== undefined) {
-            const { from, rewrite } = historyReplacePending;
+            const { from, rewrite, preserveScroll } = historyReplacePending;
             if (rewrite || s.sessionId !== from) {
                 historyReplacePending = null;
                 // A completed history rewrite (tree jump, checkpoint restore,
@@ -727,9 +737,12 @@ function applyStateSync(s: SerializedAgentState): void {
                 treeOpen = false;
                 document.getElementById('tree-panel')?.remove();
                 document.getElementById('session-panel')?.remove();
-                userHasScrolled = false;
-                scrollToBottom(true);
-                updateScrollButton();
+                if (!preserveScroll) {
+                    holdAutoScroll = false;
+                    userHasScrolled = false;
+                    scrollToBottom(true);
+                    updateScrollButton();
+                }
             }
         }
         updateInputArea();
@@ -765,7 +778,6 @@ function handleAgentEvent(event: any): void {
             state.streamingText = '';
             state.streamingThinking = '';
             state.isThinking = false;
-            userHasScrolled = false;
             updateInputArea();
             clearStreamingRegion();
             showPreparingPlaceholder();
@@ -918,6 +930,9 @@ function render(): void {
     railRow.appendChild(statusChip);
     const headerActions = el('div', 'header-right');
     headerActions.innerHTML = `
+        <button class="icon-btn" id="btn-focus-view" title="${escAttr(t('focus.toggle'))}" aria-label="${escAttr(t('focus.toggle'))}" aria-pressed="${focusView}">
+            <span class="codicon codicon-eye"></span>
+        </button>
         <button class="icon-btn" id="btn-new-tab" title="${escHtml(t('header.newAgent'))}" aria-label="${escAttr(t('header.newAgent'))}">
             <span class="codicon codicon-add"></span>
         </button>
@@ -979,6 +994,10 @@ function render(): void {
     mentionMenu.id = 'mention-menu';
     mentionMenu.style.display = 'none';
     inputContainer.appendChild(mentionMenu);
+    const editorChip = el('div', 'selection-chip');
+    editorChip.id = 'editor-file-chip';
+    editorChip.style.display = 'none';
+    inputContainer.appendChild(editorChip);
     const selectionChip = el('div', 'selection-chip');
     selectionChip.id = 'selection-chip';
     selectionChip.style.display = 'none';
@@ -1007,6 +1026,7 @@ function render(): void {
     bindScrollListener();
     updateEditBanner();
     scrollBtn.addEventListener('click', () => {
+        holdAutoScroll = false;
         userHasScrolled = false;
         scrollToBottom(true);
         updateScrollButton();
@@ -1022,6 +1042,7 @@ function render(): void {
     updateChangedFiles();
     updateCompactionBanner();
     updateSelectionChip();
+    updateEditorFileChip();
     updateImageChips();
     updateOccupancyBanner();
     if (treeOpen) renderSessionTree();
@@ -1047,6 +1068,16 @@ interface TreeInputs {
 }
 
 let lastTreeInputs: TreeInputs | undefined;
+
+/** In compact view, keep each tool result accessible behind a disclosure. */
+function foldActivity(node: HTMLElement): HTMLDetailsElement {
+    const details = document.createElement('details');
+    details.className = 'focus-activity';
+    const summary = document.createElement('summary');
+    summary.textContent = t('focus.activity');
+    details.append(summary, node);
+    return details;
+}
 
 function currentTreeInputs(): TreeInputs {
     return {
@@ -1100,6 +1131,7 @@ async function updateMessages(force = false): Promise<void> {
 
     const streamingEl = document.getElementById('streaming-message');
     const spacerEl = container.querySelector('.messages-spacer');
+    const savedScrollTop = userHasScrolled ? container.scrollTop : null;
 
     // Remove all children before #streaming-message (the message nodes)
     while (container.firstChild && container.firstChild !== streamingEl) {
@@ -1117,8 +1149,9 @@ async function updateMessages(force = false): Promise<void> {
         approvalTraces: state.approvalTraces,
     });
     for (const node of nodes) {
-        container.insertBefore(node, streamingEl!);
+        container.insertBefore(focusView && node.classList.contains('tool-card-wrapper') ? foldActivity(node) : node, streamingEl!);
     }
+    if (savedScrollTop !== null) container.scrollTop = savedScrollTop;
 
     bindCopyButtons();
     bindCodeBlockActions();
@@ -1302,7 +1335,7 @@ function updateInputArea(): void {
 
     const attachBtn = document.getElementById('btn-attach');
     attachBtn?.addEventListener('click', () => {
-        requestPathPicker(['file']);
+        requestPathPicker(['unknown']);
     });
 
     document.querySelector('.footer-model')?.addEventListener('click', (e) => {
@@ -1609,7 +1642,7 @@ function renderInlineFileChange(change: FileChangeInfo): void {
     if (loadingCard) {
         loadingCard.replaceWith(card);
     } else {
-        container.appendChild(card);
+        container.appendChild(focusView ? foldActivity(card) : card);
     }
 
     bindDiffButtons();
@@ -1683,13 +1716,19 @@ function renderStreamingContent(): void {
     if (!container.querySelector(':scope > .message')) {
         // Tool cards already in the region are this run's progress, and the
         // bubble trails them — append instead of wiping.
-        container.appendChild(buildStreamingSkeleton());
+        const bubble = buildStreamingSkeleton();
+        if (focusView) {
+            const thinking = bubble.querySelector<HTMLDetailsElement>('.thinking-block');
+            if (thinking) thinking.open = false;
+        }
+        container.appendChild(bubble);
     }
 
     const thinkingEl = document.getElementById('streaming-thinking');
     updateStreamingThinking(thinkingEl, {
         thinking: state.streamingThinking,
         isThinking: state.isThinking,
+        collapseActive: focusView,
         // While actively thinking, compute elapsed seconds live from the local
         // start timestamp so the rotating verb label advances even though host
         // stateSync only carries the final duration at thinking_end.
@@ -1758,7 +1797,7 @@ function renderToolStart(event: any): void {
                 <span class="tool-status running">${escHtml(t('tool.running'))}</span>
             </div>
         `;
-        container.appendChild(card);
+        container.appendChild(focusView && container.id === 'streaming-message' ? foldActivity(card) : card);
         applyMemoryBadge(card, event.toolCallId, state.approvalTraces);
         scrollToBottom();
         return;
@@ -1780,7 +1819,7 @@ function renderToolStart(event: any): void {
         `<span class="tool-status running">${escHtml(t('tool.running'))}</span>`,
     ));
 
-    container.appendChild(card);
+    container.appendChild(focusView && container.id === 'streaming-message' ? foldActivity(card) : card);
     applyMemoryBadge(card, event.toolCallId, state.approvalTraces);
     bindToolClickable();
     scrollToBottom();
@@ -2366,9 +2405,22 @@ function bindStableEvents(): void {
     const newTabBtn = document.getElementById('btn-new-tab');
     const sessionsBtn = document.getElementById('btn-sessions');
     const settingsBtn = document.getElementById('btn-settings');
+    const focusBtn = document.getElementById('btn-focus-view');
 
     // Transcript selections become quote context (debounced; see capture)
     // and are snapshotted synchronously for the copy defense.
+    document.addEventListener('pointerdown', event => {
+        if (event.button === 0 && (event.target as Element | null)?.closest?.('.message-content')) {
+            transcriptPointerDown = true;
+            if (quoteCaptureTimer !== undefined) clearTimeout(quoteCaptureTimer);
+        }
+    });
+    document.addEventListener('pointerup', () => {
+        if (!transcriptPointerDown) return;
+        transcriptPointerDown = false;
+        scheduleQuoteCapture();
+    });
+    document.addEventListener('pointercancel', () => { transcriptPointerDown = false; });
     document.addEventListener('selectionchange', () => {
         rememberLiveTranscriptSelection();
         scheduleQuoteCapture();
@@ -2505,6 +2557,24 @@ function bindStableEvents(): void {
     newTabBtn?.addEventListener('click', () => vscode.postMessage({ type: 'createTab' }));
     sessionsBtn?.addEventListener('click', () => openSessionList());
     settingsBtn?.addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
+    focusBtn?.addEventListener('click', () => {
+        focusView = !focusView;
+        vscode.setState({ ...(vscode.getState() ?? {}), focusView });
+        focusBtn.setAttribute('aria-pressed', String(focusView));
+        const streaming = document.getElementById('streaming-message');
+        if (streaming) {
+            if (focusView) {
+                streaming.querySelectorAll<HTMLElement>(':scope > .tool-card, :scope > .diff-card, :scope > .tool-card-wrapper').forEach(node => {
+                    const next = node.nextSibling;
+                    streaming.insertBefore(foldActivity(node), next);
+                });
+            } else {
+                streaming.querySelectorAll<HTMLElement>(':scope > .focus-activity').forEach(wrapper => wrapper.replaceWith(...Array.from(wrapper.children).slice(1)));
+            }
+        }
+        if (focusView) document.querySelectorAll<HTMLDetailsElement>('.thinking-block[open]').forEach(block => { block.open = false; });
+        void updateMessages(true);
+    });
 
     input?.addEventListener('paste', (e) => {
         const items = Array.from(e.clipboardData?.items ?? []);
@@ -2519,7 +2589,13 @@ function bindStableEvents(): void {
     const inputContainer = document.querySelector('.input-container');
     const dropSurface = document.getElementById('app');
     let dragDepth = 0;
-    const acceptsDrop = (e: DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).some(type => type === 'Files' || type === 'text/uri-list');
+    // Some hosts do not expose drag types until the drop event. Accept that
+    // provisional state so the browser can deliver the eventual drop.
+    const acceptsDrop = (e: DragEvent): boolean => {
+        if (!e.dataTransfer) return false;
+        const types = Array.from(e.dataTransfer.types ?? []);
+        return types.length === 0 || types.some(type => ['files', 'text/uri-list', 'application/vnd.code.uri-list', 'resourceurls', 'codefiles'].includes(type.toLowerCase()));
+    };
     if (dropSurface) dropSurface.ondragenter = (e) => {
         if (!acceptsDrop(e)) return;
         e.preventDefault();
@@ -2539,8 +2615,12 @@ function bindStableEvents(): void {
         dragDepth = 0;
         inputContainer?.classList.remove('drag-over');
         const dt = e.dataTransfer;
-        const uris = parseUriList(dt?.getData('text/uri-list') ?? '').filter(uri => /^file:\/\//i.test(uri));
-        if (!uris.length && !Array.from(dt?.types ?? []).includes('Files')) return;
+        const uris = parseCodeDropUris(dt?.getData('application/vnd.code.uri-list') ?? '', dt?.getData('ResourceURLs') ?? '', dt?.getData('CodeFiles') ?? '');
+        if (!uris.length) uris.push(...parseUriList(dt?.getData('text/uri-list') ?? '').filter(uri => /^file:\/\//i.test(uri)));
+        const hasFiles = Array.from(dt?.types ?? []).includes('Files')
+            || Array.from(dt?.items ?? []).some(item => item.kind === 'file')
+            || (dt?.files?.length ?? 0) > 0;
+        if (!uris.length && !hasFiles) return;
         e.preventDefault();
         // A drag can expose both representations; process it only once.
         if (uris.length > 0) {
@@ -2555,7 +2635,10 @@ function bindStableEvents(): void {
         if (entries.some(entry => entry?.isDirectory)) kinds.push('directory');
         if (entries.some(entry => entry?.isFile)) kinds.push('file');
         if (entries.some(entry => !entry) || !items.length) kinds.push('unknown');
-        if (kinds.length) requestPathPicker(kinds);
+        if (kinds.length) {
+            showNotice(t('attach.dropPickerHint'));
+            requestPathPicker(kinds);
+        }
     };
 }
 
@@ -2894,6 +2977,8 @@ function sendWhileStreaming(queue: boolean, opts: { allowAbort?: boolean } = {})
     // bottom userHasScrolled is already false, so live-following is unchanged.
     updateScrollButton();
     rememberMessage(text);
+    holdScrollAfterSend();
+    input.focus({ preventScroll: true });
 }
 
 function sendMessage(): void {
@@ -2909,11 +2994,12 @@ function sendMessage(): void {
         const turn = editingTurn;
         const images = state.pendingImages.length > 0 ? [...state.pendingImages] : undefined;
         cancelEditMode();
-        userHasScrolled = false;
+        holdScrollAfterSend();
         updateScrollButton();
-        historyReplacePending = { from: state.sessionId, rewrite: true };
+        historyReplacePending = { from: state.sessionId, rewrite: true, preserveScroll: true };
         vscode.postMessage({ type: 'replayTurn', turn, text: replayText, images });
         rememberMessage(replayText);
+        input.focus({ preventScroll: true });
         return;
     }
     if (state.isStreaming) {
@@ -2946,6 +3032,7 @@ function sendMessage(): void {
     // bottom userHasScrolled is already false, so live-following is unchanged.
     updateScrollButton();
     rememberMessage(text);
+    holdScrollAfterSend();
     vscode.postMessage({
         type: 'prompt',
         text,
@@ -2954,6 +3041,7 @@ function sendMessage(): void {
         attachContents: attachments,
         quotedText,
     });
+    input.focus({ preventScroll: true });
 }
 
 let imageReadGeneration = 0;
@@ -2993,6 +3081,20 @@ function addClipboardImages(files: File[]): void {
 }
 
 /** Copilot-style chip showing which editor selection rides the next prompt. */
+function updateEditorFileChip(): void {
+    const chip = document.getElementById('editor-file-chip');
+    if (!chip) return;
+    if (!editorFilePath) { chip.style.display = 'none'; chip.replaceChildren(); return; }
+    chip.style.display = '';
+    chip.title = t('editor.notAttached');
+    chip.innerHTML = `<span class="codicon codicon-file codicon-xs selection-chip-icon"></span>
+        <span class="selection-chip-label">${escHtml(t('editor.notAttached'))}: ${escHtml(editorFileDisplayPath ?? editorFilePath)}</span>
+        <button class="selection-chip-close" title="${escAttr(t('editor.addFile'))}" aria-label="${escAttr(t('editor.addFile'))}">+</button>`;
+    chip.querySelector('button')?.addEventListener('click', () => {
+        if (editorFilePath) insertDroppedPathAtCursor(editorFilePath);
+    });
+}
+
 function updateSelectionChip(): void {
     const chip = document.getElementById('selection-chip');
     if (!chip) return;
@@ -3004,6 +3106,7 @@ function updateSelectionChip(): void {
     }
     const range = sel.startLine === sel.endLine ? `${sel.startLine}` : `${sel.startLine}-${sel.endLine}`;
     chip.style.display = '';
+    chip.title = t('selection.attached');
     chip.innerHTML = `
         <span class="codicon codicon-code codicon-xs selection-chip-icon"></span>
         <span class="selection-chip-label">${escHtml(sel.path)}:${escHtml(range)}</span>
@@ -3024,6 +3127,7 @@ function updateSelectionChip(): void {
 const QUOTE_CAPTURE_DEBOUNCE_MS = 250;
 const QUOTE_PREVIEW_CHARS = 60;
 let quoteCaptureTimer: ReturnType<typeof setTimeout> | undefined;
+let transcriptPointerDown = false;
 
 /** Snapshot of the last non-empty transcript selection, taken SYNCHRONOUSLY
  *  on selectionchange: focusing the composer (which VS Code does after
@@ -3057,14 +3161,15 @@ function transcriptSelectionText(): string | null {
 /** Debounced selectionchange handler: capture a non-collapsed selection that
  *  lives entirely inside the transcript's message content. */
 function scheduleQuoteCapture(): void {
+    if (transcriptPointerDown) return;
+    const text = transcriptSelectionText();
+    if (!text) return;
     if (quoteCaptureTimer !== undefined) clearTimeout(quoteCaptureTimer);
-    quoteCaptureTimer = setTimeout(captureQuoteFromSelection, QUOTE_CAPTURE_DEBOUNCE_MS);
+    quoteCaptureTimer = setTimeout(() => captureQuoteFromSelection(text), QUOTE_CAPTURE_DEBOUNCE_MS);
 }
 
-function captureQuoteFromSelection(): void {
+function captureQuoteFromSelection(text: string): void {
     quoteCaptureTimer = undefined;
-    const text = lastLiveTranscriptSelection;
-    if (!text) return;
     if (isQuoteTooLarge(text)) {
         showToast({
             containerId: activeToastContainerId(),
@@ -3077,6 +3182,7 @@ function captureQuoteFromSelection(): void {
     if (state.quotedSelection?.text === text) return; // same mark, no churn
     state.quotedSelection = { text };
     updateQuoteChip();
+    document.querySelector<HTMLTextAreaElement>('#input:not(:disabled)')?.focus({ preventScroll: true });
 }
 
 /** Chip preview: first line-ish slice of the marked text. */
@@ -3103,6 +3209,8 @@ function updateQuoteChip(): void {
         <button class="selection-chip-close" title="${escHtml(t('quote.detach'))}">&#10005;</button>
     `;
     chip.querySelector('.selection-chip-close')?.addEventListener('click', () => {
+        if (quoteCaptureTimer !== undefined) clearTimeout(quoteCaptureTimer);
+        quoteCaptureTimer = undefined;
         state.quotedSelection = null;
         updateQuoteChip();
     });
@@ -3115,6 +3223,8 @@ function consumeQuoteForSend(text: string): string | undefined {
     const quote = state.quotedSelection;
     if (!quote) return undefined;
     if (text.trimStart().startsWith('/')) return undefined;
+    if (quoteCaptureTimer !== undefined) clearTimeout(quoteCaptureTimer);
+    quoteCaptureTimer = undefined;
     state.quotedSelection = null;
     updateQuoteChip();
     return quote.text;
@@ -3714,6 +3824,14 @@ function isMentionMenuVisible(): boolean {
 
 let userHasScrolled = false;
 let isProgrammaticScroll = false;
+let holdAutoScroll = false;
+let scrollIntentDown = false;
+
+function holdScrollAfterSend(): void {
+    holdAutoScroll = true;
+    userHasScrolled = true;
+    updateScrollButton();
+}
 
 function scrollToBottom(force = false): void {
     if (userHasScrolled && !force) return;
@@ -3748,16 +3866,30 @@ function bindScrollListener(): void {
 
     // Detect user-initiated scroll intent immediately
     messages.addEventListener('wheel', (e) => {
+        isProgrammaticScroll = false;
+        scrollIntentDown = e.deltaY > 0;
         if (e.deltaY < 0) {
             userHasScrolled = true;
+            updateScrollButton();
+        } else if (e.deltaY > 0 && isNearBottom()) {
+            holdAutoScroll = false;
+            userHasScrolled = false;
             updateScrollButton();
         }
     }, { passive: true });
 
     messages.addEventListener('touchstart', () => {
+        isProgrammaticScroll = false;
+        scrollIntentDown = true;
         userHasScrolled = true;
         updateScrollButton();
     }, { passive: true });
+    messages.addEventListener('pointerdown', event => {
+        if (event.target === messages) {
+            isProgrammaticScroll = false;
+            scrollIntentDown = true;
+        }
+    });
 
     // The scroll event handles both taking control and resetting.
     // Manual scrolling must always beat auto-scroll: the instant the user
@@ -3767,11 +3899,13 @@ function bindScrollListener(): void {
             isProgrammaticScroll = false;
             return;
         }
-        if (isNearBottom()) {
+        if (isNearBottom() && (!holdAutoScroll || scrollIntentDown)) {
+            holdAutoScroll = false;
             userHasScrolled = false;
         } else {
             userHasScrolled = true;
         }
+        scrollIntentDown = false;
         updateScrollButton();
     });
 }

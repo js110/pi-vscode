@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SidebarProvider } from '../../../providers/sidebar';
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol';
+import * as vscode from 'vscode';
 
 function makeTabManager() {
     return {
@@ -58,6 +59,26 @@ function makeSelectionTracker(overrides: Partial<{
 }
 
 describe('SidebarProvider webview lifecycle', () => {
+    it('focuses a visible chat when a new editor selection is captured', () => {
+        vi.useFakeTimers();
+        const provider = new SidebarProvider({} as any, makeTabManager(), makeSelectionTracker());
+        const { view, posted } = makeWebviewView();
+        view.visible = true;
+        view.show = vi.fn();
+        (vscode.window as any).activeTextEditor = {};
+        provider.resolveWebviewView(view, {} as any, {} as any);
+        const selection = { path: 'src/a.ts', startLine:  1, endLine: 2 };
+        provider.focusSelection({ type: 'selectionChanged', selection });
+        expect(view.show).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(500);
+        expect(view.show).toHaveBeenCalledWith(false);
+        expect(posted).toContainEqual({ type: 'selectionChanged', selection, focusComposer: true });
+        view.show.mockClear();
+        provider.focusSelection({ type: 'selectionChanged', selection: null });
+        expect(view.show).not.toHaveBeenCalled();
+        (vscode.window as any).activeTextEditor = undefined;
+        vi.useRealTimers();
+    });
     it('serves HTML with katex styles and an https-friendly image CSP', () => {
         // Markdown chat can embed remote https images and KaTeX fonts; the
         // CSP and the katex stylesheet link must stay in place (regression guard).
@@ -115,6 +136,18 @@ describe('SidebarProvider webview lifecycle', () => {
         await flush();
 
         expect(tm.dispatch).toHaveBeenCalledWith({ type: 'prompt', text: 'hello' });
+    });
+
+    it('resends editor context when the webview requests its initial state', () => {
+        const tracker = makeSelectionTracker({ current: { path: 'src/a.ts', startLine: 1, endLine: 2 } });
+        const provider = new SidebarProvider({} as any, makeTabManager(), tracker);
+        const { view, posted } = makeWebviewView();
+        provider.resolveWebviewView(view, {} as any, {} as any);
+        posted.length = 0;
+        const handler = view.webview.onDidReceiveMessage.mock.calls[0][0] as (m: ClientMessage) => void;
+        handler({ type: 'getState' });
+        expect(posted).toContainEqual({ type: 'selectionChanged', selection: tracker.current });
+        expect(posted).toContainEqual({ type: 'editorFileChanged', path: null, displayPath: undefined });
     });
 
     it('wraps a plain prompt with the active selection', async () => {

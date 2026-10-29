@@ -17,6 +17,26 @@ export function parseUriList(text: string): string[] {
         .filter((line) => line.length > 0 && !line.startsWith('#'));
 }
 
+/** Parse VS Code's private drag payloads, which may accompany Explorer items. */
+export function parseCodeDropUris(internalUris: string, resources: string, files: string): string[] {
+    const localUris = (values: string[]) => values.filter(value => /^file:\/\//i.test(value));
+    const internal = localUris(parseUriList(internalUris));
+    if (internal.length) return internal;
+    const parseArray = (value: string): string[] => {
+        try {
+            const parsed: unknown = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+        } catch { return []; }
+    };
+    const resourceUris = localUris(parseArray(resources));
+    if (resourceUris.length) return resourceUris;
+    return parseArray(files).filter(path => /^(?:\/|\\\\|[a-z]:[\\/])/i.test(path)).map(path => {
+        const normalized = path.replace(/\\/g, '/');
+        const encoded = normalized.split('/').map((part, index) => index === 0 && /^[a-z]:$/i.test(part) ? part : encodeURIComponent(part)).join('/');
+        return normalized.startsWith('//') ? `file:${encoded}` : `file://${normalized.startsWith('/') ? '' : '/'}${encoded}`;
+    });
+}
+
 /**
  * Decode a `file://` URI to a filesystem path. Returns null for other
  * schemes or malformed percent-encoding. Windows drive URIs (`file:///C:/…`)

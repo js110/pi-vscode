@@ -115,7 +115,7 @@ export function buildStreamingSkeleton(): HTMLElement {
  *  element. */
 export function updateStreamingThinking(
     thinkingEl: HTMLElement | null,
-    opts: { thinking: string; isThinking: boolean; durationSec: number },
+    opts: { thinking: string; isThinking: boolean; durationSec: number; collapseActive?: boolean },
 ): void {
     if (!thinkingEl) return;
     if (!opts.thinking) {
@@ -133,7 +133,7 @@ export function updateStreamingThinking(
     // the answer, matching how a finished message's block renders. Only the
     // active → finished transition collapses, so re-opening it by hand sticks.
     if (opts.isThinking) {
-        details.open = true;
+        if (!opts.collapseActive) details.open = true;
         thinkingEl.dataset.thinkingWasActive = '1';
     } else if (thinkingEl.dataset.thinkingWasActive === '1') {
         thinkingEl.dataset.thinkingWasActive = '';

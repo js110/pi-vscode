@@ -43,6 +43,19 @@ describe('file drops in the chat panel', () => {
         expect((document.getElementById('input') as HTMLTextAreaElement).value).toContain('/workspace/docs');
         expect(document.querySelector('.attach-chip-name')).toBeNull();
     });
+    it('accepts Explorer file drops using VS Code resource payloads', () => {
+        posted.length = 0;
+        const payload = JSON.stringify(['file:///workspace/a.txt', 'file:///workspace/b.txt']);
+        const event = drop(document.getElementById('messages')!, { types: ['resourceurls'], getData: (type: string) => type.toLowerCase() === 'resourceurls' ? payload : '', items: [], files: [] });
+        expect(event.defaultPrevented).toBe(true);
+        expect(posted.find(m => m.type === 'dropFiles').uris).toEqual(['file:///workspace/a.txt', 'file:///workspace/b.txt']);
+    });
+    it('accepts Explorer CodeFiles paths and preserves special characters', () => {
+        posted.length = 0;
+        const event = drop(document.getElementById('messages')!, { types: ['codefiles'], getData: (type: string) => type.toLowerCase() === 'codefiles' ? JSON.stringify(['/workspace/a #1.txt']) : '', items: [], files: [] });
+        expect(event.defaultPrevented).toBe(true);
+        expect(posted.find(m => m.type === 'dropFiles').uris).toEqual(['file:///workspace/a%20%231.txt']);
+    });
     it('requests a file path when the operating system does not expose one', () => {
         posted.length = 0;
         const entry = { name: 'paper.pdf', isFile: true, isDirectory: false, file: () => { throw new Error('must not read'); } };
@@ -57,6 +70,18 @@ describe('file drops in the chat panel', () => {
         posted.length = 0;
         drop(document.getElementById('messages')!, { types: ['Files'], getData: () => '', files: [], items: [{ kind: 'file', webkitGetAsEntry: () => null }] });
         expect(posted.find(m => m.type === 'chooseDroppedPaths').kinds).toEqual(['unknown']);
+    });
+    it('accepts provisional drag events with no exposed types and handles the file on drop', () => {
+        posted.length = 0;
+        const messages = document.getElementById('messages')!;
+        const over = new Event('dragover', { bubbles: true, cancelable: true });
+        Object.defineProperty(over, 'dataTransfer', { value: { types: [] } });
+        messages.dispatchEvent(over);
+        expect(over.defaultPrevented).toBe(true);
+        const entry = { name: 'paper.pdf', isFile: true, isDirectory: false };
+        const event = drop(messages, { types: [], getData: () => '', files: [], items: [{ kind: 'file', webkitGetAsEntry: () => entry }] });
+        expect(event.defaultPrevented).toBe(true);
+        expect(posted.find(m => m.type === 'chooseDroppedPaths').kinds).toEqual(['file']);
     });
     it('does not intercept an ordinary web link drop', () => {
         const event = drop(document.getElementById('messages')!, { types: ['text/uri-list'], getData: () => 'https://example.com', items: [], files: [] });

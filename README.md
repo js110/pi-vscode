@@ -27,7 +27,9 @@ The panel opens in VS Code's secondary side bar from the Pi icon and can be drag
 - **Model picker and thinking levels** straight from Pi's registry — no key setup per provider beyond your existing Pi login.
 - **Talk to a busy agent**: steer the current turn, or queue follow-ups while Pi is still streaming; queue state comes from Pi's native events.
 - **Slash commands**: `/compact`, `/new`, `/model`, `/thinking`, `/name`, `/resume`, `/copy`, `/session`, `/export`, `/settings`, `/login` work in the prompt; `/skill:name` skills and prompt templates expand through the SDK. CLI-only builtins (e.g. `/tree`, `/fork`) say so instead of leaking into the model.
-- **`@`-mention** files and symbols with fuzzy completion; drag or select files and folders to add their paths to the prompt. If VS Code cannot expose a dragged path, select it in the file dialog. Pi decides how to read each path.
+- **`@`-mention** files and symbols with fuzzy completion; drag or select files and folders to add their paths to the prompt. VS Code may require holding Shift when dragging from Finder; if it cannot expose a dragged path, select it in the file dialog. Pi decides how to read each path.
+- The composer shows the current editor file; use its plus button to insert the path. Editor selections appear as removable context and focus the composer.
+- The eye button toggles a compact view with expandable tool activity. Sending keeps your reading position; use the down button to resume following new content.
 - **Edit history**: hover any earlier turn to edit and resend (the conversation rolls back to that point), or regenerate a turn with its original prompt and images.
 - **Session management**: history, load, naming, `/export` to Markdown (thinking, tool output, and images rendered), custom session directories.
 - **Completion notifications** when the panel is in the background and the turn took at least 5 seconds.

@@ -96,6 +96,7 @@ describe('conversation quote', () => {
     it('shows the chip when text inside a message is marked', async () => {
         expect(document.getElementById('quote-chip')).toBeTruthy();
         await selectInAssistantText(4, 18);
+        expect(document.activeElement?.id).toBe('input');
         const chip = document.getElementById('quote-chip') as HTMLElement;
         expect(chip.style.display).not.toBe('none');
         expect(chip.textContent).toContain('marked passage');
@@ -146,6 +147,10 @@ describe('conversation quote', () => {
     it('dismiss clears the chip', async () => {
         (document.querySelector('#quote-chip .selection-chip-close') as HTMLElement).click();
         const chip = document.getElementById('quote-chip') as HTMLElement;
+        expect(chip.style.display).toBe('none');
+        document.getSelection()?.removeAllRanges();
+        document.dispatchEvent(new Event('selectionchange'));
+        await new Promise(resolve => setTimeout(resolve, 350));
         expect(chip.style.display).toBe('none');
     });
 

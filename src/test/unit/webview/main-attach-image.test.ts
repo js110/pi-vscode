@@ -18,7 +18,7 @@ describe('choose a file path', () => {
         await new Promise(resolve => setTimeout(resolve, 60));
         document.getElementById('btn-attach')!.click();
         const request = posted.find(m => m.type === 'chooseDroppedPaths');
-        expect(request.kinds).toEqual(['file']);
+        expect(request.kinds).toEqual(['unknown']);
         dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/home/paper.pdf' }, { status: 'path', path: '/home/image.png' }] });
         const input = document.getElementById('input') as HTMLTextAreaElement;
         expect(input.value).toContain('/home/paper.pdf');

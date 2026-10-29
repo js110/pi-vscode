@@ -238,7 +238,7 @@ const EN = {
     'slash.sessionInfo': 'Session: {name}\nModel: {model}\nContext: {usage}\nFile: {path}',
 
     // Image input
-    'image.attach': 'Attach files',
+    'image.attach': 'Select files or folders (hold Shift when dragging from Finder)',
     'image.unsupported': 'The current model does not support image input',
     'image.tooLarge': 'Image is too large (over 25 MB, or could not be compressed below 5 MB)',
     'image.resized': '"{name}" was compressed automatically to fit the size limit',
@@ -254,6 +254,12 @@ const EN = {
 
     // Selection context chip (Copilot-style auto-attach)
     'selection.detach': "Don't attach the selection",
+    'selection.attached': 'Selected code will be attached to the next eligible message',
+    'editor.addFile': 'Add current file path to the prompt',
+    'editor.notAttached': 'Current editor file (not attached)',
+    'focus.toggle': 'Toggle compact conversation view',
+    'focus.activity': 'Tool activity',
+    'attach.dropPickerHint': 'The dropped path is unavailable. Select the item in the dialog; try holding Shift while dragging.',
     'quote.attach': 'Quoted from the conversation',
     'quote.detach': 'Remove quote',
     'quote.intro': 'Regarding this selection from the conversation:',
@@ -277,7 +283,7 @@ const EN = {
     'attach.dropLimit': 'Only the first {n} files can be added from a drop.',
     'attach.selectFolder': 'Select the dropped folder',
     'attach.selectFile': 'Select files',
-    'attach.chooseType': 'Select the type of item you dropped',
+    'attach.chooseType': 'Select a file or folder',
     'attach.chooseFile': 'File',
     'attach.chooseFolder': 'Folder',
 
@@ -692,7 +698,7 @@ const ZH: Record<TextKey, string> = {
     'slash.sessionInfo': '会话：{name}\n模型：{model}\n上下文：{usage}\n文件：{path}',
 
     // Image input
-    'image.attach': '添加文件',
+    'image.attach': '选择文件或文件夹（从访达拖入时按住 Shift）',
     'image.unsupported': '当前模型不支持图片输入',
     'image.tooLarge': '图片过大（超过 25 MB，或压缩后仍超 5 MB）',
     'image.resized': '「{name}」已自动压缩以符合大小限制',
@@ -708,6 +714,12 @@ const ZH: Record<TextKey, string> = {
 
     // Selection context chip (Copilot-style auto-attach)
     'selection.detach': '不附加选中代码',
+    'selection.attached': '选中代码将附加到下一条符合条件的消息',
+    'editor.addFile': '将当前文件路径加入输入框',
+    'editor.notAttached': '当前编辑器文件（尚未附加）',
+    'focus.toggle': '切换精简对话视图',
+    'focus.activity': '工具活动',
+    'attach.dropPickerHint': '无法获取拖入的路径，请在选择器中选择；也可尝试拖动时按住 Shift。',
     'quote.attach': '引用对话选段',
     'quote.detach': '移除引用',
     'quote.intro': '针对对话中选中的以下内容：',
@@ -730,7 +742,7 @@ const ZH: Record<TextKey, string> = {
     'attach.dropLimit': '一次拖入最多添加前 {n} 个文件。',
     'attach.selectFolder': '选择刚拖入的文件夹',
     'attach.selectFile': '选择文件',
-    'attach.chooseType': '选择拖入项目的类型',
+    'attach.chooseType': '选择文件或文件夹',
     'attach.chooseFile': '文件',
     'attach.chooseFolder': '文件夹',
 

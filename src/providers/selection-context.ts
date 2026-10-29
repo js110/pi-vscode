@@ -35,6 +35,7 @@ export class SelectionContextTracker implements vscode.Disposable {
     private _live: LiveSelection | null = null;
     /** Snapshot saved by the last consume, for reinstate after a failed send. */
     private _priorLive: LiveSelection | null = null;
+    private _selectionIdentity = '';
     private _timer: ReturnType<typeof setTimeout> | undefined;
     private _disposables: vscode.Disposable[] = [];
 
@@ -118,6 +119,9 @@ export class SelectionContextTracker implements vscode.Disposable {
         // chip exactly as it is; only a real editor (or empty selection in one)
         // may change or clear it.
         if (!editor) return;
+        const identity = editor.selection.isEmpty ? '' : [editor.document.uri.toString(), editor.selection.start.line, editor.selection.start.character, editor.selection.end.line, editor.selection.end.character].join(':');
+        const changedSelection = identity !== this._selectionIdentity;
+        this._selectionIdentity = identity;
         const { start, end } = selectionLineRange(
             editor.selection.start.line,
             editor.selection.end.line,
@@ -137,7 +141,7 @@ export class SelectionContextTracker implements vscode.Disposable {
                 code: editor.document.getText(editor.selection),
             }
             : null;
-        this._setActive(info);
+        this._setActive(info, changedSelection);
     }
 
     private _forget(): void {
@@ -148,10 +152,10 @@ export class SelectionContextTracker implements vscode.Disposable {
         this._setActive(null);
     }
 
-    private _setActive(info: SelectionContextInfo | null): void {
+    private _setActive(info: SelectionContextInfo | null, force = false): void {
         const prev = this._current;
         this._current = info;
-        if (prev?.path !== info?.path
+        if (force && info || prev?.path !== info?.path
             || prev?.startLine !== info?.startLine
             || prev?.endLine !== info?.endLine) {
             this._post({ type: 'selectionChanged', selection: info });

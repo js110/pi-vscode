@@ -48,4 +48,23 @@ describe('native commands', () => {
     it('reports missing optional APIs explicitly', async () => {
         await expect(run({}, 'reload')).rejects.toThrow('does not provide reload');
     });
+
+    it('passes Pi’s stable installation ID into subscription OAuth login', async () => {
+        const login = vi.fn(async (_provider, _type, _interaction, options) => {
+            expect(options.getDeviceId()).toBe('a0089492-613e-472f-b2a4-f9a814af5168');
+        });
+        const session = {
+            settingsManager: { getOrCreateDeviceId: vi.fn(() => 'a0089492-613e-472f-b2a4-f9a814af5168') },
+            modelRuntime: {
+                getProviders: () => [],
+                getProvider: () => ({ name: 'OpenAI', auth: { oauth: { name: 'ChatGPT' } } }),
+                login,
+            },
+        };
+        Object.defineProperty(vscode.window, 'withProgress', { configurable: true, value: (_options: unknown, task: Function) => task({ report: vi.fn() }, { onCancellationRequested: () => ({ dispose: vi.fn() }) }) });
+        Object.defineProperty(vscode, 'ProgressLocation', { configurable: true, value: { Notification: 15 } });
+        expect(await run(session, 'login', 'openai')).toEqual({ changed: true });
+        expect(login).toHaveBeenCalledOnce();
+        expect(session.settingsManager.getOrCreateDeviceId).toHaveBeenCalledOnce();
+    });
 });

@@ -150,6 +150,11 @@ if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.1.0')) {
     checkTypeToken('dist/core/extensions/types.d.ts', 'durationMs');
 }
 
+// Sign in with ChatGPT needs Pi's persistent per-installation device ID.
+if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.2.0')) {
+    checkProto('SettingsManager', 'getOrCreateDeviceId');
+}
+
 // --- Version-gated APIs (Pi 1.2.0+): active-tools mirror in stateSync ---
 // getActiveToolNames feeds the stateSync tools list; feature-detected in
 // src/pi/session.ts, so an older pinned copy just reports no active tools.

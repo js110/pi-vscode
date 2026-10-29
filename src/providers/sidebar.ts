@@ -21,6 +21,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
      *  rebuild the message tree for nothing. Ordering of genuinely different
      *  frames is preserved. */
     private _lastSyncPayload = '';
+    private _editorPath: string | null = null;
+    private _editorDisplayPath: string | undefined;
+    private _selectionFocusTimer: ReturnType<typeof setTimeout> | undefined;
 
     constructor(
         extensionUri: vscode.Uri,
@@ -33,6 +36,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     ) {
         this._extensionUri = extensionUri;
         this._tabManager = tabManager;
+        this.updateEditorFile(vscode.window.activeTextEditor);
         tabManager.onStateChange(() => {
             const { state, images } = this._tabManager.getSnapshot();
             const payload = JSON.stringify({ state, images });
@@ -70,6 +74,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         this.post({ type: 'ready' });
         this.post({ type: 'langChanged', lang: resolveDisplayLang() });
+        this.post({ type: 'editorFileChanged', path: this._editorPath, displayPath: this._editorDisplayPath });
         // Restored uploads must decorate the first render, not wait for a
         // settings-panel interaction.
         this.post({ type: 'avatarChanged', ...this._resolveAvatars(webviewView.webview) });
@@ -94,6 +99,32 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     post(message: ServerMessage): void {
         this._view?.webview.postMessage(message);
+    }
+
+    focusSelection(message: ServerMessage): void {
+        if (this._selectionFocusTimer) clearTimeout(this._selectionFocusTimer);
+        if (message.type === 'selectionChanged' && message.selection && this._view?.visible) {
+            this.post(message);
+            const editor = vscode.window.activeTextEditor;
+            this._selectionFocusTimer = setTimeout(() => {
+                this._selectionFocusTimer = undefined;
+                if (!editor || vscode.window.activeTextEditor !== editor || !this._view?.visible) return;
+                this._view.show(false);
+                this.post({ ...message, focusComposer: true });
+            }, 500);
+        } else {
+            this.post(message);
+        }
+    }
+
+    /** Retain the last editor when focus moves to the webview. */
+    updateEditorFile(editor: vscode.TextEditor | undefined): void {
+        if (!editor) return;
+        const path = editor.document.uri.scheme === 'file' ? editor.document.uri.fsPath : null;
+        if (this._editorPath === path) return;
+        this._editorPath = path;
+        this._editorDisplayPath = path ? vscode.workspace.asRelativePath(editor.document.uri).replace(/\\/g, '/') : undefined;
+        this.post({ type: 'editorFileChanged', path, displayPath: this._editorDisplayPath });
     }
 
     /** Config change on `pi-agent.skin` (or a new upload): push the effective
@@ -145,6 +176,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     private async _handleMessage(msg: ClientMessage): Promise<void> {
         try {
+            if (msg.type === 'getState') {
+                this.post({ type: 'editorFileChanged', path: this._editorPath, displayPath: this._editorDisplayPath });
+                this.post({ type: 'selectionChanged', selection: this._selectionTracker?.current ?? null });
+            }
             if (msg.type === 'dismissSelection') {
                 this._selectionTracker?.dismiss();
                 return;

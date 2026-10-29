@@ -47,6 +47,10 @@ export async function executeNativeCommand(
                     const controller = new AbortController();
                     const cancellation = token.onCancellationRequested(() => controller.abort());
                     try {
+                        const settings = session.settingsManager;
+                        const loginOptions = hasFunction(settings, 'getOrCreateDeviceId')
+                            ? { getDeviceId: () => settings.getOrCreateDeviceId() }
+                            : undefined;
                         await modelRuntime.login(providerId, 'oauth', {
                             signal: controller.signal,
                             prompt: async prompt => {
@@ -74,7 +78,7 @@ export async function executeNativeCommand(
                                     void vscode.env.openExternal(vscode.Uri.parse(event.verificationUri));
                                 } else progress.report({ message: event.message });
                             },
-                        });
+                        }, loginOptions);
                     } finally { cancellation.dispose(); }
                 });
             }

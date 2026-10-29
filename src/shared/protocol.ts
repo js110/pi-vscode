@@ -366,7 +366,8 @@ export type ServerMessage =
     | { type: 'composerText'; tabId: string; text: string }
     | { type: 'ready' }
     | { type: 'stateSync'; state: SerializedAgentState; images?: Record<string, string> }
-    | { type: 'selectionChanged'; selection: SelectionContextInfo | null }
+    | { type: 'selectionChanged'; selection: SelectionContextInfo | null; focusComposer?: boolean }
+    | { type: 'editorFileChanged'; path: string | null; displayPath?: string }
     | { type: 'agentEvent'; event: any }
     | { type: 'models'; models: ModelInfo[]; current?: ModelInfo; thinkingLevel?: string; availableThinkingLevels?: string[]; supportsThinking?: boolean }
     | { type: 'modelChanged'; model: ModelInfo; thinkingLevel?: string }

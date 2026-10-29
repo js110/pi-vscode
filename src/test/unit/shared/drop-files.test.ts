@@ -4,7 +4,13 @@ import {
     uriToPath,
     relativeToWorkspace,
     isImagePath,
+    parseCodeDropUris,
 } from '../../../shared/drop-files';
+
+it('converts Windows UNC drag paths to file URIs', () => {
+    expect(parseCodeDropUris('', '', JSON.stringify(['\\\\server\\share\\a b.txt'])))
+        .toEqual(['file://server/share/a%20b.txt']);
+});
 
 describe('parseUriList', () => {
     it('splits multiple URIs', () => {
