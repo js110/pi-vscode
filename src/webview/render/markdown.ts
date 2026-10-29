@@ -23,6 +23,7 @@ const NON_APPLY_LANGS = new Set(['text', 'plaintext', 'plain', 'txt', '', 'diff'
 // the visual with line-level added/deleted/hunk/meta rows using VS Code's
 // diffEditor color tokens. The +/- prefixes are kept, GitHub-style.
 const DIFF_LANGS = new Set(['diff', 'patch', 'udiff']);
+const PROSE_LANGS = new Set(['md', 'markdown']);
 const DIFF_META_RE = /^(diff --git |index |old mode |new mode |new file mode |deleted file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to |Binary files |GIT binary patch|\*\*\* )/;
 
 function diffLineClass(line: string): string {
@@ -81,7 +82,7 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string | undefi
         : '';
     return `<div class="code-block-wrapper${collapsible ? ' code-block-collapsed' : ''}">
         <div class="code-block-header">${langLabel ? `<span class="code-lang">${escHtml(langLabel)}</span>` : ''}<span class="code-block-actions">${applyBtn}<button class="copy-btn" data-code-id="${id}">${escHtml(t('code.copy'))}</button></span></div>
-        <pre class="code-block-pre${DIFF_LANGS.has(baseLang) ? ' diff-pre' : ''}" id="${id}"><code class="code-block-code hljs">${body}</code></pre>
+        <pre class="code-block-pre${DIFF_LANGS.has(baseLang) ? ' diff-pre' : ''}${PROSE_LANGS.has(baseLang) ? ' code-block-prose' : ''}" id="${id}"><code class="code-block-code hljs">${body}</code></pre>
         ${collapsible ? `<button class="code-block-toggle" data-toggle-id="${id}">${escHtml(t('code.showMore'))}</button>` : ''}
     </div>`;
 };

@@ -938,6 +938,13 @@ body {
 .code-block-pre::-webkit-scrollbar { height: 4px; }
 .code-block-pre::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: var(--radius-xxs); }
 
+/* Markdown source is mostly prose, so keep it readable in a narrow sidebar.
+   Soft wraps are visual only and leave the copied source unchanged. */
+.code-block-pre.code-block-prose {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 /* ── Diff code blocks (```diff / ```diff:lang) ──
    Line-level rows tinted with VS Code's diffEditor tokens, approximating
    Copilot's inline MarkdownDiffBlockPart. */
@@ -1016,7 +1023,8 @@ body {
 /* Long code blocks collapse until expanded (PRD C3) */
 .code-block-collapsed .code-block-pre {
     max-height: 340px;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 .code-block-toggle {
     width: 100%;

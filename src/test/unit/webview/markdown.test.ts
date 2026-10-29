@@ -26,6 +26,20 @@ describe('literal single tilde (VS Code chat parity)', () => {
     });
 });
 
+describe('Markdown source blocks', () => {
+    it('marks Markdown for soft wrapping while preserving the source text', () => {
+        const source = '# 标题\n一段很长的文字 and `inline code`\n  └── tree';
+        const holder = document.createElement('div');
+        holder.innerHTML = renderMarkdown('```md\n' + source + '\n```');
+        expect(holder.querySelector('.code-block-prose code')?.textContent).toBe(source);
+        expect(holder.querySelector('.copy-btn')).not.toBeNull();
+        expect(holder.querySelector('.apply-btn')).not.toBeNull();
+        expect(renderMarkdown('```markdown\ntext\n```')).toContain('code-block-prose');
+        expect(renderMarkdown('```typescript\nconst a = 1;\n```')).not.toContain('code-block-prose');
+        expect(renderMarkdown('```diff\n+line\n```')).not.toContain('code-block-prose');
+    });
+});
+
 describe('diff code blocks', () => {
     const UNIFIED = [
         'diff --git a/src/a.ts b/src/a.ts',
