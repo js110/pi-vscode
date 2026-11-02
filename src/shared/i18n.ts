@@ -227,6 +227,7 @@ const EN = {
     'compact.failed': 'Compaction failed — context kept. You can retry with /compact.',
     'compact.nothingToCompact': 'Nothing to compact yet — the session is too small or was recently compacted, so recent history stays as-is.',
     'compact.done': 'Context compacted.',
+    'compact.sendBlocked': 'Pi is compacting the context — your message was not sent. Send it again once the compaction banner clears.',
 
     // Built-in slash commands
     'slash.unsupported': '"/{name}" is not available in the Pi panel yet.',
@@ -687,6 +688,7 @@ const ZH: Record<TextKey, string> = {
     'compact.failed': '压缩失败——已保留原上下文，可稍后用 /compact 重试。',
     'compact.nothingToCompact': '暂无可压缩的内容——会话还太小（或最近已压缩过），最近历史将原样保留。',
     'compact.done': '上下文压缩完成。',
+    'compact.sendBlocked': '正在压缩上下文，消息尚未发送——请在压缩完成后重新发送。',
 
     // Built-in slash commands
     'slash.unsupported': '“/{name}”在 Pi 面板中暂不可用。',

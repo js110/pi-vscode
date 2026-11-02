@@ -2375,10 +2375,14 @@ function renderSessionList(sessions: any[], currentId?: string): void {
     });
 }
 
-/** Input-validation hints dismiss themselves; agent errors stay until the next turn.
- *  Toasts anchor to the session panel while it covers the transcript — an error
- *  behind a full-height panel reads as "click did nothing". */
+/** Input-validation hints dismiss themselves quickly; dispatch/agent errors
+ *  linger longer but never forever — the old persistent variant had no timer
+ *  and no dismiss path, so a red banner sat on the transcript until the next
+ *  full re-render. Toasts anchor to the session panel while it covers the
+ *  transcript — an error behind a full-height panel reads as "click did
+ *  nothing". */
 const ERROR_HINT_MS = 5000;
+const ERROR_PERSIST_MS = 10_000;
 
 function activeToastContainerId(): string {
     return document.getElementById('session-panel') ? 'session-panel' : 'messages';
@@ -2386,16 +2390,13 @@ function activeToastContainerId(): string {
 
 function showError(message: string, durationMs?: number): void {
     const containerId = activeToastContainerId();
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    if (durationMs != null) {
-        showToast({ containerId, className: 'error-message', message, durationMs });
-        scrollToBottom();
-        return;
-    }
-    const errEl = el('div', 'error-message');
-    errEl.textContent = message;
-    container.appendChild(errEl);
+    if (!document.getElementById(containerId)) return;
+    showToast({
+        containerId,
+        className: 'error-message',
+        message,
+        durationMs: durationMs ?? ERROR_PERSIST_MS,
+    });
     scrollToBottom();
 }
 

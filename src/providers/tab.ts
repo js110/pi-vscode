@@ -145,6 +145,16 @@ function isQueueBusyError(err: unknown): boolean {
     return /already processing|compaction is in progress/i.test(message);
 }
 
+/**
+ * SDK rejection meaning "compaction holds the session": the prompt was
+ * rejected before it ran, and queueing is no answer — a followUp parked on
+ * an idle queue never drains. The user must retry once compaction ends.
+ */
+function isCompactionBusyError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    return /compaction is in progress/i.test(message);
+}
+
 /** Non-persistent fallback used when the host supplies no store. */
 function inMemoryGlobalRuleStore(): GlobalRuleStore {
     let rules: import('../shared/protocol').ApprovalRuleInfo[] = [];
@@ -1665,10 +1675,17 @@ export class TabManager {
             }
             if (isQueueBusyError(err) && tab.session.isStreaming) {
                 // A run started under us: Pi's own answer to this case is to
-                // queue, not to fail the send. Compaction on an idle session
-                // rethrows — a followUp parked on an idle queue would never
-                // drain.
+                // queue, not to fail the send.
                 await this._enqueue(tab, text, images, 'steer');
+                return;
+            }
+            if (isCompactionBusyError(err)) {
+                // Compaction is running on an idle session: the SDK rejected
+                // the prompt and an idle-queue followUp would never drain, so
+                // the message is simply not sent. Tell the user to retry once
+                // the compaction banner clears instead of surfacing the raw
+                // SDK rejection as a stuck error toast.
+                this._adapters.ui.showMessage(t('compact.sendBlocked'));
                 return;
             }
             throw err;

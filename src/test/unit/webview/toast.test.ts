@@ -54,4 +54,31 @@ describe('showToast', () => {
         expect(document.getElementById('toast')).toBeTruthy();
         expect(toast.classList.contains('visible')).toBe(false);
     });
+
+    it('dismisses a mounted toast early on click', () => {
+        vi.useFakeTimers();
+        showToast({ className: 'error-message', message: 'boom', durationMs: 10_000 });
+
+        const toast = document.querySelector('.error-message') as HTMLElement;
+        expect(toast).toBeTruthy();
+
+        toast.click();
+        expect(document.querySelector('.error-message')).toBeNull();
+
+        // The cancelled timer must not resurrect the node later.
+        vi.advanceTimersByTime(10_000);
+        expect(document.querySelector('.error-message')).toBeNull();
+    });
+
+    it('dismisses a hideClass toast early on click without unmounting it', () => {
+        vi.useFakeTimers();
+        showToast({ reuseId: 'toast', className: 'toast toast-error', hideClass: 'visible', message: 'x', durationMs: 3000 });
+
+        const toast = document.getElementById('toast') as HTMLElement;
+        expect(toast.classList.contains('visible')).toBe(true);
+
+        toast.click();
+        expect(document.getElementById('toast')).toBeTruthy();
+        expect(toast.classList.contains('visible')).toBe(false);
+    });
 });

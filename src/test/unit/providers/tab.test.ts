@@ -1008,10 +1008,11 @@ describe('TabManager live streaming and queue bookkeeping', () => {
         expect(state.turnCounter).toBe(1);
     });
 
-    it('rethrows a queue-busy refusal on an idle session instead of parking the message', async () => {
+    it('shows a retry notice for a compaction-busy refusal on an idle session', async () => {
         // Compaction on an idle session: a follow-up parked on the queue
         // would never drain (idle sessions do not drain queues), so the
-        // error must reach the user instead.
+        // message is dropped with a humanized notice — not a raw SDK error
+        // that renders as a stuck red banner.
         const tab = makeTab({
             prompt: vi.fn(async () => {
                 throw new Error(
@@ -1019,16 +1020,20 @@ describe('TabManager live streaming and queue bookkeeping', () => {
                 );
             }),
         } as any);
-        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, makeAdapters());
+        const adapters = makeAdapters();
+        const manager = new TabManager({ create: vi.fn(async () => tab) } as TabFactory, adapters);
         await manager.initialize();
 
-        await expect(manager.dispatch({ type: 'prompt', text: 'while compacting' } as any)).rejects.toThrow(
-            'compaction is in progress',
-        );
+        await manager.dispatch({ type: 'prompt', text: 'while compacting' } as any);
+
         expect(tab.session.prompt).toHaveBeenCalled();
         expect(tab.session.followUp).not.toHaveBeenCalled();
         expect(tab.session.steer).not.toHaveBeenCalled();
         expect((manager.activeTab as any).queuedMessages).toEqual([]);
+        expect(adapters.ui.showMessage).toHaveBeenCalledWith(t('compact.sendBlocked'));
+        expect(adapters.transport.post).not.toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'error' }),
+        );
     });
 
     it('steers when a run that started mid-send refuses the prompt', async () => {

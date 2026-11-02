@@ -20,6 +20,18 @@ export interface ToastOptions {
 
 const timers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
 
+/**
+ * Shared dismissal for the timer and click paths: cancel any pending
+ * timer, then hide (settings contract) or unmount (chat notices/errors).
+ */
+function dismissToast(toast: HTMLElement, hideClass?: string): void {
+    const previous = timers.get(toast);
+    if (previous) clearTimeout(previous);
+    timers.delete(toast);
+    if (hideClass) toast.classList.remove(hideClass);
+    else toast.remove();
+}
+
 export function showToast(options: ToastOptions): void {
     const { className, message, reuseId, containerId, durationMs = 4000, hideClass } = options;
     const container = containerId ? document.getElementById(containerId) : document.body;
@@ -34,15 +46,14 @@ export function showToast(options: ToastOptions): void {
 
     toast.className = hideClass ? `${className} ${hideClass}` : className;
     toast.textContent = message;
+    // A toast must never outlive the user's patience for it: clicking
+    // dismisses immediately instead of waiting out the timer.
+    toast.onclick = () => dismissToast(toast, hideClass);
 
     const previous = timers.get(toast);
     if (previous) clearTimeout(previous);
     timers.set(
         toast,
-        setTimeout(() => {
-            timers.delete(toast);
-            if (hideClass) toast.classList.remove(hideClass);
-            else toast.remove();
-        }, durationMs),
+        setTimeout(() => dismissToast(toast, hideClass), durationMs),
     );
 }
