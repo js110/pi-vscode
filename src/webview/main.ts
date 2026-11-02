@@ -18,6 +18,7 @@ import { el, escHtml } from './dom';
 import { showToast } from './toast';
 import { ClipboardBridge } from './clipboard';
 import { installComposerFocus } from './composer-focus';
+import { transcriptSelectionText, rememberLiveTranscriptSelection, copyTargetText, clearTranscriptMark, installTranscriptMarkGuard } from './transcript-mark';
 import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown, setAvatarImages } from './render/messages';
 
 declare function acquireVsCodeApi(): {
@@ -697,7 +698,7 @@ function applyStateSync(s: SerializedAgentState): void {
         // A quote marks text in THIS tab's transcript; it must not ride a
         // prompt for a different conversation.
         state.quotedSelection = null;
-        lastLiveTranscriptSelection = null;
+        clearTranscriptMark();
         if (quoteCaptureTimer !== undefined) clearTimeout(quoteCaptureTimer);
         updateQuoteChip();
         hideMentionMenu();
@@ -3129,35 +3130,8 @@ const QUOTE_PREVIEW_CHARS = 60;
 let quoteCaptureTimer: ReturnType<typeof setTimeout> | undefined;
 let transcriptPointerDown = false;
 
-/** Snapshot of the last non-empty transcript selection, taken SYNCHRONOUSLY
- *  on selectionchange: focusing the composer (which VS Code does after
- *  intercepting Cmd/Ctrl+C) collapses the document selection, so any
- *  deferred read comes back empty. The copy defense and the debounced quote
- *  capture both read this snapshot instead of the live selection. */
-let lastLiveTranscriptSelection: string | null = null;
-
-function rememberLiveTranscriptSelection(): void {
-    const text = transcriptSelectionText();
-    if (text) lastLiveTranscriptSelection = text;
-}
-
-function nodeInsideMessageContent(node: Node | null): boolean {
-    if (!node) return false;
-    const element = node.nodeType === 3 ? node.parentElement : (node as Element);
-    return !!element?.closest?.('.message-content');
-}
-
-/** The text currently marked inside the transcript (message content only),
- *  or null when nothing usable is selected. Shared by the quote capture and
- *  the copy paths. */
-function transcriptSelectionText(): string | null {
-    const selection = document.getSelection();
-    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
-    if (!nodeInsideMessageContent(selection.anchorNode) || !nodeInsideMessageContent(selection.focusNode)) return null;
-    const text = selection.toString().replace(/\u00a0/g, ' ').trim();
-    return text || null;
-}
-
+// The transcript selection mark (snapshot of the last live selection) lives
+// in ./transcript-mark, alongside its abandonment listeners.
 /** Debounced selectionchange handler: capture a non-collapsed selection that
  *  lives entirely inside the transcript's message content. */
 function scheduleQuoteCapture(): void {
@@ -3182,7 +3156,13 @@ function captureQuoteFromSelection(text: string): void {
     if (state.quotedSelection?.text === text) return; // same mark, no churn
     state.quotedSelection = { text };
     updateQuoteChip();
-    document.querySelector<HTMLTextAreaElement>('#input:not(:disabled)')?.focus({ preventScroll: true });
+    // Only pull focus into the composer while the webview still owns it. If
+    // the user already clicked away (editor, another view), this deferred
+    // focus() would steal keyboard focus back from that surface — and a
+    // follow-up Cmd/Ctrl+C would land here instead of copying over there.
+    if (document.hasFocus()) {
+        document.querySelector<HTMLTextAreaElement>('#input:not(:disabled)')?.focus({ preventScroll: true });
+    }
 }
 
 /** Chip preview: first line-ish slice of the marked text. */
@@ -3240,18 +3220,12 @@ function consumeQuoteForSend(text: string): string | undefined {
 //      that reaches the iframe while the selection is still alive,
 //   2. a capture-phase Cmd/Ctrl+C hook performs the copy ourselves — the
 //      live selection wins, and the last captured mark (the quote snapshot,
-//      kept alive on purpose through focus changes) stands in once VS Code
-//      has already collapsed the selection onto the input,
+//      alive until a new click or until focus leaves the webview) stands in
+//      once VS Code has already collapsed the selection onto the input,
 //   3. a small in-page context menu offers a Copy action that cannot be
 //      intercepted (right-click on the transcript with a mark present),
 //   4. everything falls back to the host clipboard bridge, which works in
 //      the webview iframe no matter what.
-
-/** The text a copy action should use: the live transcript selection, or the
- *  last live one once focus restoration has collapsed the selection. */
-function copyTargetText(): string | null {
-    return transcriptSelectionText() ?? lastLiveTranscriptSelection ?? null;
-}
 
 function notifyCopied(): void {
     showToast({
@@ -3263,16 +3237,15 @@ function notifyCopied(): void {
 }
 
 function installCopyDefense(): void {
-    // A new click abandons the old mark. Keep it for right-click so the
-    // context menu can still copy the selection.
-    document.addEventListener('pointerdown', (event) => {
-        if (event.button !== 0) return;
-        lastLiveTranscriptSelection = null;
+    // Mark abandonment (left-click, window blur) clears the mark and cancels
+    // the pending quote-capture debounce — see transcript-mark.ts for why
+    // blur must drop the mark.
+    installTranscriptMarkGuard(() => {
         if (quoteCaptureTimer !== undefined) {
             clearTimeout(quoteCaptureTimer);
             quoteCaptureTimer = undefined;
         }
-    }, true);
+    });
     // A selection inside the composer wins: the user is explicitly editing
     // there. Only when the focused field has nothing selected do we take over
     // on behalf of the (still alive) transcript selection.
