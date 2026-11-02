@@ -10,13 +10,17 @@
  * Abandonment rules:
  *  - a new left-click anywhere in the document starts a new gesture (a
  *    right-click keeps the mark so the context menu can still copy it),
- *  - window blur — focus left the webview entirely — drops it, so a mark
- *    made in the transcript can never hijack a later Cmd/Ctrl+C and copy
- *    stale transcript text instead of what the user last selected
- *    elsewhere. Inner focus restoration does not blur the window, so the
- *    legitimate fallback (mark stands in for the collapsed selection)
- *    survives,
  *  - explicit clears (tab switch, consumed quote).
+ *
+ *  Deliberately NO window-blur clearing: VS Code's Cmd/Ctrl+C interception
+ *  juggles window focus (take it, then restore it to the webview) while
+ *  routing the copy through the webview, so blur cannot distinguish "the
+ *  user left the webview" from "the workbench is serving a copy right now"
+ *  — clearing on blur broke the in-webview copy (regression in 1.0.2).
+ *  Anti-hijack safety comes from elsewhere: a copy intended for the main
+ *  editor never routes through the iframe, any click back into the webview
+ *  clears the mark, and the deferred composer focus pull is guarded by
+ *  document.hasFocus() (captureQuoteFromSelection).
  *
  * Pure DOM helpers only; happy-dom testable.
  */
@@ -62,16 +66,11 @@ export function clearTranscriptMark(): void {
  *  abandonment so callers can drop companion state (the debounced
  *  quote-capture timer). Install exactly once per document. */
 export function installTranscriptMarkGuard(onAbandon?: () => void): void {
-    const abandon = (): void => {
-        lastLiveTranscriptSelection = null;
-        onAbandon?.();
-    };
     // A new click abandons the old mark. Keep it for right-click so the
     // context menu can still copy the selection.
     document.addEventListener('pointerdown', (event) => {
         if (event.button !== 0) return;
-        abandon();
+        lastLiveTranscriptSelection = null;
+        onAbandon?.();
     }, true);
-    // Leaving the webview abandons the mark too — see the module doc.
-    window.addEventListener('blur', abandon);
 }

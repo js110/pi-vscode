@@ -3237,9 +3237,9 @@ function notifyCopied(): void {
 }
 
 function installCopyDefense(): void {
-    // Mark abandonment (left-click, window blur) clears the mark and cancels
-    // the pending quote-capture debounce — see transcript-mark.ts for why
-    // blur must drop the mark.
+    // Mark abandonment (left-click) clears the mark and cancels the pending
+    // quote-capture debounce — see transcript-mark.ts for why there is
+    // deliberately no window-blur clearing.
     installTranscriptMarkGuard(() => {
         if (quoteCaptureTimer !== undefined) {
             clearTimeout(quoteCaptureTimer);

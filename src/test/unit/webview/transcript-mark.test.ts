@@ -66,13 +66,6 @@ describe('mark abandonment (regression: stale mark hijacked Cmd+C)', () => {
         document.getSelection()?.removeAllRanges();
     }
 
-    it('window blur drops the mark', () => {
-        installTranscriptMarkGuard();
-        markMessageSelection();
-        window.dispatchEvent(new Event('blur'));
-        expect(copyTargetText()).toBeNull();
-    });
-
     it('a left click drops the mark, a right click keeps it', () => {
         installTranscriptMarkGuard();
         markMessageSelection();
@@ -86,9 +79,14 @@ describe('mark abandonment (regression: stale mark hijacked Cmd+C)', () => {
         const onAbandon = vi.fn();
         installTranscriptMarkGuard(onAbandon);
         markMessageSelection();
-        window.dispatchEvent(new Event('blur'));
-        expect(onAbandon).toHaveBeenCalledTimes(1);
         document.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }));
-        expect(onAbandon).toHaveBeenCalledTimes(2);
+        expect(onAbandon).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT clear the mark on window blur (VS Code copy interception juggles focus)', () => {
+        installTranscriptMarkGuard();
+        markMessageSelection();
+        window.dispatchEvent(new Event('blur'));
+        expect(copyTargetText()).toBe('selectable transcript text');
     });
 });
