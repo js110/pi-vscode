@@ -7,6 +7,8 @@
  * The Node binding lives at the bottom (`createNodeGitExec`).
  */
 
+import * as path from 'node:path';
+
 export interface GitExecResult {
     stdout: string;
     stderr: string;
@@ -53,7 +55,7 @@ export function slugifyWorktreeName(name: string): string {
         .trim()
         .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
         .replace(/^-+|-+$/g, '')
-        .slice(0, 40)
+        .slice(0, 30)
         .replace(/-+$/g, '');
     return slug || 'task';
 }
@@ -100,7 +102,8 @@ async function ensureExcluded(repoRoot: string, exec: GitExec): Promise<void> {
     // git-dir resolution on unusual checkouts (bare / linked / missing).
     try {
         const dir = await gitDir(repoRoot, exec);
-        const excludePath = `${dir}/info/exclude`;
+        const infoDir = path.join(dir, 'info');
+        const excludePath = path.join(infoDir, 'exclude');
         const fs = await import('fs');
         let existing = '';
         try {
@@ -109,7 +112,7 @@ async function ensureExcluded(repoRoot: string, exec: GitExec): Promise<void> {
             existing = '';
         }
         if (existing.split('\n').some((line) => line.trim() === WORKTREE_EXCLUDE_LINE)) return;
-        await fs.promises.mkdir(`${dir}/info`, { recursive: true });
+        await fs.promises.mkdir(infoDir, { recursive: true });
         const appended = existing.endsWith('\n') || existing === ''
             ? `${existing}${WORKTREE_EXCLUDE_LINE}\n`
             : `${existing}\n${WORKTREE_EXCLUDE_LINE}\n`;
@@ -148,7 +151,7 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<Workt
         branch = `${WORKTREE_BRANCH_PREFIX}${slug}`;
     }
 
-    const worktreePath = `${repoRoot}/${WORKTREE_DIR}/${slug}`;
+    const worktreePath = path.join(repoRoot, WORKTREE_DIR, slug);
     // Guard the directory before spawning git: `worktree add` on an existing
     // dir fails with a confusing message.
     const fs = await import('fs');
@@ -229,7 +232,10 @@ export async function listManagedWorktrees(repoPath: string, exec: GitExec): Pro
     const repoRoot = await findRepoRoot(repoPath, exec);
     const { stdout } = await exec(['worktree', 'list', '--porcelain'], { cwd: repoRoot });
 
-    const prefix = `${repoRoot}/${WORKTREE_DIR}/`;
+    // Porcelain paths and repoRoot may differ in separators/case (git emits
+    // forward slashes even on Windows): normalize both sides before the
+    // prefix match so managed worktrees are never missed.
+    const prefix = path.resolve(repoRoot, WORKTREE_DIR) + path.sep;
     const entries: { path: string; branch: string; head: string }[] = [];
     let current: { path: string; branch: string; head: string } | null = null;
     for (const line of stdout.split('\n')) {
@@ -246,12 +252,13 @@ export async function listManagedWorktrees(repoPath: string, exec: GitExec): Pro
 
     const managed: ManagedWorktree[] = [];
     for (const entry of entries) {
-        if (!entry.path.startsWith(prefix)) continue;
+        const entryPath = path.resolve(entry.path);
+        if (!entryPath.startsWith(prefix)) continue;
         managed.push({
-            path: entry.path,
+            path: entryPath,
             branch: entry.branch,
             baseBranch: '',
-            dirty: await hasUncommittedChanges(entry.path, exec),
+            dirty: await hasUncommittedChanges(entryPath, exec),
         });
     }
     return managed;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as path from 'node:path';
 import {
     WorktreeError,
     createWorktree,
@@ -43,8 +44,8 @@ describe('slugifyWorktreeName', () => {
     it('falls back to task when empty', () => {
         expect(slugifyWorktreeName('!!!')).toBe('task');
     });
-    it('caps length at 40', () => {
-        expect(slugifyWorktreeName('a'.repeat(80)).length).toBe(40);
+    it('caps length at 30', () => {
+        expect(slugifyWorktreeName('a'.repeat(80)).length).toBe(30);
     });
 });
 
@@ -69,8 +70,9 @@ describe('createWorktree', () => {
             { match: 'rev-parse --absolute-git-dir', error: 'ENOENT' },
         ]);
         const meta = await createWorktree({ repoPath: '/repo/src', name: 'Login Fix', exec });
-        expect(meta).toEqual({ path: `${ROOT}/.pi/worktrees/login-fix`, branch: 'pi/login-fix', baseBranch: 'main' });
-        expect((exec as any).calls).toContainEqual(`worktree add ${ROOT}/.pi/worktrees/login-fix -b pi/login-fix --no-track`);
+        const expected = path.join(ROOT, '.pi/worktrees', 'login-fix');
+        expect(meta).toEqual({ path: expected, branch: 'pi/login-fix', baseBranch: 'main' });
+        expect((exec as any).calls).toContainEqual(`worktree add ${expected} -b pi/login-fix --no-track`);
     });
 
     it('suffixes the branch when pi/<name> already exists', async () => {
@@ -83,7 +85,7 @@ describe('createWorktree', () => {
         ]);
         const meta = await createWorktree({ repoPath: ROOT, name: 'task', exec });
         expect(meta.branch).toMatch(/^pi\/task-[0-9a-f]{8}$/);
-        expect(meta.path).toBe(`${ROOT}/.pi/worktrees/${meta.branch.slice(3)}`);
+        expect(meta.path).toBe(path.join(ROOT, '.pi/worktrees', meta.branch.slice(3)));
     });
 
     it('passes an explicit base branch to worktree add', async () => {
@@ -95,7 +97,7 @@ describe('createWorktree', () => {
         ]);
         await createWorktree({ repoPath: ROOT, name: 'x', baseBranch: 'develop', exec });
         expect((exec as any).calls).toContainEqual(
-            `worktree add ${ROOT}/.pi/worktrees/x -b pi/x --no-track develop`,
+            `worktree add ${path.join(ROOT, '.pi/worktrees', 'x')} -b pi/x --no-track develop`,
         );
     });
 
@@ -120,7 +122,7 @@ describe('removeWorktree', () => {
             { match: 'status --porcelain', stdout: ' M src/a.ts\n' },
         ]);
         await expect(
-            removeWorktree({ repoPath: ROOT, worktreePath: `${ROOT}/.pi/worktrees/x`, exec }),
+            removeWorktree({ repoPath: ROOT, worktreePath: path.join(ROOT, '.pi/worktrees', 'x'), exec }),
         ).rejects.toMatchObject({ code: 'dirty' });
     });
 
@@ -133,11 +135,11 @@ describe('removeWorktree', () => {
         ]);
         await removeWorktree({
             repoPath: ROOT,
-            worktreePath: `${ROOT}/.pi/worktrees/x`,
+            worktreePath: path.join(ROOT, '.pi/worktrees', 'x'),
             deleteBranch: 'pi/x',
             exec,
         });
-        expect((exec as any).calls).toContainEqual(`worktree remove ${ROOT}/.pi/worktrees/x`);
+        expect((exec as any).calls).toContainEqual(`worktree remove ${path.join(ROOT, '.pi/worktrees', 'x')}`);
         expect((exec as any).calls).toContainEqual('branch -D pi/x');
     });
 });
@@ -165,7 +167,7 @@ describe('listManagedWorktrees', () => {
         ]);
         const list = await listManagedWorktrees(ROOT, exec);
         expect(list).toEqual([
-            { path: `${ROOT}/.pi/worktrees/login-fix`, branch: 'pi/login-fix', baseBranch: '', dirty: false },
+            { path: path.resolve(ROOT, '.pi/worktrees/login-fix'), branch: 'pi/login-fix', baseBranch: '', dirty: false },
         ]);
     });
 });

@@ -14,7 +14,7 @@
 // main.ts installs a `window` message listener on import and ESM caches the
 // module, so the harness boots once in beforeAll.
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import type { ServerMessage } from '../../../shared/protocol';
 
 const posted: any[] = [];
@@ -50,24 +50,30 @@ async function nextFrame(): Promise<void> {
     await new Promise((r) => setTimeout(r, 40));
 }
 
-/** Simulate the user dragging over text inside an assistant message. */
+/** Simulate the user dragging over text inside an assistant message.
+ *  Polls instead of sleeping: the transcript renders after the async
+ *  markdown-chunk load and the capture is debounced 250 ms, so fixed sleeps
+ *  flake under a loaded parallel test run. */
 async function selectInAssistantText(start: number, end: number): Promise<void> {
-    const ok = (() => {
-        const p = [...document.querySelectorAll('.message-group-assistant .message-content p')][0];
-        const firstChild = p?.firstChild;
-        if (!firstChild) return false;
-        const range = document.createRange();
-        range.setStart(firstChild, start);
-        range.setEnd(firstChild, end);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-        document.dispatchEvent(new Event('selectionchange'));
-        return true;
-    })();
-    expect(ok).toBe(true);
-    // The capture is debounced on the webview side.
-    await new Promise((r) => setTimeout(r, 350));
+    let paragraph: Element | undefined;
+    await vi.waitFor(() => {
+        paragraph = [...document.querySelectorAll('.message-group-assistant .message-content p')][0];
+        expect(paragraph).toBeTruthy();
+    }, { timeout: 5000, interval: 25 });
+    const firstChild = paragraph!.firstChild!;
+    const range = document.createRange();
+    range.setStart(firstChild, start);
+    range.setEnd(firstChild, end);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+    const expected = String(firstChild.textContent ?? '').slice(start, end).trim();
+    await vi.waitFor(() => {
+        const chip = document.getElementById('quote-chip') as HTMLElement | null;
+        expect(chip?.style.display).not.toBe('none');
+        expect(chip?.textContent ?? '').toContain(expected);
+    }, { timeout: 3000, interval: 25 });
 }
 
 function setInput(value: string): void {

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ServerMessage } from '../../../shared/protocol';
 
 describe('choose a file path', () => {
@@ -39,8 +39,11 @@ describe('choose a file path', () => {
         Object.defineProperty(paste, 'clipboardData', { value: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => screenshot }] } });
         input.dispatchEvent(paste);
         expect(paste.defaultPrevented).toBe(true);
-        await new Promise(resolve => setTimeout(resolve, 80));
-        expect(document.querySelector('.image-chip')).not.toBeNull();
+        // FileReader-based normalization is async: poll instead of a fixed
+        // sleep so a loaded test runner can't flake the chip assertion.
+        await vi.waitFor(() => {
+            expect(document.querySelector('.image-chip')).not.toBeNull();
+        }, { timeout: 2000, interval: 25 });
         const mixed = new Event('paste', { bubbles: true, cancelable: true });
         Object.defineProperty(mixed, 'clipboardData', { value: { items: [{ kind: 'string', type: 'text/plain' }, { kind: 'file', type: 'image/png' }] } });
         input.dispatchEvent(mixed);
