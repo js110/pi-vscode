@@ -59,25 +59,18 @@ function makeSelectionTracker(overrides: Partial<{
 }
 
 describe('SidebarProvider webview lifecycle', () => {
-    it('focuses a visible chat when a new editor selection is captured', () => {
-        vi.useFakeTimers();
+    it('posts selection updates without stealing focus from the editor', () => {
         const provider = new SidebarProvider({} as any, makeTabManager(), makeSelectionTracker());
         const { view, posted } = makeWebviewView();
         view.visible = true;
         view.show = vi.fn();
-        (vscode.window as any).activeTextEditor = {};
         provider.resolveWebviewView(view, {} as any, {} as any);
         const selection = { path: 'src/a.ts', startLine:  1, endLine: 2 };
-        provider.focusSelection({ type: 'selectionChanged', selection });
+        provider.post({ type: 'selectionChanged', selection });
+        expect(posted).toContainEqual({ type: 'selectionChanged', selection });
         expect(view.show).not.toHaveBeenCalled();
-        vi.advanceTimersByTime(500);
-        expect(view.show).toHaveBeenCalledWith(false);
-        expect(posted).toContainEqual({ type: 'selectionChanged', selection, focusComposer: true });
-        view.show.mockClear();
-        provider.focusSelection({ type: 'selectionChanged', selection: null });
+        provider.post({ type: 'selectionChanged', selection: null });
         expect(view.show).not.toHaveBeenCalled();
-        (vscode.window as any).activeTextEditor = undefined;
-        vi.useRealTimers();
     });
     it('serves HTML with katex styles and an https-friendly image CSP', () => {
         // Markdown chat can embed remote https images and KaTeX fonts; the

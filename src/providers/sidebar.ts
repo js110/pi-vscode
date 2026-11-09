@@ -23,7 +23,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private _lastSyncPayload = '';
     private _editorPath: string | null = null;
     private _editorDisplayPath: string | undefined;
-    private _selectionFocusTimer: ReturnType<typeof setTimeout> | undefined;
 
     constructor(
         extensionUri: vscode.Uri,
@@ -99,22 +98,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     post(message: ServerMessage): void {
         this._view?.webview.postMessage(message);
-    }
-
-    focusSelection(message: ServerMessage): void {
-        if (this._selectionFocusTimer) clearTimeout(this._selectionFocusTimer);
-        if (message.type === 'selectionChanged' && message.selection && this._view?.visible) {
-            this.post(message);
-            const editor = vscode.window.activeTextEditor;
-            this._selectionFocusTimer = setTimeout(() => {
-                this._selectionFocusTimer = undefined;
-                if (!editor || vscode.window.activeTextEditor !== editor || !this._view?.visible) return;
-                this._view.show(false);
-                this.post({ ...message, focusComposer: true });
-            }, 500);
-        } else {
-            this.post(message);
-        }
     }
 
     /** Retain the last editor when focus moves to the webview. */

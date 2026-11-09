@@ -15,8 +15,8 @@ describe('composer focus after sending', () => {
         await import('../../../webview/main');
         await new Promise(resolve => setTimeout(resolve, 80));
         const input = document.getElementById('input') as HTMLTextAreaElement;
-        dispatch({ type: 'selectionChanged', selection: { path: 'a.ts', startLine: 1, endLine: 1 }, focusComposer: true });
-        expect(document.activeElement).toBe(input);
+        dispatch({ type: 'selectionChanged', selection: { path: 'a.ts', startLine: 1, endLine: 1 } });
+        expect(document.activeElement).not.toBe(input);
         const messages = document.getElementById('messages')!;
         const scrollTo = vi.spyOn(messages, 'scrollTo');
         scrollTo.mockClear();

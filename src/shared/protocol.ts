@@ -373,7 +373,7 @@ export type ServerMessage =
     | { type: 'composerText'; tabId: string; text: string }
     | { type: 'ready' }
     | { type: 'stateSync'; state: SerializedAgentState; images?: Record<string, string> }
-    | { type: 'selectionChanged'; selection: SelectionContextInfo | null; focusComposer?: boolean }
+    | { type: 'selectionChanged'; selection: SelectionContextInfo | null }
     | { type: 'editorFileChanged'; path: string | null; displayPath?: string }
     | { type: 'agentEvent'; event: any }
     | { type: 'models'; models: ModelInfo[]; current?: ModelInfo; thinkingLevel?: string; availableThinkingLevels?: string[]; supportsThinking?: boolean }

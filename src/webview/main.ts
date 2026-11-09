@@ -17,7 +17,6 @@ import { isQuoteTooLarge, MAX_QUOTE_CHARS } from '../shared/quote';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
 import { ClipboardBridge } from './clipboard';
-import { installComposerFocus } from './composer-focus';
 import { transcriptSelectionText, rememberLiveTranscriptSelection, copyTargetText, clearTranscriptMark, installTranscriptMarkGuard } from './transcript-mark';
 import { buildTranscriptClipboardHtml } from './transcript-clipboard';
 import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown, setAvatarImages } from './render/messages';
@@ -283,7 +282,6 @@ function handleMessage(msg: ServerMessage): void {
         case 'selectionChanged':
             state.selection = msg.selection;
             updateSelectionChip();
-            if (msg.selection && msg.focusComposer) document.querySelector<HTMLTextAreaElement>('#input:not(:disabled)')?.focus({ preventScroll: true });
             break;
         case 'editorFileChanged':
             editorFilePath = msg.path;
@@ -4043,7 +4041,6 @@ function bindScrollListener(): void {
 // Preload the markdown engine chunk in parallel with the shell render so the
 // first content frame can highlight immediately.
 void prepareMarkdown();
-installComposerFocus();
 render();
 // The host pushes the full snapshot when it resolves the view, but those
 // posts race the document reload whenever VS Code re-creates the webview

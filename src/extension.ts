@@ -416,7 +416,7 @@ export async function activate(context: vscode.ExtensionContext) {
         });
 
         const selectionTracker = new SelectionContextTracker(
-            (msg) => providerRef?.focusSelection(msg),
+            (msg) => providerRef?.post(msg),
             (message) => void vscode.window.showInformationMessage(message),
         );
 
