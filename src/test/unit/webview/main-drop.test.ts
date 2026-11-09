@@ -28,7 +28,7 @@ describe('file drops in the chat panel', () => {
         expect(event.defaultPrevented).toBe(true);
         const request = posted.find(m => m.type === 'chooseDroppedPaths');
         expect(request.kinds).toEqual(['directory']);
-        dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/Users/me/My Docs' }] });
+        dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/Users/me/My Docs', directory: true }] });
         expect((document.getElementById('input') as HTMLTextAreaElement).value).toContain('"/Users/me/My Docs"');
         expect(document.querySelector('.attach-chip-name')).toBeNull();
         await pause();
@@ -39,7 +39,7 @@ describe('file drops in the chat panel', () => {
         expect(posted.filter(m => m.type === 'dropFiles')).toHaveLength(1);
         const request = posted.find(m => m.type === 'dropFiles');
         expect(request.uris).toEqual(['file:///workspace/docs']);
-        dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/workspace/docs' }] });
+        dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/workspace/docs', directory: true }] });
         expect((document.getElementById('input') as HTMLTextAreaElement).value).toContain('/workspace/docs');
         expect(document.querySelector('.attach-chip-name')).toBeNull();
     });
@@ -62,9 +62,12 @@ describe('file drops in the chat panel', () => {
         drop(document.getElementById('messages')!, { types: ['Files'], getData: () => '', files: [], items: [{ kind: 'file', webkitGetAsEntry: () => entry }] });
         const request = posted.find(m => m.type === 'chooseDroppedPaths');
         expect(request.kinds).toEqual(['file']);
+        (document.getElementById('input') as HTMLTextAreaElement).value = '';
+        [...document.querySelectorAll('.attach-chip-remove')].forEach(btn => (btn as HTMLElement).click());
         dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/Users/me/paper.pdf' }] });
-        expect((document.getElementById('input') as HTMLTextAreaElement).value).toContain('/Users/me/paper.pdf');
-        expect(document.querySelector('.attach-chip-name')).toBeNull();
+        // Copilot routing: files become attachment chips, not composer text.
+        expect(document.querySelector('.attach-chip-name')?.textContent).toBe('paper.pdf');
+        expect((document.getElementById('input') as HTMLTextAreaElement).value).toBe('');
     });
     it('asks what kind of item was dropped when the browser cannot identify it', () => {
         posted.length = 0;
@@ -87,14 +90,17 @@ describe('file drops in the chat panel', () => {
         const event = drop(document.getElementById('messages')!, { types: ['text/uri-list'], getData: () => 'https://example.com', items: [], files: [] });
         expect(event.defaultPrevented).toBe(false);
     });
-    it('quotes a leading path so it is not interpreted as a slash command', () => {
+    it('sends dropped files as attachment paths the host reads at send time', () => {
         posted.length = 0;
         const input = document.getElementById('input') as HTMLTextAreaElement;
-        input.value = '';
+        [...document.querySelectorAll('.attach-chip-remove')].forEach(btn => (btn as HTMLElement).click());
+        input.value = 'see this';
         drop(document.getElementById('messages')!, { types: ['Files', 'text/uri-list'], getData: () => 'file:///new', items: [], files: [] });
         const request = posted.find(m => m.type === 'dropFiles');
         dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/new' }] });
         document.getElementById('btn-send')!.click();
-        expect(posted.find(m => m.type === 'prompt').text).toBe('"/new"');
+        const prompt = posted.find(m => m.type === 'prompt');
+        expect(prompt.text).toBe('see this');
+        expect(prompt.attachPaths).toEqual(['/new']);
     });
 });

@@ -15,8 +15,28 @@ export const MAX_ATTACH_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_ATTACH_CHARS = MAX_MENTION_FILE_CHARS;
 
 export interface AttachFileEntry {
+    /** Display name (basename). */
     name: string;
-    content: string;
+    /** Absolute path for host-read attachments; content for webview-read ones. */
+    path?: string;
+    content?: string;
+}
+
+/** Split a mixed attachment list into what the webview already read and what
+ *  the host must read from `path`. Webview-read entries keep their content;
+ *  path entries carry only name + path. */
+export function splitAttachments(entries: AttachFileEntry[]): {
+    contents: { name: string; content: string }[];
+    paths: string[];
+} {
+    const contents: { name: string; content: string }[] = [];
+    const paths: string[] = [];
+    for (const entry of entries) {
+        if (entry.path && !entry.content) paths.push(entry.path);
+        else if (typeof entry.content === 'string') contents.push({ name: entry.name, content: entry.content });
+        else if (entry.path) paths.push(entry.path);
+    }
+    return { contents, paths };
 }
 
 /** Binary sniff: a NUL byte in the first 8 KiB almost certainly means binary. */
@@ -38,10 +58,10 @@ export function normalizeAttachContent(content: string): string {
  *  Whitespace-only attachments contribute nothing and are skipped, so an
  *  "attachment" of an empty file can't start a turn by itself. */
 export function buildAttachContext(entries: AttachFileEntry[]): string {
-    const meaningful = entries.filter((e) => e.content.trim().length > 0);
+    const meaningful = entries.filter((e) => (e.content ?? '').trim().length > 0);
     return meaningful
         .map((e) => {
-            const content = normalizeAttachContent(e.content);
+            const content = normalizeAttachContent(e.content ?? '');
             const fence = fenceFor(content);
             return `\n\n[Attached file: ${e.name}]\n${fence}${langFromPath(e.name)}\n${content.trimEnd()}\n${fence}`;
         })

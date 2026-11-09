@@ -3,9 +3,27 @@ import {
     looksBinary,
     normalizeAttachContent,
     buildAttachContext,
+    splitAttachments,
     MAX_ATTACH_CHARS,
     type AttachFileEntry,
 } from '../../../shared/attach';
+
+describe('splitAttachments', () => {
+    it('separates webview-read content from host-read paths', () => {
+        const { contents, paths } = splitAttachments([
+            { name: 'pasted.txt', content: 'read in webview' },
+            { name: 'picked.py', path: '/workspace/picked.py' },
+        ]);
+        expect(contents).toEqual([{ name: 'pasted.txt', content: 'read in webview' }]);
+        expect(paths).toEqual(['/workspace/picked.py']);
+    });
+
+    it('prefers content when both are present', () => {
+        const { contents, paths } = splitAttachments([{ name: 'a.txt', path: '/x/a.txt', content: 'cached' }]);
+        expect(contents).toEqual([{ name: 'a.txt', content: 'cached' }]);
+        expect(paths).toEqual([]);
+    });
+});
 
 describe('looksBinary', () => {
     it('flags NUL bytes in the sample as binary', () => {

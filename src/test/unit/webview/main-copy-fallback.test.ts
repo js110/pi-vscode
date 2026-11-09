@@ -99,10 +99,10 @@ describe('webview copy paths', () => {
         // until the ack arrives the button must not claim success.
         const request = posted.find((m) => m.type === 'copyText');
         expect(request).toMatchObject({ type: 'copyText', text: 'const x = 1;' });
-        expect(btn.textContent).toBe('Copy');
+        expect(btn.querySelector('.codicon-check')).toBeNull();
 
         dispatch({ type: 'clipboardResult', requestId: request.requestId, ok: true });
-        expect(btn.textContent).toBe('Copied!');
+        expect(btn.querySelector('.codicon-check')).toBeTruthy();
     });
 
     it('keeps feedback local when navigator.clipboard works', async () => {
@@ -114,7 +114,7 @@ describe('webview copy paths', () => {
 
         expect(writeText).toHaveBeenCalledWith('const x = 1;');
         expect(posted.some((m) => m.type === 'copyText')).toBe(false);
-        expect(btn.textContent).toBe('Copied!');
+        expect(btn.querySelector('.codicon-check')).toBeTruthy();
     });
 
     it('falls back to the host bridge when navigator.clipboard rejects', async () => {
@@ -144,15 +144,17 @@ describe('webview copy paths', () => {
     it('routes out-of-order acknowledgements to the matching copy button', () => {
         const code = document.querySelector('.copy-btn') as HTMLButtonElement;
         const reply = document.querySelector('.msg-copy-btn') as HTMLButtonElement;
-        code.textContent = 'Copy';
+        // An earlier test may still be inside its feedback window.
+        const icon = code.querySelector('.codicon');
+        if (icon) icon.className = 'codicon codicon-copy codicon-xs';
         code.click();
         reply.click();
         const requests = posted.filter((m) => m.type === 'copyText');
         expect(requests).toHaveLength(2);
         dispatch({ type: 'clipboardResult', requestId: requests[1].requestId, ok: true });
         expect(reply.querySelector('.codicon-check')).toBeTruthy();
-        expect(code.textContent).toBe('Copy');
+        expect(code.querySelector('.codicon-check')).toBeNull();
         dispatch({ type: 'clipboardResult', requestId: requests[0].requestId, ok: true });
-        expect(code.textContent).toBe('Copied!');
+        expect(code.querySelector('.codicon-check')).toBeTruthy();
     });
 });

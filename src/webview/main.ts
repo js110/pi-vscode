@@ -11,14 +11,15 @@ import { rankSlashMenuItems } from '../shared/slash-commands';
 import { t, setLang, type TextKey } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseCodeDropUris, parseUriList, MAX_DROPPED_FILES } from '../shared/drop-files';
+import { splitAttachments, MAX_ATTACH_FILE_BYTES, looksBinary, type AttachFileEntry } from '../shared/attach';
 import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
 import { isQuoteTooLarge, MAX_QUOTE_CHARS } from '../shared/quote';
-import type { AttachFileEntry } from '../shared/attach';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
 import { ClipboardBridge } from './clipboard';
 import { installComposerFocus } from './composer-focus';
 import { transcriptSelectionText, rememberLiveTranscriptSelection, copyTargetText, clearTranscriptMark, installTranscriptMarkGuard } from './transcript-mark';
+import { buildTranscriptClipboardHtml } from './transcript-clipboard';
 import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown, setAvatarImages } from './render/messages';
 
 declare function acquireVsCodeApi(): {
@@ -475,7 +476,12 @@ function handleMessage(msg: ServerMessage): void {
                 let invalid = 0;
                 for (const result of msg.results) {
                     if (result.status === 'path' && result.path) {
-                        insertDroppedPathAtCursor(result.path);
+                        // Copilot routing: image files become image attachments,
+                        // directories become path references, files become
+                        // attachment chips the host reads at send time.
+                        if (result.image) attachHostImage(result.path, result.image);
+                        else if (result.directory) insertDroppedPathAtCursor(result.path);
+                        else attachPathChip(result.path);
                     } else if (result.status === 'limit') {
                         showNotice(t('attach.dropLimit', { n: MAX_DROPPED_FILES }));
                     } else if (result.status === 'invalid') {
@@ -1336,7 +1342,8 @@ function updateInputArea(): void {
 
     const attachBtn = document.getElementById('btn-attach');
     attachBtn?.addEventListener('click', () => {
-        requestPathPicker(['unknown']);
+        // Copilot "Add Context" flow: fuzzy workspace search in a QuickPick.
+        requestAttachmentPicker();
     });
 
     document.querySelector('.footer-model')?.addEventListener('click', (e) => {
@@ -2584,8 +2591,12 @@ function bindStableEvents(): void {
         if (items.some(item => item.kind === 'string' && item.type === 'text/plain')) return;
         const images = items.filter(item => item.kind === 'file' && item.type.startsWith('image/'))
             .map(item => item.getAsFile()).filter((file): file is File => !!file);
-        if (images.length) { e.preventDefault(); addClipboardImages(images); }
-        else if (items.some(item => item.kind === 'file')) { e.preventDefault(); requestPathPicker(['file']); }
+        if (images.length) { e.preventDefault(); addClipboardImages(images); return; }
+        // Copilot-style: a file on the clipboard (e.g. copied in the OS file
+        // manager) becomes an attachment chip, not a re-pick through a dialog.
+        const files = items.filter(item => item.kind === 'file')
+            .map(item => item.getAsFile()).filter((file): file is File => !!file);
+        if (files.length) { e.preventDefault(); addClipboardFiles(files); }
     });
 
     const inputContainer = document.querySelector('.input-container');
@@ -3013,8 +3024,11 @@ function sendMessage(): void {
     const text = input.value.trim();
     if (!text && state.pendingImages.length === 0 && state.pendingAttachments.length === 0) return;
     const images = state.pendingImages.length > 0 ? [...state.pendingImages] : undefined;
-    const attachments =
-        state.pendingAttachments.length > 0 ? [...state.pendingAttachments] : undefined;
+    // Chips split by read location: the webview read pasted files directly
+    // (content), picked/dropped ones only carry a path for the host to read.
+    const { contents: attachContents, paths: attachPaths } = splitAttachments(state.pendingAttachments);
+    const attachments = attachContents.length > 0 ? attachContents : undefined;
+    const attachmentPaths = attachPaths.length > 0 ? attachPaths : undefined;
     // Only refs still present in the draft as whole tokens are real; the rest
     // were deleted by the user while editing.
     const mentions = state.mentions.filter((tok) => hasMentionToken(text, tok));
@@ -3041,12 +3055,98 @@ function sendMessage(): void {
         images,
         mentions: mentions.length > 0 ? mentions : undefined,
         attachContents: attachments,
+        attachPaths: attachmentPaths,
         quotedText,
     });
     input.focus({ preventScroll: true });
 }
 
 let imageReadGeneration = 0;
+
+/** Decode a base64 data: URL back into a File (host-read images arrive
+ *  this way); atob keeps this dependency-free and testable. */
+function dataUrlToFile(dataUrl: string, name: string): File | null {
+    const match = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl);
+    if (!match) return null;
+    try {
+        const binary = atob(match[2]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new File([bytes], name, { type: match[1] });
+    } catch {
+        return null;
+    }
+}
+
+/** Attach a host-read image (data URL) as a thumbnail chip, resizing it like
+ *  a pasted image. Picked/dropped image files become image attachments —
+ *  Copilot's route — rather than unreadable path text. */
+function attachHostImage(path: string, dataUrl: string): void {
+    if (!state.supportsImages) {
+        showNotice(t('image.unsupported'));
+        return;
+    }
+    if (state.pendingImages.length >= MAX_IMAGES_PER_PROMPT) {
+        showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }), ERROR_HINT_MS);
+        return;
+    }
+    const gen = imageReadGeneration;
+    void (async () => {
+        let res: { ok: true; dataUrl: string } | { ok: false; reason: 'tooLarge' | 'invalid' };
+        const file = dataUrlToFile(dataUrl, path.split('/').pop() ?? 'image');
+        if (!file) {
+            res = { ok: false, reason: 'invalid' };
+        } else {
+            res = await normalizeImageFile(file);
+        }
+        if (gen !== imageReadGeneration) return;
+        if (!res.ok) {
+            showError(t(res.reason === 'tooLarge' ? 'image.tooLarge' : 'image.invalid'), ERROR_HINT_MS);
+            return;
+        }
+        // Concurrent host reads can race past the cap; re-check like the
+        // clipboard-image path does.
+        if (state.pendingImages.length >= MAX_IMAGES_PER_PROMPT) {
+            showError(t('image.tooMany', { n: MAX_IMAGES_PER_PROMPT }), ERROR_HINT_MS);
+            return;
+        }
+        state.pendingImages.push(res.dataUrl);
+        updateImageChips();
+    })();
+}
+
+/** Copilot-style file chip: picked/dropped files attach by path; the host
+ *  reads their content when the prompt is sent. */
+function attachPathChip(path: string): void {
+    if (state.pendingAttachments.length >= MAX_DROPPED_FILES) {
+        showNotice(t('attach.dropLimit', { n: MAX_DROPPED_FILES }));
+        return;
+    }
+    if (state.pendingAttachments.some((a) => a.path === path)) return;
+    state.pendingAttachments.push({ name: path.split('/').pop() ?? path, path });
+    updateAttachChips();
+}
+
+/** A non-image file on the clipboard becomes a content attachment: text
+ *  files are read here in the webview, binary ones are refused inline. */
+function addClipboardFiles(files: File[]): void {
+    const gen = imageReadGeneration;
+    for (const file of files.slice(0, MAX_DROPPED_FILES)) {
+        if (file.size > MAX_ATTACH_FILE_BYTES) {
+            showError(t('attach.tooLarge', { name: file.name }), ERROR_HINT_MS);
+            continue;
+        }
+        void file.arrayBuffer().then((buf) => {
+            if (gen !== imageReadGeneration) return;
+            if (looksBinary(buf)) {
+                showError(t('attach.binaryUnsupported', { name: file.name }), ERROR_HINT_MS);
+                return;
+            }
+            state.pendingAttachments.push({ name: file.name, content: new TextDecoder().decode(buf) });
+            updateAttachChips();
+        });
+    }
+}
 
 function addClipboardImages(files: File[]): void {
     if (!state.supportsImages) {
@@ -3259,35 +3359,54 @@ function installCopyDefense(): void {
         return start != null && end != null && start !== end;
     };
 
+    // Layer 1, Copilot-style (chatListWidget.handleCopy): while the selection
+    // is alive, rewrite the native copy so the paste keeps its shape. The
+    // plain flavor skips non-selectable chrome; the rich flavor is a cleaned
+    // clone that also strips hover toolbars and reduces webview-only link
+    // targets to the labels the reader saw.
     document.addEventListener('copy', (event) => {
         if (focusedFieldHasSelection(event.target)) return;
+        const selection = document.getSelection();
         const text = transcriptSelectionText();
-        if (!text || !event.clipboardData) return;
+        if (!text || !event.clipboardData || !selection) return;
+        const transcriptRoot = document.getElementById('messages');
+        if (!transcriptRoot) return;
         event.clipboardData.setData('text/plain', text);
+        const html = buildTranscriptClipboardHtml(selection, transcriptRoot);
+        if (html) event.clipboardData.setData('text/html', html);
         event.preventDefault();
     });
 
+    // Layer 2: only once VS Code's focus restoration has already collapsed
+    // the selection does the captured mark stand in. With a live selection
+    // the native path runs and layer 1 carries both flavors, so the keydown
+    // hook must not preempt it.
     document.addEventListener('keydown', (event) => {
         if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
         if (event.key.toLowerCase() !== 'c') return;
         if (focusedFieldHasSelection(event.target)) return;
+        if (transcriptSelectionText()) return;
         const text = copyTargetText();
         if (!text) return;
-        // The user's mark is the copy target, not whatever element VS Code
-        // restored focus to. Stop the default path and copy it ourselves.
         event.preventDefault();
         event.stopImmediatePropagation();
         copyText(text, notifyCopied);
     }, true);
 
+    // Copilot ChatContext parity: the transcript context menu is always
+    // available. "Copy" copies the selection when one is alive, otherwise the
+    // response under the cursor (CopyItemAction semantics).
     document.getElementById('messages')?.addEventListener('contextmenu', (event) => {
-        // Only take over when a selection is visibly alive: a dead-selection
-        // right-click keeps the native menu (which still offers Select All
-        // etc.), and the keyboard path covers the collapsed case.
-        const text = transcriptSelectionText();
-        if (!text) return;
         event.preventDefault();
-        showTranscriptContextMenu((event as MouseEvent).clientX, (event as MouseEvent).clientY, text);
+        const me = event as MouseEvent;
+        const target = me.target as HTMLElement | null;
+        const turn = target?.closest?.('.turn-assistant') as HTMLElement | null;
+        const idx = parseInt(turn?.querySelector('[data-msg-index]')?.getAttribute('data-msg-index') ?? '-1', 10);
+        const responseText = idx >= 0 && state.messages[idx] ? extractText(state.messages[idx]).trim() : '';
+        showTranscriptContextMenu(me.clientX, me.clientY, {
+            selection: transcriptSelectionText(),
+            responseText,
+        });
     });
 }
 
@@ -3298,20 +3417,43 @@ function hideTranscriptContextMenu(): void {
     transcriptMenu = null;
 }
 
-function showTranscriptContextMenu(x: number, y: number, text: string): void {
+function showTranscriptContextMenu(x: number, y: number, ctx: { selection: string | null; responseText: string }): void {
     hideTranscriptContextMenu();
     const menu = el('div', 'ctx-menu');
     menu.setAttribute('role', 'menu');
-    const item = el('button', 'ctx-menu-item') as HTMLButtonElement;
-    item.type = 'button';
-    item.setAttribute('role', 'menuitem');
-    item.innerHTML = `<span class="codicon codicon-copy codicon-xs"></span><span>${escHtml(t('ctx.copySelection'))}</span>`;
-    item.addEventListener('click', (e) => {
-        e.stopPropagation();
-        copyText(text, notifyCopied);
-        hideTranscriptContextMenu();
-    });
-    menu.appendChild(item);
+    // "Copy" is smart, like Copilot's CopyItemAction: the live selection
+    // wins; a dead-selection right-click copies the response under the cursor.
+    const copyPayload = ctx.selection ?? (ctx.responseText || null);
+    const entries: Array<{ label: string; icon: string; enabled: boolean; run: () => void }> = [
+        {
+            label: t('ctx.copy'),
+            icon: 'codicon-copy',
+            enabled: !!copyPayload,
+            run: () => { if (copyPayload) copyText(copyPayload, notifyCopied); },
+        },
+        {
+            label: t('ctx.copyAll'),
+            icon: 'codicon-copy',
+            enabled: state.messages.some((m) => extractText(m).trim()),
+            run: () => {
+                const all = state.messages.map((m) => extractText(m).trim()).filter(Boolean).join('\n\n');
+                if (all) copyText(all, notifyCopied);
+            },
+        },
+    ];
+    for (const entry of entries) {
+        const item = el('button', 'ctx-menu-item') as HTMLButtonElement;
+        item.type = 'button';
+        item.setAttribute('role', 'menuitem');
+        if (!entry.enabled) item.disabled = true;
+        item.innerHTML = `<span class="codicon codicon-${entry.icon} codicon-xs"></span><span>${escHtml(entry.label)}</span>`;
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            entry.run();
+            hideTranscriptContextMenu();
+        });
+        menu.appendChild(item);
+    }
     document.body.appendChild(menu);
     const rect = menu.getBoundingClientRect();
     if (x + rect.width > window.innerWidth - 4) x = Math.max(4, x - rect.width);
@@ -3387,8 +3529,9 @@ function updateAttachChips(): void {
         .map(
             (a, i) => `
         <span class="attach-chip">
+            <span class="codicon codicon-file codicon-xs attach-chip-icon"></span>
             <span class="attach-chip-name" title="${escAttr(a.name)}">${escHtml(a.name)}</span>
-            <button class="attach-chip-remove" data-index="${i}" title="${escHtml(t('image.remove'))}">&#10005;</button>
+            <button class="attach-chip-remove" data-index="${i}" title="${escHtml(t('image.remove'))}" aria-label="${escAttr(t('image.remove'))}">&#10005;</button>
         </span>
     `,
         )
@@ -3428,9 +3571,12 @@ function bindCopyButtons(): void {
             const codeEl = document.getElementById(id);
             if (!codeEl) return;
             copyText(codeEl.textContent ?? '', () => {
+                // Copilot's copy feedback: the icon swaps to a check for a beat.
+                const icon = btn.querySelector('.codicon');
+                if (!icon) return;
                 flashTransientFeedback(
-                    () => { btn.textContent = t('code.copied'); },
-                    () => { btn.textContent = t('code.copy'); },
+                    () => { icon.className = 'codicon codicon-check codicon-xs'; },
+                    () => { icon.className = 'codicon codicon-copy codicon-xs'; },
                 );
             });
         });
@@ -3641,6 +3787,15 @@ function requestPathPicker(kinds: ('file' | 'directory' | 'unknown')[]): void {
     const requestId = ++mentionQuerySeq;
     dropPendingRequestIds.add(requestId);
     vscode.postMessage({ type: 'chooseDroppedPaths', kinds, requestId });
+}
+
+/** Copilot "Add Context": the paperclip opens the host's fuzzy workspace
+ *  file picker (multi-select, browse fallback). Results arrive as a
+ *  dropResolved batch, reusing the drop routing. */
+function requestAttachmentPicker(): void {
+    const requestId = ++mentionQuerySeq;
+    dropPendingRequestIds.add(requestId);
+    vscode.postMessage({ type: 'pickAttachments', requestId });
 }
 let mentionDebounce: ReturnType<typeof setTimeout> | undefined;
 

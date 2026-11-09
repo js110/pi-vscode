@@ -196,7 +196,6 @@ const EN = {
 
     // Code block
     'code.copy': 'Copy',
-    'code.copied': 'Copied!',
     'code.apply': 'Apply',
     'code.showMore': 'Show more',
     'code.showLess': 'Show less',
@@ -265,7 +264,8 @@ const EN = {
     'quote.detach': 'Remove quote',
     'quote.intro': 'Regarding this selection from the conversation:',
     'quote.tooLarge': 'Selection too long to quote (max {n} characters).',
-    'ctx.copySelection': 'Copy selection',
+    'ctx.copy': 'Copy',
+    'ctx.copyAll': 'Copy all',
 
     // Send to Pi (editor context menu)
     'sendToPi.intro': 'Here is a code selection from `{path}:{range}`:',
@@ -287,6 +287,9 @@ const EN = {
     'attach.chooseType': 'Select a file or folder',
     'attach.chooseFile': 'File',
     'attach.chooseFolder': 'Folder',
+    'attach.browse': 'Browse for files…',
+    'attach.searchPlaceholder': 'Search attachments',
+    'attach.readFailed': 'Could not read "{name}"',
 
     // Commit message generation
     'commit.generatingPlaceholder': 'Generating commit message…',
@@ -659,7 +662,6 @@ const ZH: Record<TextKey, string> = {
     'sessions.deleteConfirm': '删除会话「{name}」？其文件将移至本地 .pi-session-trash 目录。',
 
     'code.copy': '复制',
-    'code.copied': '已复制！',
     'code.apply': '应用',
     'code.showMore': '展开',
     'code.showLess': '收起',
@@ -726,7 +728,8 @@ const ZH: Record<TextKey, string> = {
     'quote.detach': '移除引用',
     'quote.intro': '针对对话中选中的以下内容：',
     'quote.tooLarge': '选段过长，无法引用（最多 {n} 字符）。',
-    'ctx.copySelection': '复制选段',
+    'ctx.copy': '复制',
+    'ctx.copyAll': '复制全部对话',
 
     // Send to Pi (editor context menu)
     'sendToPi.intro': '这是 `{path}:{range}` 处的选区代码：',
@@ -747,6 +750,9 @@ const ZH: Record<TextKey, string> = {
     'attach.chooseType': '选择文件或文件夹',
     'attach.chooseFile': '文件',
     'attach.chooseFolder': '文件夹',
+    'attach.browse': '浏览文件…',
+    'attach.searchPlaceholder': '搜索要附加的文件',
+    'attach.readFailed': '无法读取「{name}」',
 
     // Commit message generation
     'commit.generatingPlaceholder': '正在生成 commit message…',

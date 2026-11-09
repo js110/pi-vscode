@@ -98,11 +98,12 @@ describe('copy defense', () => {
         expect(data.getData('text/plain')).toBe('marked passage');
     });
 
-    it('Cmd/Ctrl+C with a transcript selection copies it and stops the default path', async () => {
+    it('Cmd/Ctrl+C with a live transcript selection takes the native path (copy event carries both flavors)', async () => {
         stubClipboard({ writeText: vi.fn(async () => {}) });
         selectTranscriptText(4, 18);
-        // Focus the composer the way VS Code's focus restoration does — the
-        // selection must still be the copy target.
+        // Focus the composer the way VS Code's focus restoration does. With a
+        // live selection the keydown hook stands down (Copilot parity) and the
+        // browser's own copy event follows, where the hook rewrites flavors.
         const input = document.getElementById('input') as HTMLTextAreaElement;
         input.focus();
         input.setSelectionRange(0, 0);
@@ -112,11 +113,14 @@ describe('copy defense', () => {
         });
         Object.defineProperty(keydown, 'target', { value: input });
         document.dispatchEvent(keydown);
+        expect(keydown.defaultPrevented).toBe(false);
 
-        expect(keydown.defaultPrevented).toBe(true);
-        const local = (navigator.clipboard as unknown as { writeText: ReturnType<typeof vi.fn> }).writeText;
-        expect(local).toHaveBeenCalledWith('marked passage');
-        expect(keydown.defaultPrevented).toBe(true);
+        const data = new DataTransfer();
+        const event = new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true });
+        document.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+        expect(data.getData('text/plain')).toBe('marked passage');
+        expect(data.getData('text/html')).toContain('marked passage');
     });
 
     it('Cmd/Ctrl+C falls back to the host bridge when the iframe clipboard rejects', async () => {
@@ -126,7 +130,15 @@ describe('copy defense', () => {
             }),
         });
         selectTranscriptText(4, 18);
+        // Focus restoration collapses the selection before the key arrives —
+        // the bridge backstop serves the captured mark when the iframe
+        // clipboard rejects the write.
+        document.dispatchEvent(new Event('selectionchange'));
+        const input = document.getElementById('input') as HTMLTextAreaElement;
+        input.focus();
+        window.getSelection()?.removeAllRanges();
         const keydown = new KeyboardEvent('keydown', { key: 'c', metaKey: true, bubbles: true, cancelable: true });
+        Object.defineProperty(keydown, 'target', { value: input });
         document.dispatchEvent(keydown);
         await nextFrame();
 
@@ -212,7 +224,7 @@ describe('copy defense', () => {
         const menu = document.querySelector('.ctx-menu') as HTMLElement | null;
         expect(menu).toBeTruthy();
         const item = menu!.querySelector('.ctx-menu-item') as HTMLButtonElement;
-        expect(item.textContent).toContain('Copy selection');
+        expect(item.textContent).toContain('Copy');
 
         stubClipboard({ writeText: vi.fn(async () => {}) });
         item.click();
@@ -222,12 +234,20 @@ describe('copy defense', () => {
         expect(document.querySelector('.ctx-menu')).toBeNull();
     });
 
-    it('right-click without a transcript selection keeps the native menu', () => {
+    it('right-click without a selection still opens the menu (Copilot ChatContext parity)', () => {
         window.getSelection()?.removeAllRanges();
         const messages = document.getElementById('messages') as HTMLElement;
         const ctx = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 });
         messages.dispatchEvent(ctx);
-        expect(ctx.defaultPrevented).toBe(false);
-        expect(document.querySelector('.ctx-menu')).toBeNull();
+        expect(ctx.defaultPrevented).toBe(true);
+        const menu = document.querySelector('.ctx-menu') as HTMLElement | null;
+        expect(menu).toBeTruthy();
+        const items = [...menu!.querySelectorAll('.ctx-menu-item')] as HTMLButtonElement[];
+        // Copy is disabled without a selection or response under the cursor;
+        // Copy All still serves the whole conversation.
+        expect(items[0].textContent).toContain('Copy');
+        expect(items[0].disabled).toBe(true);
+        expect(items[1].textContent).toContain('Copy all');
+        expect(items[1].disabled).toBe(false);
     });
 });

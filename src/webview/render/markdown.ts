@@ -77,13 +77,15 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string | undefi
     // diff/patch blocks are not applyable; a "diff:<lang>" label bypasses the
     // plain-lang set, so key off the base language as well.
     const applyable = !DIFF_LANGS.has(baseLang) && !NON_APPLY_LANGS.has(normalizedLang);
+    // Copilot pattern: icon-only toolbar buttons (no text label to leak into
+    // selections) and an unselectable header excluded from clipboard clones.
     const applyBtn = applyable
-        ? `<button class="apply-btn" data-apply-id="${id}" data-apply-lang="${escAttr(normalizedLang)}">${escHtml(t('code.apply'))}</button>`
+        ? `<button class="apply-btn" data-apply-id="${id}" data-apply-lang="${escAttr(normalizedLang)}" title="${escAttr(t('code.apply'))}" aria-label="${escAttr(t('code.apply'))}"><span class="codicon codicon-diff codicon-xs"></span></button>`
         : '';
     return `<div class="code-block-wrapper${collapsible ? ' code-block-collapsed' : ''}">
-        <div class="code-block-header">${langLabel ? `<span class="code-lang">${escHtml(langLabel)}</span>` : ''}<span class="code-block-actions">${applyBtn}<button class="copy-btn" data-code-id="${id}">${escHtml(t('code.copy'))}</button></span></div>
+        <div class="code-block-header" data-no-copy="1">${langLabel ? `<span class="code-lang">${escHtml(langLabel)}</span>` : ''}<span class="code-block-actions" role="toolbar">${applyBtn}<button class="copy-btn" data-code-id="${id}" title="${escAttr(t('code.copy'))}" aria-label="${escAttr(t('code.copy'))}"><span class="codicon codicon-copy codicon-xs"></span></button></span></div>
         <pre class="code-block-pre${DIFF_LANGS.has(baseLang) ? ' diff-pre' : ''}${PROSE_LANGS.has(baseLang) ? ' code-block-prose' : ''}" id="${id}"><code class="code-block-code hljs">${body}</code></pre>
-        ${collapsible ? `<button class="code-block-toggle" data-toggle-id="${id}">${escHtml(t('code.showMore'))}</button>` : ''}
+        ${collapsible ? `<button class="code-block-toggle" data-toggle-id="${id}" data-no-copy="1">${escHtml(t('code.showMore'))}</button>` : ''}
     </div>`;
 };
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ServerMessage } from '../../../shared/protocol';
 
 describe('choose a file path', () => {
-    it('inserts the selected file path without reading file contents', async () => {
+    it('opens the Copilot-style attachment picker and routes results into chips', async () => {
         document.body.innerHTML = '<div id="app"></div>';
         const posted: any[] = [];
         const dispatch = (message: ServerMessage) => window.dispatchEvent(new MessageEvent('message', { data: message }));
@@ -17,19 +17,20 @@ describe('choose a file path', () => {
         await import('../../../webview/main');
         await new Promise(resolve => setTimeout(resolve, 60));
         document.getElementById('btn-attach')!.click();
-        const request = posted.find(m => m.type === 'chooseDroppedPaths');
-        expect(request.kinds).toEqual(['unknown']);
-        dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/home/paper.pdf' }, { status: 'path', path: '/home/image.png' }] });
+        // Copilot "Add Context": the paperclip asks the host for the fuzzy
+        // workspace picker instead of the OS dialog.
+        const request = posted.find(m => m.type === 'pickAttachments');
+        expect(request).toMatchObject({ type: 'pickAttachments' });
+        dispatch({ type: 'dropResolved', requestId: request.requestId, results: [{ status: 'path', path: '/home/paper.pdf' }, { status: 'path', path: '/workspace/docs', directory: true }] });
+        // Files become attachment chips; directories stay path references.
+        const chips = [...document.querySelectorAll('.attach-chip-name')].map(el => el.textContent);
+        expect(chips).toEqual(['paper.pdf']);
         const input = document.getElementById('input') as HTMLTextAreaElement;
-        expect(input.value).toContain('/home/paper.pdf');
-        expect(input.value).toContain('/home/image.png');
-        expect(document.querySelector('.image-chip')).toBeNull();
-        expect(document.querySelector('.attach-chip')).toBeNull();
+        expect(input.value).toContain('/workspace/docs');
         document.getElementById('btn-send')!.click();
         const prompt = posted.find(m => m.type === 'prompt');
-        expect(prompt.text).toContain('/home/paper.pdf');
+        expect(prompt.attachPaths).toEqual(['/home/paper.pdf']);
         expect(prompt.images).toBeUndefined();
-        expect(prompt.attachContents).toBeUndefined();
     });
 
     it('preserves clipboard screenshots and normal text paste', async () => {

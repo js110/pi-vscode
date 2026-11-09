@@ -17,7 +17,7 @@ import { DiffManager } from './diff';
 import { CheckpointManager } from './checkpoint';
 import { decideCompactionPrompt, type CompactionStage } from '../shared/compaction';
 import { preparePromptImages, type ImagePayload } from '../shared/image-input';
-import { buildAttachContext } from '../shared/attach';
+import { buildAttachContext, type AttachFileEntry } from '../shared/attach';
 import {
     parseMentionToken,
     hasMentionToken,
@@ -83,6 +83,7 @@ export interface WorkspaceAdapter {
     resolveMentionPath(path: string): Promise<string | null>;
     readTextFile(fsPath: string): Promise<string | null>;
     resolveDroppedFiles(uris: string[]): Promise<DropResolveResult[]>;
+    resolveAttachmentPaths?(paths: string[]): Promise<DropResolveResult[]>;
 }
 
 /** User-facing dialogs, settings, and clipboard. */
@@ -92,6 +93,7 @@ export interface UIAdapter {
     openSettings(): void;
     writeClipboard(text: string): Promise<void>;
     chooseDroppedPaths?(kinds: ('file' | 'directory' | 'unknown')[]): Promise<string[]>;
+    pickAttachments?(): Promise<string[]>;
 }
 
 /** Agent lifecycle capabilities: apply flow, compaction, export, notify. */
@@ -1070,6 +1072,33 @@ export class TabManager {
                 if (msg.attachContents && msg.attachContents.length > 0) {
                     text += buildAttachContext(msg.attachContents);
                 }
+                // Path attachments were picked/dropped as chips; the host reads
+                // them here (the webview cannot read absolute paths).
+                if (msg.attachPaths && msg.attachPaths.length > 0) {
+                    const entries: AttachFileEntry[] = [];
+                    for (const p of msg.attachPaths.slice(0, MAX_DROPPED_FILES)) {
+                        const raw = await this._adapters.workspace.readTextFile(p);
+                        const name = p.split('/').pop() ?? p;
+                        if (raw === null) {
+                            this._adapters.transport.post({
+                                type: 'error',
+                                message: t('attach.readFailed', { name }),
+                            });
+                            continue;
+                        }
+                        // Binary files would inline as mojibake — refuse them
+                        // like the webview paste path does (Copilot parity).
+                        if (raw.includes('\0')) {
+                            this._adapters.transport.post({
+                                type: 'error',
+                                message: t('attach.binaryUnsupported', { name }),
+                            });
+                            continue;
+                        }
+                        entries.push({ name, content: raw });
+                    }
+                    text += buildAttachContext(entries);
+                }
                 // Nothing left after stripping dead refs / empty attachments
                 // and no images: skip the turn entirely.
                 if (!text.trim() && !(images && images.length > 0)) {
@@ -1425,9 +1454,25 @@ export class TabManager {
                 this._adapters.transport.post({ type: 'dropResolved', requestId: msg.requestId, results });
                 break;
             }
+            case 'pickAttachments': {
+                const picked = await this._adapters.ui.pickAttachments?.() ?? [];
+                // Always answer, even on cancel: the webview keeps the
+                // requestId pending until a dropResolved arrives.
+                const results: DropResolveResult[] = picked.length
+                    ? await (this._adapters.workspace.resolveAttachmentPaths?.(picked.slice(0, MAX_DROPPED_FILES)) ?? [])
+                    : [];
+                if (picked.length > MAX_DROPPED_FILES) results.push({ status: 'limit' });
+                this._adapters.transport.post({ type: 'dropResolved', requestId: msg.requestId, results });
+                break;
+            }
             case 'chooseDroppedPaths': {
                 const paths = await this._adapters.ui.chooseDroppedPaths?.(msg.kinds) ?? [];
-                const results: DropResolveResult[] = paths.slice(0, MAX_DROPPED_FILES).map(path => ({ status: 'path', path }));
+                // Classify like drops: picked folders become path references,
+                // images become thumbnail chips, files become attachment chips.
+                const results: DropResolveResult[] = paths.length
+                    ? await (this._adapters.workspace.resolveAttachmentPaths?.(paths.slice(0, MAX_DROPPED_FILES))
+                        ?? paths.slice(0, MAX_DROPPED_FILES).map(path => ({ status: 'path' as const, path })))
+                    : [];
                 if (paths.length > MAX_DROPPED_FILES) results.push({ status: 'limit' });
                 this._adapters.transport.post({ type: 'dropResolved', requestId: msg.requestId, results });
                 break;

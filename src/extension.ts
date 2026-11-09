@@ -85,7 +85,9 @@ const MENTION_READ_HARD_CAP = 5 * 1024 * 1024;
 
 let mentionFileSnapshot: { at: number; files: string[] } | null = null;
 
-async function searchWorkspaceFiles(query: string): Promise<string[]> {
+/** Full workspace file snapshot for the attachment picker (Copilot's "Add
+ *  Context" flow runs the fuzzy match itself inside the QuickPick). */
+async function workspaceFileList(): Promise<string[]> {
     if (!mentionFileSnapshot || Date.now() - mentionFileSnapshot.at > MENTION_FILE_TTL_MS) {
         const uris = await vscode.workspace.findFiles(
             '**/*',
@@ -97,7 +99,12 @@ async function searchWorkspaceFiles(query: string): Promise<string[]> {
             files: uris.map((u) => vscode.workspace.asRelativePath(u).replace(/\\/g, '/')),
         };
     }
-    return fuzzyFilterFiles(mentionFileSnapshot.files, query, MAX_MENTION_RESULTS);
+    return mentionFileSnapshot.files;
+}
+
+async function searchWorkspaceFiles(query: string): Promise<string[]> {
+    const files = await workspaceFileList();
+    return fuzzyFilterFiles(files, query, MAX_MENTION_RESULTS);
 }
 
 async function searchWorkspaceSymbols(query: string): Promise<MentionSymbolItem[]> {
@@ -218,6 +225,8 @@ export async function activate(context: vscode.ExtensionContext) {
             resolveMentionPath: (path: string) => resolveMentionPath(path),
             readTextFile: (fsPath: string) => readMentionFile(fsPath),
             resolveDroppedFiles: (uris: string[]) => resolveDroppedFiles(uris),
+            resolveAttachmentPaths: (paths: string[]) =>
+                resolveDroppedFiles(paths.map((p) => vscode.Uri.file(p).toString())),
         };
 
         const ui = {
@@ -231,6 +240,38 @@ export async function activate(context: vscode.ExtensionContext) {
             openSettings: () => void vscode.commands.executeCommand('pi-agent.openSettings'),
             writeClipboard: async (text: string) => {
                 await vscode.env.clipboard.writeText(text);
+            },
+            /** Copilot "Add Context" flow: fuzzy workspace file search in a
+             *  multi-select QuickPick, with an OS browse entry as fallback. */
+            pickAttachments: async (): Promise<string[]> => {
+                const files = await workspaceFileList();
+                const items: Array<vscode.QuickPickItem & { pickedPath?: string; browse?: boolean }> = [
+                    ...files.map((f) => ({ label: f, pickedPath: f })),
+                    { label: `$(folder-opened) ${t('attach.browse')}`, browse: true, alwaysShow: true },
+                ];
+                const picked = await vscode.window.showQuickPick(items, {
+                    canPickMany: true,
+                    placeHolder: t('attach.searchPlaceholder'),
+                    matchOnDescription: true,
+                    matchOnDetail: true,
+                });
+                if (!picked || picked.length === 0) return [];
+                const paths: string[] = [];
+                for (const item of picked) {
+                    if (item.browse) {
+                        const selected = await vscode.window.showOpenDialog({
+                            canSelectFiles: true,
+                            canSelectFolders: true,
+                            canSelectMany: true,
+                            openLabel: t('attach.selectFile'),
+                        });
+                        paths.push(...(selected?.filter((uri) => uri.scheme === 'file').map((uri) => uri.fsPath) ?? []));
+                    } else if (item.pickedPath) {
+                        const abs = await resolveMentionPath(item.pickedPath);
+                        if (abs) paths.push(abs);
+                    }
+                }
+                return paths;
             },
             chooseDroppedPaths: async (kinds: ('file' | 'directory' | 'unknown')[]) => {
                 const paths: string[] = [];

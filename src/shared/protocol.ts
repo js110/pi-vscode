@@ -257,7 +257,7 @@ export type ClientMessage =
     | { type: 'extensionUiInput'; id: string; data: string; width?: number }
     | { type: 'extensionUiClose'; id: string }
     | { type: 'composerChanged'; text: string }
-    | { type: 'prompt'; text: string; images?: string[]; mentions?: string[]; attachContents?: { name: string; content: string }[]; bypassSlashCommands?: boolean; quotedText?: string }
+    | { type: 'prompt'; text: string; images?: string[]; mentions?: string[]; attachContents?: { name: string; content: string }[]; attachPaths?: string[]; bypassSlashCommands?: boolean; quotedText?: string }
     /** Roll the session back to the start of `turn` (user-turn ordinal) and
      *  send `text` as the replacement prompt (edit / regenerate). */
     | { type: 'replayTurn'; turn: number; text: string; images?: string[] }
@@ -278,6 +278,9 @@ export type ClientMessage =
     | { type: 'togglePinSession'; sessionPath: string }
     | { type: 'searchSessions'; query: string; requestId: number }
     | { type: 'chooseDroppedPaths'; kinds: ('file' | 'directory' | 'unknown')[]; requestId: number }
+    /** Copilot-style "Add Context" picker: fuzzy workspace file search plus
+     *  a browse entry, multi-select. Results arrive via `dropResolved`. */
+    | { type: 'pickAttachments'; requestId: number }
     | { type: 'getState' }
     | { type: 'approveToolCall'; toolCallId: string }
     | { type: 'rejectToolCall'; toolCallId: string }
@@ -345,11 +348,15 @@ export interface MentionSymbolItem {
     line: number;
 }
 
-/** Per-URI outcome of a drag-and-drop file resolution. */
+/** Per-URI outcome of a drag-and-drop or attachment-pick resolution. */
 export interface DropResolveResult {
     status: 'path' | 'invalid' | 'limit';
     /** Absolute filesystem path. */
     path?: string;
+    /** True when `path` names a directory (attached as a path reference). */
+    directory?: boolean;
+    /** data: URL for an image file the host already read (thumbnail chip). */
+    image?: string;
 }
 
 /** Display info for the active editor selection (Copilot-style chip). */
