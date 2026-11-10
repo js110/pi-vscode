@@ -1231,6 +1231,11 @@ export class TabManager {
                 break;
             case 'abort': {
                 await tab.session.abort();
+                // The aborted run can never consume its pending approvals, so
+                // settle them now instead of leaving the cards and promises
+                // dangling for the rest of the tab's life.
+                this._settleApprovals(tab);
+                this._emitStateChange();
                 break;
             }
             case 'getModels': {
@@ -1247,27 +1252,17 @@ export class TabManager {
                 this._emitStateChange();
                 break;
             case 'newSession':
+                if (!this._canSwitchSession(tab, '/new')) break;
                 if (await tab.session.newSession() === false) break;
                 if (tab.lock) {
                     await tab.lock.release();
                 }
-                tab.diffManager.clearAll();
-                tab.checkpointManager.clearAll();
-                tab.turnCounter = 0;
-                this._resetStreaming(tab);
-                tab.messageMeta.clear();
-                tab.suspendedMessages = [];
-                tab.messagesDirty = true;
-                tab.queuedMessages = [];
-                tab.imageAssets.clear();
-                tab.imageData.clear();
-                tab.compactionStage = 'none';
-                tab.compactionPrompt = null;
+                this._resetTabForSessionSwitch(tab, 0);
                 tab.name = 'New Agent';
-                tab.cacheWarmingDecision = undefined;
                 this._emitStateChange();
                 break;
             case 'loadSession':
+                if (!this._canSwitchSession(tab, '/resume')) break;
                 if (await tab.session.loadSession(msg.sessionPath) === false) {
                     // A silent break here reads as "click did nothing" in the
                     // webview — surface the failure like every other action.
@@ -1277,18 +1272,7 @@ export class TabManager {
                 if (tab.lock) {
                     await tab.lock.adopt(msg.sessionPath);
                 }
-                tab.diffManager.clearAll();
-                tab.checkpointManager.clearAll();
-                tab.suspendedMessages = [];
-                tab.messagesDirty = true;
-                tab.queuedMessages = [];
-                tab.imageAssets.clear();
-                tab.imageData.clear();
-                tab.compactionStage = 'none';
-                tab.compactionPrompt = null;
-                tab.cacheWarmingDecision = undefined;
-                this._resetStreaming(tab);
-                tab.messageMeta.clear();
+                this._resetTabForSessionSwitch(tab, this._countUserTurns(tab));
                 this._updateTabName(tab);
                 this._emitStateChange();
                 if (msg.openTree) this._postSessionTree(tab);
@@ -1298,18 +1282,13 @@ export class TabManager {
                 const currentPath = tab.session.getCurrentSessionPath();
                 const targetPath = msg.sessionPath;
                 if (targetPath && currentPath !== targetPath) {
+                    if (!this._canSwitchSession(tab, '/name')) break;
                     // 方案B：加载目标会话后改名，并停留在该会话
                     if (await tab.session.loadSession(targetPath) === false) break;
                     if (tab.lock) {
                         await tab.lock.adopt(targetPath);
                     }
-                    tab.diffManager.clearAll();
-                    tab.checkpointManager.clearAll();
-                    tab.suspendedMessages = [];
-                    tab.messagesDirty = true;
-                    tab.queuedMessages = [];
-                    this._resetStreaming(tab);
-                    tab.messageMeta.clear();
+                    this._resetTabForSessionSwitch(tab, this._countUserTurns(tab));
                     tab.session.setSessionName(clean);
                     this._updateTabName(tab);
                 } else {
@@ -1337,9 +1316,13 @@ export class TabManager {
                     t('sessions.deleteConfirm', { name: shown }),
                 );
                 if (!yes) break;
-                for (const [tabId, t] of [...this._tabs]) {
-                    if (t.session.getCurrentSessionPath() === targetPath) {
-                        await this._closeTab(tabId);
+                // A session open in a tab must be torn down before its file
+                // is trashed: otherwise the live SDK session keeps writing to
+                // a path that no longer exists. force=true lets the last tab
+                // go too (it is re-created below).
+                for (const [tabId, target] of [...this._tabs]) {
+                    if (target.session.getCurrentSessionPath() === targetPath) {
+                        await this._closeTab(tabId, true);
                     }
                 }
                 if (this._tabs.size === 0) {
@@ -1434,6 +1417,12 @@ export class TabManager {
                 this._adapters.agent.applyCancel(msg.previewId);
                 break;
             case 'compactionAccept': {
+                // The banner stays clickable during a live turn, but compacting
+                // mid-stream rewrites the history the run is appending to.
+                if (tab.isStreaming) {
+                    this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: '/compact' }));
+                    break;
+                }
                 await this._runManualCompaction(tab);
                 break;
             }
@@ -1763,6 +1752,56 @@ export class TabManager {
         this._clearStreamingFields(tab);
     }
 
+    /** Number of user messages the session currently holds — the next turn
+     *  index for a freshly loaded conversation. */
+    private _countUserTurns(tab: TabState): number {
+        return tab.session.getMessages().filter((message: any) => message.role === 'user').length;
+    }
+
+    /** A session switch replaces the whole conversation under the tab. Refuse
+     *  mid-run and while another window owns the session: tearing the SDK
+     *  session down under a live turn leaks the run and corrupts the
+     *  checkpoint/diff attribution. */
+    private _canSwitchSession(tab: TabState, command: string): boolean {
+        if (tab.isStreaming || tab.compactionInFlight) {
+            this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: command }));
+            return false;
+        }
+        if (this._isReadOnlyLocked(tab)) {
+            this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * One reset for every session-replacement path (/new, /resume, tab-load,
+     * rename-with-switch, native SDK switch). Each site used to hand-roll its
+     * own subset, and the drift showed up as turn-counter/checkpoint index
+     * mismatches and stale image assets bleeding into the new conversation.
+     */
+    private _resetTabForSessionSwitch(tab: TabState, nextTurnCounter: number): void {
+        tab.diffManager.clearAll();
+        tab.checkpointManager.clearAll();
+        this._settleApprovals(tab);
+        this._resetStreaming(tab);
+        tab.suspendedMessages = [];
+        tab.messageMeta.clear();
+        tab.pendingPromptTurns = [];
+        tab.messagesDirty = true;
+        tab.queuedMessages = [];
+        tab.imageAssets.clear();
+        tab.imageData.clear();
+        tab.compactionStage = 'none';
+        tab.compactionPrompt = null;
+        tab.compactionInFlight = false;
+        tab.runOutcome = undefined;
+        tab.cacheWarmingDecision = undefined;
+        tab.agentStartTime = 0;
+        tab.hasNotification = false;
+        tab.turnCounter = nextTurnCounter;
+    }
+
     private _requestToolApproval(tab: any, toolCallId: string, toolName: string, args: any): Promise<boolean> {
         const decision = tab.approvalMemory.check(toolName);
         if (decision.approved) {
@@ -1800,6 +1839,23 @@ export class TabManager {
         }
     }
 
+    /** Settle every outstanding approval as rejected. Called whenever the
+     *  conversation underneath a pending card goes away — abort, session
+     *  switch, or tab close. Otherwise the promises hang forever, the card
+     *  survives into the next conversation, and the program status stays
+     *  stuck on "blocked". */
+    private _settleApprovals(tab: any): void {
+        if (tab.pendingApprovals.size === 0) return;
+        const entries = [...tab.pendingApprovals.entries()];
+        tab.pendingApprovals.clear();
+        for (const [toolCallId, pending] of entries) {
+            pending.resolve(false);
+            if (tab.id === this._activeTabId) {
+                this._adapters.transport.post({ type: 'toolCallResolved', toolCallId });
+            }
+        }
+    }
+
     private async _createTab(): Promise<void> {
         const tab = await this._createTabState();
         this._tabs.set(tab.id, tab);
@@ -1822,12 +1878,15 @@ export class TabManager {
         return tab.id;
     }
 
-    private async _closeTab(tabId: string): Promise<void> {
-        if (this._tabs.size <= 1) return;
+    private async _closeTab(tabId: string, force = false): Promise<void> {
+        // The last tab normally stays (its session backs the panel), but a
+        // session delete must be able to tear it down: the SDK is still
+        // writing to the file being trashed otherwise.
+        if (this._tabs.size <= 1 && !force) return;
 
         const tab = this._tabs.get(tabId);
         if (!tab) return;
-        for (const pending of tab.pendingApprovals.values()) pending.resolve(false);
+        this._settleApprovals(tab);
         tab.pendingApprovals.clear();
 
         const wasActive = tabId === this._activeTabId;
@@ -1840,8 +1899,16 @@ export class TabManager {
         this._tabs.delete(tabId);
 
         if (wasActive) {
-            this._activeTabId = this._tabs.keys().next().value!;
-            this._tabs.get(this._activeTabId)!.messagesDirty = true;
+            const nextId = this._tabs.keys().next().value;
+            if (nextId) {
+                this._activeTabId = nextId;
+                this._tabs.get(nextId)!.messagesDirty = true;
+            } else {
+                this._activeTabId = '';
+                // The cached initialize() promise now points at a tab that no
+                // longer exists; clear it so the next initialize() rebuilds.
+                this._initializePromise = undefined;
+            }
         }
 
         this._emitStateChange();
@@ -1887,13 +1954,26 @@ export class TabManager {
         return level;
     }
 
+    /** Palette command entry point: shares the banner path's guards, in-flight
+     *  flag and result reporting so a manual compaction never behaves
+     *  differently from /compact. */
     async compact(): Promise<void> {
         await this.initialize();
         const tab = this._tabs.get(this._activeTabId);
         if (!tab) return;
-        await tab.session.compact();
-        tab.messagesDirty = true;
-        this._emitStateChange();
+        if (tab.isStreaming) {
+            this._adapters.ui.showMessage(t('slash.blockedStreaming', { name: '/compact' }));
+            return;
+        }
+        if (tab.compactionInFlight) {
+            this._adapters.ui.showMessage(t('compact.compacting'));
+            return;
+        }
+        if (this._isReadOnlyLocked(tab)) {
+            this._adapters.ui.showMessage(t('occupancy.readOnlyBlocked'));
+            return;
+        }
+        await this._runManualCompaction(tab);
     }
 
     /** SDK-native compaction (T6 banner accept + manual /compact share it). */
@@ -2122,17 +2202,7 @@ export class TabManager {
     private async _syncNativeSession(tab: TabState): Promise<void> {
         const sessionPath = tab.session.getCurrentSessionPath();
         if (sessionPath && tab.lock) await tab.lock.adopt(sessionPath);
-        tab.diffManager.clearAll();
-        tab.checkpointManager.clearAll();
-        tab.suspendedMessages = [];
-        tab.messageMeta.clear();
-        tab.imageAssets.clear();
-        tab.imageData.clear();
-        tab.compactionStage = 'none';
-        tab.compactionPrompt = null;
-        tab.queuedMessages = [];
-        tab.runOutcome = undefined;
-        tab.turnCounter = tab.session.getMessages().filter(message => message.role === 'user').length;
+        this._resetTabForSessionSwitch(tab, this._countUserTurns(tab));
         tab.messagesDirty = true;
         this._updateTabName(tab);
         if (tab.id === this._activeTabId) {
@@ -2182,11 +2252,18 @@ export class TabManager {
         }
         this._tabSubscriptions.clear();
         for (const tab of this._tabs.values()) {
-            for (const pending of tab.pendingApprovals.values()) pending.resolve(false);
+            this._settleApprovals(tab);
             tab.pendingApprovals.clear();
             tab.diffManager.dispose();
             tab.checkpointManager.dispose();
             void tab.lock?.release();
+            // The SDK session owns timers, MCP connections and the bridge
+            // extension; its own dispose() is the only place they are torn
+            // down. Fire-and-forget so the synchronous extension dispose path
+            // is not blocked (each session dispose only awaits its own teardown).
+            void tab.session.dispose().catch((err: any) => {
+                console.warn('[pi-vscode] session dispose failed:', err);
+            });
         }
         this._tabs.clear();
         this._stateListeners = [];

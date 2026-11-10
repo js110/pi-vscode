@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, Lang, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo, QueuedMessage } from '../shared/protocol';
+import type { ClientMessage, ServerMessage, SerializedAgentState, FileChangeInfo, TabInfo, ToolCallPendingInfo, SkillInfo, CommandInfo, PiConfigSnapshot, ApprovalScope, ApplyPreviewInfo, MentionSymbolItem, SessionOccupancy, SelectionContextInfo, CacheWarmingStatusInfo, CacheWarmingDecisionInfo, QueuedMessage } from '../shared/protocol';
 import { buildOccupancyBannerHtml } from './render/occupancy';
 import { buildSessionTreePanel, buildExtensionDialog } from './render/native-panels';
 import { buildToolOutput, formatDuration } from './render/messages';
@@ -12,14 +12,14 @@ import { t, setLang, type TextKey } from '../shared/i18n';
 import { hasMentionToken } from '../shared/mention';
 import { parseCodeDropUris, parseUriList, MAX_DROPPED_FILES } from '../shared/drop-files';
 import { splitAttachments, MAX_ATTACH_FILE_BYTES, looksBinary, type AttachFileEntry } from '../shared/attach';
-import { escAttr, formatTokenCount, truncate, tryParseJSON, extractToolResultText, getToolLabel, extractText } from '../shared/webview-text';
+import { escAttr, formatTokenCount, truncate, tryParseJSON, getToolLabel, extractText } from '../shared/webview-text';
 import { isQuoteTooLarge, MAX_QUOTE_CHARS } from '../shared/quote';
 import { el, escHtml } from './dom';
 import { showToast } from './toast';
 import { ClipboardBridge } from './clipboard';
 import { transcriptSelectionText, rememberLiveTranscriptSelection, copyTargetText, clearTranscriptMark, installTranscriptMarkGuard } from './transcript-mark';
 import { buildTranscriptClipboardHtml } from './transcript-clipboard';
-import { buildWelcome, buildThinkingBlock, buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown, setAvatarImages } from './render/messages';
+import { buildDiffCard, buildToolCardHeader, buildMessageTree, buildToolApprovalCard, buildApplyPreviewCard, buildChangedFilesSection, buildConfigBanner, applyMemoryBadge, resetCodeBlockIds, buildModelItem, buildStreamingSkeleton, updateStreamingThinking, reconcileStreamingText, prepareMarkdown, setAvatarImages } from './render/messages';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: ClientMessage): void;
@@ -83,6 +83,9 @@ const state: {
     cacheWarmingDecision?: CacheWarmingDecisionInfo;
     /** assetId → dataUrl, fed by stateSync.images (T16 image separation). */
     imageCache: Record<string, string>;
+    /** Bumped whenever new image assets land; comparing a number keeps the
+     *  per-frame tree-input check off an O(n) Object.keys walk. */
+    imageCacheVersion: number;
     extensionUi?: ExtensionUiState;
     runOutcome?: SerializedAgentState['runOutcome'];
 } = {
@@ -116,6 +119,7 @@ const state: {
     quotedSelection: null,
     occupancy: null,
     imageCache: {},
+    imageCacheVersion: 0,
 };
 
 let sessionSearchQuery = '';
@@ -276,7 +280,17 @@ function handleMessage(msg: ServerMessage): void {
             // double the full-snapshot cost on every panel open.
             break;
         case 'stateSync':
-            if (msg.images) Object.assign(state.imageCache, msg.images);
+            if (msg.images) {
+                const before = state.imageCacheVersion;
+                let added = 0;
+                for (const [id, dataUrl] of Object.entries(msg.images)) {
+                    if (state.imageCache[id] !== dataUrl) {
+                        state.imageCache[id] = dataUrl;
+                        added++;
+                    }
+                }
+                if (added > 0) state.imageCacheVersion = before + added;
+            }
             applyStateSync(msg.state);
             break;
         case 'selectionChanged':
@@ -417,10 +431,15 @@ function handleMessage(msg: ServerMessage): void {
         case 'langChanged': {
             setLang(msg.lang);
             closeModelPicker();
-            const input = document.getElementById('input') as HTMLTextAreaElement | null;
-            const draft = input?.value ?? '';
+            // Capture before render(): render() replaces the shell, so the
+            // pre-render node is detached by the time it could be restored.
+            const draft = (document.getElementById('input') as HTMLTextAreaElement | null)?.value ?? '';
             render();
-            if (input && draft) input.value = draft;
+            const nextInput = document.getElementById('input') as HTMLTextAreaElement | null;
+            if (nextInput && draft) {
+                nextInput.value = draft;
+                autosizeInput(nextInput);
+            }
             for (const pending of state.pendingApprovals) {
                 renderToolApprovalCard(pending);
             }
@@ -955,8 +974,19 @@ function render(): void {
     // Messages container (persistent, children managed by updateMessages)
     const messagesContainer = el('div', 'messages');
     messagesContainer.id = 'messages';
+    // The live region is the streaming bubble, not the transcript: rebuilding
+    // the message tree per turn would re-announce the whole history. aria-busy
+    // is toggled with the run so the answer is spoken when it settles rather
+    // than on every token.
+    messagesContainer.setAttribute('role', 'log');
+    messagesContainer.setAttribute('aria-live', 'off');
+    messagesContainer.setAttribute('aria-label', t('welcome.title'));
     const streamingContainer = el('div', 'streaming-message message-group-assistant');
     streamingContainer.id = 'streaming-message';
+    streamingContainer.setAttribute('role', 'status');
+    streamingContainer.setAttribute('aria-live', 'polite');
+    streamingContainer.setAttribute('aria-atomic', 'false');
+    streamingContainer.setAttribute('aria-busy', String(state.isStreaming));
     applyStreamingAvatar(streamingContainer); // render() rebuilds the shell; keep the avatar on the fresh container
     messagesContainer.appendChild(streamingContainer);
     const spacer = el('div', 'messages-spacer');
@@ -1033,7 +1063,7 @@ function render(): void {
     scrollBtn.addEventListener('click', () => {
         holdAutoScroll = false;
         userHasScrolled = false;
-        scrollToBottom(true);
+        scrollToBottomAnimated();
         updateScrollButton();
     });
 
@@ -1069,7 +1099,7 @@ interface TreeInputs {
     rollbackPoint: number | null;
     fileChangesCount: number;
     approvalTracesSize: number;
-    imageCacheCount: number;
+    imageCacheVersion: number;
 }
 
 let lastTreeInputs: TreeInputs | undefined;
@@ -1091,7 +1121,7 @@ function currentTreeInputs(): TreeInputs {
         rollbackPoint: state.rollbackPoint,
         fileChangesCount: state.fileChanges.length,
         approvalTracesSize: state.approvalTraces.size,
-        imageCacheCount: Object.keys(state.imageCache).length,
+        imageCacheVersion: state.imageCacheVersion,
     };
 }
 
@@ -1109,7 +1139,7 @@ function treeInputsChanged(next: TreeInputs): boolean {
         || last.rollbackPoint !== next.rollbackPoint
         || last.fileChangesCount !== next.fileChangesCount
         || last.approvalTracesSize !== next.approvalTracesSize
-        || last.imageCacheCount !== next.imageCacheCount;
+        || last.imageCacheVersion !== next.imageCacheVersion;
 }
 
 async function updateMessages(force = false): Promise<void> {
@@ -1135,7 +1165,6 @@ async function updateMessages(force = false): Promise<void> {
     if (!container) return;
 
     const streamingEl = document.getElementById('streaming-message');
-    const spacerEl = container.querySelector('.messages-spacer');
     const savedScrollTop = userHasScrolled ? container.scrollTop : null;
 
     // Remove all children before #streaming-message (the message nodes)
@@ -1272,22 +1301,59 @@ function formatUsd(value: number): string {
     return `$${value.toFixed(2)}`;
 }
 
+// Footer state that actually changes its markup. Every stateSync used to
+// rewrite the whole strip (and rebind its buttons) even when nothing moved,
+// which also clobbered a queued-message edit in progress.
+let lastFooterKey = '';
+/** The footer element the cached key describes. render() rebuilds the shell,
+ *  so a new element always forces a fresh paint even when the state matches. */
+let lastFooterEl: Element | null = null;
+
 function updateInputArea(): void {
     const input = document.getElementById('input') as HTMLTextAreaElement | null;
-    if (input) {
-        const readOnly = isSessionReadOnly();
+    const readOnly = isSessionReadOnly();
+    {
         const inputHint = readOnly
             ? t('occupancy.readOnlyBlocked')
             : state.isStreaming ? t('input.queue') : t('input.ask');
-        input.placeholder = inputHint;
-        input.title = inputHint;
-        input.setAttribute('aria-label', inputHint);
-        input.disabled = readOnly;
+        if (input) {
+            input.placeholder = inputHint;
+            input.title = inputHint;
+            input.setAttribute('aria-label', inputHint);
+            input.disabled = readOnly;
+        }
     }
 
     const footer = document.querySelector('.input-footer');
     if (!footer) return;
     footer.classList.toggle('input-footer-streaming', state.isStreaming);
+
+    const cu = state.contextUsage;
+    const footerKey = JSON.stringify([
+        state.isStreaming,
+        readOnly,
+        state.model?.provider ?? '',
+        state.model?.id ?? '',
+        state.model?.name ?? '',
+        cu?.tokens ?? null,
+        cu?.contextWindow ?? null,
+        cu?.percent ?? null,
+        state.cacheWarmingStatus?.state ?? '',
+        // The warm chip's tooltip also reads these two, so leaving them out
+        // would freeze the savings estimate / next-warm time on screen.
+        state.cacheWarmingStatus?.nextWarmAt ?? '',
+        state.cacheWarmingDecision?.action ?? '',
+        state.cacheWarmingDecision?.economicsAvailable ?? false,
+        state.cacheWarmingDecision?.expectedSavings ?? null,
+    ]);
+    if (footerKey === lastFooterKey && footer === lastFooterEl) {
+        // Nothing the strip renders moved; leave its DOM (and any focused
+        // child) alone.
+        updateQueuedMessageBanner();
+        return;
+    }
+    lastFooterKey = footerKey;
+    lastFooterEl = footer;
 
     const modelName = state.model?.name ?? state.model?.id ?? '';
 
@@ -1314,7 +1380,7 @@ function updateInputArea(): void {
 
     footer.innerHTML = `
         <div class="cstrip-left">
-            <span class="footer-model" title="${escHtml(t('models.selectPlaceholder'))}">${escHtml(modelName)}</span>
+            <span class="footer-model" role="button" tabindex="0" title="${escAttr(t('models.selectPlaceholder'))}" aria-label="${escAttr(t('models.selectPlaceholder'))}">${escHtml(modelName)}</span>
             ${meterHtml}
             ${buildWarmChipHtml()}
         </div>
@@ -1354,6 +1420,8 @@ function updateInputArea(): void {
 
 let queuedEditingIndex = -1;
 
+let lastQueuedKey = '';
+
 function updateQueuedMessageBanner(): void {
     const section = document.getElementById('queued-section') as HTMLDetailsElement | null;
     if (!section) return;
@@ -1362,11 +1430,34 @@ function updateQueuedMessageBanner(): void {
         section.style.display = 'none';
         section.innerHTML = '';
         queuedEditingIndex = -1;
+        lastQueuedKey = '';
         return;
     }
 
     section.style.display = '';
     section.open = true;
+
+    // A rebuild while the user is typing would recreate the edit input from
+    // the ORIGINAL queued text. Patch the row list only when something else
+    // changed, and never touch the focused edit box.
+    const editKey = JSON.stringify([
+        state.queuedMessages.length,
+        queuedEditingIndex,
+        state.queuedMessages.map(m => `${m.kind}:${m.text}`),
+    ]);
+    if (editKey === lastQueuedKey && section.querySelector('.queued-list')) {
+        const live = section.querySelector<HTMLInputElement>('.queued-edit-input');
+        if (queuedEditingIndex < 0 || live) return;
+    }
+    lastQueuedKey = editKey;
+
+    // A rebuild recreates the edit input from the ORIGINAL queued text, so a
+    // keystroke in flight is lost whenever the list itself changes (another
+    // message queued, an item removed). Carry the live value across.
+    const draftEl = section.querySelector<HTMLInputElement>('.queued-edit-input');
+    const draft = queuedEditingIndex >= 0 && draftEl && document.activeElement === draftEl
+        ? { index: queuedEditingIndex, value: draftEl.value }
+        : null;
 
     const count = state.queuedMessages.length;
     const kindLabel = (kind: QueuedMessage['kind']) =>
@@ -1399,6 +1490,15 @@ function updateQueuedMessageBanner(): void {
     `;
 
     bindQueuedItemEvents(section);
+
+    if (draft && draft.index === queuedEditingIndex) {
+        const restored = section.querySelector<HTMLInputElement>(`.queued-edit-input[data-index="${draft.index}"]`);
+        if (restored) {
+            restored.value = draft.value;
+            restored.focus();
+            restored.setSelectionRange(restored.value.length, restored.value.length);
+        }
+    }
 }
 
 function updateCompactionBanner(): void {
@@ -1553,6 +1653,24 @@ function clearStreamingState(): void {
 
 // ── Changed Files section ──
 
+// The section is an O(n) DOM build (up to 500 files), and a stateSync lands on
+// every turn/tool boundary. Skip the rebuild unless its inputs actually moved.
+let lastChangedFilesKey = '';
+let lastChangedFilesEl: Element | null = null;
+
+function changedFilesKey(): string {
+    return JSON.stringify([
+        state.fileChanges.length,
+        state.rollbackPoint,
+        // Identity of the newest entry plus its status catches in-place
+        // mutation without hashing every change on every frame.
+        state.fileChanges.at(-1)?.filePath ?? '',
+        state.fileChanges.at(-1)?.toolCallId ?? '',
+        state.fileChanges.at(-1)?.addedLines ?? 0,
+        state.fileChanges.at(-1)?.removedLines ?? 0,
+    ]);
+}
+
 function updateChangedFiles(): void {
     const container = document.querySelector('.input-container');
     if (!container) return;
@@ -1562,8 +1680,14 @@ function updateChangedFiles(): void {
 
     if (state.fileChanges.length === 0) {
         existing?.remove();
+        lastChangedFilesKey = '';
+        lastChangedFilesEl = null;
         return;
     }
+
+    const key = changedFilesKey();
+    if (existing && key === lastChangedFilesKey && existing === lastChangedFilesEl) return;
+    lastChangedFilesKey = key;
 
     const newSection = buildChangedFilesSection(state.fileChanges, state.rollbackPoint);
     if (wasOpen) {
@@ -1575,6 +1699,7 @@ function updateChangedFiles(): void {
     } else {
         container.insertBefore(newSection, container.firstChild);
     }
+    lastChangedFilesEl = newSection;
 
     bindChangedFileItems();
 
@@ -1685,7 +1810,7 @@ function ensurePreparingPlaceholder(): void {
     }
 }
 
-function showRetryPlaceholder(attempt: number, maxAttempts: number, delayMs: number, errorMessage: string): void {
+function showRetryPlaceholder(attempt: number, maxAttempts: number, _delayMs: number, errorMessage: string): void {
     removePreparingPlaceholder();
     removeRetryPlaceholder();
     const container = document.getElementById('streaming-message');
@@ -1709,6 +1834,7 @@ function renderStreamingContent(): void {
     const container = document.getElementById('streaming-message');
     if (!container) return;
 
+    container.setAttribute('aria-busy', String(state.isStreaming));
     if (!state.isStreaming) {
         container.innerHTML = '';
         return;
@@ -1748,8 +1874,10 @@ function renderStreamingContent(): void {
         reconcileStreamingText(textEl, state.streamingText);
     }
 
-    bindCopyButtons();
-    bindCodeBlockActions();
+    // Scoped to the live region: a whole-document selector walk per frame
+    // also re-scanned the entire settled transcript.
+    bindCopyButtons(container);
+    bindCodeBlockActions(container);
     scrollToBottom();
 }
 
@@ -1860,7 +1988,6 @@ function renderToolEnd(event: any): void {
     }
 
     const toolName = (card as HTMLElement).dataset.toolName ?? '';
-    const text = extractToolResultText(event.result);
     const isBash = toolName.toLowerCase() === 'bash';
     const output = buildToolOutput(event.result, state.imageCache);
     const nested = card.querySelector<HTMLElement>(':scope > .nested-tools');
@@ -1934,6 +2061,8 @@ function renderToolApprovalCard(pending: ToolCallPendingInfo): void {
     container.appendChild(card);
     bindApprovalButtons();
     bindRememberButtons(card);
+    // Put the keyboard on the decision that is blocking the agent.
+    card.querySelector<HTMLButtonElement>('.approval-btn.approve')?.focus();
     scrollToBottom();
 }
 
@@ -1961,8 +2090,13 @@ function bindRememberButtons(card: HTMLElement): void {
 }
 
 function removeToolApprovalCard(toolCallId: string): void {
-    document.getElementById(`approval-${toolCallId}`)?.remove();
+    const card = document.getElementById(`approval-${toolCallId}`);
+    // The card takes focus when it appears; removing it while focus is inside
+    // would drop the caret on <body> and the next keystroke would go nowhere.
+    const hadFocus = card !== null && card.contains(document.activeElement);
+    card?.remove();
     state.pendingApprovals = state.pendingApprovals.filter(p => p.toolCallId !== toolCallId);
+    if (hadFocus) document.getElementById('input')?.focus();
 }
 
 function bindApprovalButtons(): void {
@@ -2134,6 +2268,18 @@ function showModelPicker(): void {
 
     searchInput.focus();
 
+    const visibleModels = () => Array.from(list.querySelectorAll<HTMLElement>('.model-item'))
+        .filter(item => item.style.display !== 'none');
+
+    let activeIndex = -1;
+    const setActive = (next: number) => {
+        const items = visibleModels();
+        if (items.length === 0) return;
+        activeIndex = Math.max(0, Math.min(next, items.length - 1));
+        items.forEach((item, i) => item.classList.toggle('keyboard-active', i === activeIndex));
+        items[activeIndex].scrollIntoView({ block: 'nearest' });
+    };
+
     searchInput.addEventListener('input', () => {
         const q = searchInput.value;
         list.querySelectorAll('.model-item').forEach((item) => {
@@ -2143,6 +2289,29 @@ function showModelPicker(): void {
         list.querySelectorAll('.model-section-header').forEach((hdr) => {
             (hdr as HTMLElement).style.display = q ? 'none' : '';
         });
+        activeIndex = -1;
+        list.querySelectorAll('.model-item.keyboard-active').forEach(item => item.classList.remove('keyboard-active'));
+    });
+
+    // Keyboard parity with the slash/mention menus: arrows move, Enter picks,
+    // Escape closes. The search box keeps focus the whole time.
+    searchInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeModelPicker();
+            return;
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActive(activeIndex + (event.key === 'ArrowDown' ? 1 : -1));
+            return;
+        }
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            const items = visibleModels();
+            const item = activeIndex >= 0 ? items[activeIndex] : items[0];
+            item?.click();
+        }
     });
 
     list.addEventListener('click', (e) => {
@@ -2182,8 +2351,11 @@ function onClickOutsidePicker(e: MouseEvent): void {
 }
 
 function closeModelPicker(): void {
+    const open = document.getElementById('model-picker') !== null;
     document.getElementById('model-picker')?.remove();
     document.removeEventListener('click', onClickOutsidePicker);
+    // Escape/outside-click must hand focus back, not drop it on <body>.
+    if (open) document.querySelector<HTMLElement>('.footer-model')?.focus();
 }
 
 function updateFooterModel(): void {
@@ -2219,7 +2391,10 @@ function renderSessionList(sessions: any[], currentId?: string): void {
             </div>
             <div class="session-empty">${escHtml(t('sessions.empty'))}</div>
         `;
-        document.getElementById('btn-close-sessions')?.addEventListener('click', () => panel?.remove());
+        document.getElementById('btn-close-sessions')?.addEventListener('click', () => {
+            panel?.remove();
+            document.getElementById('btn-sessions')?.focus();
+        });
         document.getElementById('btn-current-tree')?.addEventListener('click', () => vscode.postMessage({ type: 'getSessionTree' }));
         return;
     }
@@ -2275,7 +2450,11 @@ function renderSessionList(sessions: any[], currentId?: string): void {
         </div>
     `;
 
-    document.getElementById('btn-close-sessions')?.addEventListener('click', () => panel?.remove());
+    const closePanel = () => {
+        panel?.remove();
+        document.getElementById('btn-sessions')?.focus();
+    };
+    document.getElementById('btn-close-sessions')?.addEventListener('click', closePanel);
     document.getElementById('btn-current-tree')?.addEventListener('click', () => vscode.postMessage({ type: 'getSessionTree' }));
     panel.querySelectorAll<HTMLButtonElement>('.session-item-tree').forEach(button => button.addEventListener('click', event => {
         event.stopPropagation();
@@ -2287,6 +2466,11 @@ function renderSessionList(sessions: any[], currentId?: string): void {
         }
     }));
     const searchInput = document.getElementById('session-search-input') as HTMLInputElement | null;
+    const searchHadFocus = document.activeElement === searchInput;
+    if (searchInput && !searchHadFocus && !panel.dataset.focusedOnce) {
+        panel.dataset.focusedOnce = '1';
+        searchInput.focus();
+    }
     searchInput?.addEventListener('input', () => {
         sessionSearchQuery = searchInput.value;
         const requestId = ++sessionSearchRequestId;
@@ -2407,12 +2591,15 @@ function showError(message: string, durationMs?: number): void {
 
 // ── Events ──
 
-function bindStableEvents(): void {
-    const input = document.getElementById('input') as HTMLTextAreaElement | null;
-    const newTabBtn = document.getElementById('btn-new-tab');
-    const sessionsBtn = document.getElementById('btn-sessions');
-    const settingsBtn = document.getElementById('btn-settings');
-    const focusBtn = document.getElementById('btn-focus-view');
+// Document-level listeners are process-global: render() replaces the DOM but
+// never the document, so re-running these on every tab switch / language
+// change would stack duplicate handlers (N clipboards per Cmd+C, N quote
+// captures per selection). Bound once, at init.
+let documentEventsBound = false;
+
+function bindDocumentEvents(): void {
+    if (documentEventsBound) return;
+    documentEventsBound = true;
 
     // Transcript selections become quote context (debounced; see capture)
     // and are snapshotted synchronously for the copy defense.
@@ -2435,6 +2622,17 @@ function bindStableEvents(): void {
     // Copy defense: make Cmd/Ctrl+C and right-click Copy actually copy the
     // transcript selection despite VS Code's focus restoration (see above).
     installCopyDefense();
+}
+
+function bindStableEvents(): void {
+    const input = document.getElementById('input') as HTMLTextAreaElement | null;
+    const newTabBtn = document.getElementById('btn-new-tab');
+    const sessionsBtn = document.getElementById('btn-sessions');
+    const settingsBtn = document.getElementById('btn-settings');
+    const focusBtn = document.getElementById('btn-focus-view');
+
+    bindDocumentEvents();
+    bindTranscriptContextMenu();
 
     input?.addEventListener('keydown', (e) => {
         if (e.isComposing || e.keyCode === 229) return;
@@ -3391,10 +3589,18 @@ function installCopyDefense(): void {
         copyText(text, notifyCopied);
     }, true);
 
-    // Copilot ChatContext parity: the transcript context menu is always
-    // available. "Copy" copies the selection when one is alive, otherwise the
-    // response under the cursor (CopyItemAction semantics).
-    document.getElementById('messages')?.addEventListener('contextmenu', (event) => {
+}
+
+// Copilot ChatContext parity: the transcript context menu is always
+// available. "Copy" copies the selection when one is alive, otherwise the
+// response under the cursor (CopyItemAction semantics). Bound to #messages,
+// which render() recreates — so this belongs to the per-render path, not the
+// once-per-document listener set.
+function bindTranscriptContextMenu(): void {
+    const messages = document.getElementById('messages');
+    if (!messages || messages.dataset.ctxBound === '1') return;
+    messages.dataset.ctxBound = '1';
+    messages.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         const me = event as MouseEvent;
         const target = me.target as HTMLElement | null;
@@ -3560,8 +3766,8 @@ function flashTransientFeedback(apply: () => void, restore: () => void): void {
     setTimeout(restore, TRANSIENT_FEEDBACK_MS);
 }
 
-function bindCopyButtons(): void {
-    document.querySelectorAll('.copy-btn:not([data-bound])').forEach((btn) => {
+function bindCopyButtons(root: ParentNode = document): void {
+    root.querySelectorAll('.copy-btn:not([data-bound])').forEach((btn) => {
         btn.setAttribute('data-bound', '1');
         btn.addEventListener('click', () => {
             const id = (btn as HTMLElement).dataset.codeId;
@@ -3613,8 +3819,8 @@ function bindMessageCopyButtons(): void {
 
 const APPLY_DEBOUNCE_MS = 5000;
 
-function bindCodeBlockActions(): void {
-    document.querySelectorAll('.apply-btn:not([data-bound])').forEach((btn) => {
+function bindCodeBlockActions(root: ParentNode = document): void {
+    root.querySelectorAll('.apply-btn:not([data-bound])').forEach((btn) => {
         btn.setAttribute('data-bound', '1');
         btn.addEventListener('click', () => {
             const el0 = btn as HTMLElement;
@@ -3634,7 +3840,7 @@ function bindCodeBlockActions(): void {
         });
     });
 
-    document.querySelectorAll('.code-block-toggle:not([data-bound])').forEach((btn) => {
+    root.querySelectorAll('.code-block-toggle:not([data-bound])').forEach((btn) => {
         btn.setAttribute('data-bound', '1');
         btn.addEventListener('click', () => {
             const el0 = btn as HTMLElement;
@@ -3965,10 +4171,19 @@ function scrollToBottom(force = false): void {
     const messages = document.getElementById('messages');
     if (messages) {
         isProgrammaticScroll = true;
-        // Forced jumps (open/load/switch) land instantly — the container's
-        // CSS smooth animation across a long history reads as "stuck at top".
-        messages.scrollTo({ top: messages.scrollHeight, behavior: force ? 'instant' : 'auto' });
+        // Following the stream is not an animated journey: forced jumps
+        // (open/load/switch) and per-frame auto-scroll both land instantly.
+        // Smooth is reserved for the explicit "scroll to bottom" button.
+        messages.scrollTo({ top: messages.scrollHeight, behavior: 'instant' });
     }
+}
+
+/** User-intent jump: the one path that animates. */
+function scrollToBottomAnimated(): void {
+    const messages = document.getElementById('messages');
+    if (!messages) return;
+    isProgrammaticScroll = true;
+    messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
 }
 
 function isNearBottom(): boolean {

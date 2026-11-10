@@ -11,9 +11,9 @@
 
 | 项目 | 值 | 来源 |
 |---|---|---|
-| npm latest | `1.1.0`（dist-tag `latest`） | `npm view @earendil-works/pi-coding-agent`（输出 `dist-tags.latest = "1.1.0"`） |
-| 本仓库依赖 | `^1.1.0` | `package.json:342` |
-| 实际安装 | `1.1.0` | `package-lock.json:12`（spec `^1.1.0`）、`package-lock.json:503`（resolved `pi-coding-agent-1.1.0.tgz`） |
+| npm latest | `1.4.0`（dist-tag `latest`；研究当时为 `1.1.0`，下文 §2 的历史发布段落保留原样） | `npm view @earendil-works/pi-coding-agent` |
+| 本仓库依赖 | `^1.4.0` | `package.json` |
+| 实际安装 | `1.4.0` | `package-lock.json`（spec `^1.4.0`、resolved `pi-coding-agent-1.4.0.tgz`） |
 | 1.0.0 发布 | 2026-10-01 | `npm view` `time` 字段：`"1.0.0": "2026-10-01T19:15:22.967Z"` |
 | 1.1.0 发布 | 2026-10-07 | `npm view` `time`：`"1.1.0": "2026-10-07T22:16:26.802Z"` |
 | 上游仓库 | `github.com/earendil-works/pi`（monorepo，`repository.directory = packages/coding-agent`） | `npm view` `repository` 字段 |
@@ -77,7 +77,7 @@
 
 ## 3. 扩展已经采用的 post-1.0 能力（无需再动）
 
-本仓库 v0.7.0 提交 `ee4ffbb "feat: support native Pi commands and Pi 1.x sidebar features"` 已对齐 Pi 1.x，`docs/native-commands.md:34-57` 明确"targets the installed Pi SDK 1.1.0"。逐项核对：
+本仓库 v0.7.0 提交 `ee4ffbb "feat: support native Pi commands and Pi 1.x sidebar features"` 已对齐 Pi 1.x，`docs/native-commands.md:34-57` 明确"targets the installed Pi SDK 1.4.0"。逐项核对：
 
 | post-1.0 能力 | 采用证据 |
 |---|---|
@@ -101,6 +101,8 @@
 
 ### 4.1 （已实测验证）默认工具集不含 codemode —— 建议提供 `+codemode` 入口 【M】
 
+> **状态（更新）：已实现。** 设置项 `pi-agent.enableCodemode`（`package.json` contributes.configuration）由 `src/pi/session.ts` 读取并转为 `tools: ["+codemode"]`；`pi-agent.allowedTools` 同时支持 `+name`/`-name`。以下为当时的调研记录。
+
 - **Pi 侧事实**：`codemode`/`tool_search` 由内置扩展**注册但默认 inactive**，须经 `defaultTools`（如 `["+codemode"]`）启用（`docs/sdk.md:116`；`docs/settings.md:40` `defaultTools` 默认值仅 `read, bash, edit, write`）。1.0 起 codemode 大幅瘦身（1.0.0，CL:164,184），并新增图片读写（1.0.3/1.0.4，CL:60,83），价值比 0.84 时代更高。
 - **本扩展现状（实测）**：只在 `allowedTools` 非空时才向 `createAgentSession` 传 `tools`（`src/pi/session.ts:414-421`、重启路径 `:426-435`），设置里没有任何 `defaultTools`/codemode 开关（全仓 grep `defaultTools` 仅命中 native-extensions）。用安装的 1.1.0 SDK 按扩展同样的工厂加载 codemode/tool-search/MCP 后实测：
   ```
@@ -111,13 +113,17 @@
 
 ### 4.2 `excludeTools`（拒绝名单）SDK 支持但扩展未暴露 【S–M】
 
+> **状态（更新）：已实现。** 新增 `pi-agent.excludeTools` 设置，由 `src/pi/session.ts` 与 `allowedTools` 一起传入 `createAgentSession`；设置页与 i18n 已同步。以下为当时的调研记录。
+
 - **SDK 事实**：`CreateAgentSessionOptions.excludeTools` —— "Optional denylist of tool names or patterns to disable. Applies after `tools` when both are provided, MCP tools included"（`dist/core/sdk.d.ts:51-54`）；`docs/sdk.md:106` 把 `tools, noTools, excludeTools, customTools` 并列为会话级工具控制。与 allowlist 相比，`-name`/模式拒绝名单对"默认集 + 个别禁用"更自然。
 - **建议**：新增 `pi-agent.excludeTools` 设置，与 `allowedTools` 同路径传入（`src/pi/session.ts:415,431`），设置页与 i18n 同步（`settings-panel.ts`、`settings.ts`、`i18n.ts`）。注意 `+/-` 条目**不能与普通名混用**（`docs/cli.md:128`），校验文案要写清。
 
 ### 4.3 把 1.1.0 的 Program status 状态机映射到 VS Code 状态栏 【S–M】
 
+> **状态（更新）：已实现。** `src/shared/program-status.ts` 定义 `working/blocked/done/error/idle` 五态，`TabManager.getProgramStatus()`（`src/providers/tab.ts`）聚合事件，`src/providers/status-bar.ts` 为每态渲染不同图标与文案。以下为当时的调研记录。
+
 - **Pi 事实**：Pi 用 OSC 7501 报告 `working / blocked / done / error / idle` 五态，其中 `blocked` = "An extension dialog or login waits for you"（`docs/terminal-setup.md:221` 起的状态表；CL:7,20,21）。扩展进程内跑 SDK，**不经过终端，OSC 本身用不上**，但状态语义可直接复用。
-- **本扩展现状**：状态栏只有 spinner + 模型 + token/费用/上下文/思考档（`src/providers/status-bar.ts:35-81`），对话框阻塞态（`ExtensionUiBridge` 正在显示 dialog/login，`src/pi/extension-ui.ts:19-60`）与"运行失败 vs 取消"未在状态栏区分。
+- **当时的本扩展现状**：状态栏只有 spinner + 模型 + token/费用/上下文/思考档，未区分对话框阻塞态与"运行失败 vs 取消"（后续已补齐）。
 - **建议**：由 `TabManager` 聚合 `agent_settled.aborted`、extension-UI dialog 占用、`compaction_start/end` 推导同名五态，状态栏/侧栏图标分别呈现 `working/blocked/done/error/idle`。涉及 `status-bar.ts`、`src/providers/tab.ts`（事件汇聚点，见 `:725`）、`src/shared/protocol.ts`。
 
 ### 4.4 暴露/说明 `samplingParamsByThinkingLevel`（1.0.2） 【S】
@@ -128,6 +134,8 @@
 
 ### 4.5 API 审计脚本补强：把 `emitToolCall` 猴补丁纳入审计，并预留 ≥1.1.0 门 【S】
 
+> **状态（更新）：已实现。** `scripts/check-pi-api.mjs` 已在 ≥1.0.0 门内加入 `checkProto('ExtensionRunner', 'emitToolCall')`，并保留 ≥1.1.0 / ≥1.2.0 版本门。以下为当时的调研记录。
+
 - **现状**：工具审批靠 monkey-patch `ExtensionRunner.emitToolCall`（`src/pi/session.ts:591-620`），方法仍存在于 1.1.0（`dist/core/extensions/runner.d.ts:184`），且上游同时存在官方 `tool_call` 拦截钩子（`types.d.ts:1200` `on(event: "tool_call", ...)`、`ToolCallEventResult.block`；`runner.d.ts` `emitToolCall` 会合并 handler 返回值）。猴补丁本身有 try/catch 兜底（`session.ts:617-619`）。
 - **风险**：`scripts/check-pi-api.mjs` 的导出/原型清单（`:77-118`）**没有检查 `ExtensionRunner.emitToolCall`**——若上游改名，审批钩子会静默失效（patch 赋值到不存在的方法不会抛错，审批直接旁路）。
 - **建议**：在 `check-pi-api.mjs` 增加 `checkProto('ExtensionRunner', 'emitToolCall')`（与既有 ≥1.0.0/≥0.86.0 版本门风格一致，`:99-118`），并新增 ≥1.1.0 版本门，为后续使用 `aborted`/`durationMs`/`excludeTools` 的 API 审计留位。工作量 S。
@@ -135,8 +143,8 @@
 ### 4.6 文档/文案类修正（低成本） 【S】
 
 1. **README 仓库链接 404**：`README.md:5` 与 `README.zh-CN.md:5` 指向 `https://github.com/earendil-works/pi-coding-agent`，该路径经 GitHub API 核实返回 **404**（`api.github.com/repos/earendil-works/pi-coding-agent` → 404 Not Found）；正确地址为 `https://github.com/earendil-works/pi`（npm `repository.url = git+https://github.com/earendil-works/pi.git`, `directory: packages/coding-agent`）。
-2. **About 文案过期**：`ui/ui_settings.html:136,174,204` 仍写 "Pi SDK … 0.84.x"（实际 1.1.0）。该目录是 UI mock（`ui/PRD-ui*.html` 等），若不随包发布可只改 mock；同时 `README`/设置页如有版本展示建议从 SDK `VERSION` 导出动态读取（`dist/index.d.ts` 导出 `VERSION`，见 `export { … VERSION, } from "./config.ts"`）。
-3. **`RESEARCH.md:13,35` 的 0.84.x 结论**为 2026-09-01 的历史记录，可不动，但建议在顶部补一行"SDK 已升级至 1.1.0，现状见 `docs/native-commands.md`"。
+2. **About 文案过期**：`ui/ui_settings.html:136,174,204` 仍写 "Pi SDK … 0.84.x"（实际 1.4.0）。该目录是 UI mock（`ui/PRD-ui*.html` 等），若不随包发布可只改 mock；同时 `README`/设置页如有版本展示建议从 SDK `VERSION` 导出动态读取（`dist/index.d.ts` 导出 `VERSION`，见 `export { … VERSION, } from "./config.ts"`）。
+3. **`RESEARCH.md:13,35` 的 0.84.x 结论**为 2026-09-01 的历史记录，可不动，但建议在顶部补一行"SDK 已升级至 1.4.0，现状见 `docs/native-commands.md`"。
 
 ### 4.7 可选/低优先级机会
 

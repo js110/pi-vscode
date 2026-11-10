@@ -118,15 +118,16 @@ export function updateStreamingThinking(
     opts: { thinking: string; isThinking: boolean; durationSec: number; collapseActive?: boolean },
 ): void {
     if (!thinkingEl) return;
+    const details = thinkingEl as HTMLDetailsElement;
+    const contentEl = thinkingEl.querySelector<HTMLElement>('.thinking-content');
+    const labelEl = thinkingEl.querySelector('.thinking-label');
     if (!opts.thinking) {
         thinkingEl.style.display = 'none';
+        if (contentEl) reconcileStreamingText(contentEl, '');
         return;
     }
-    const details = thinkingEl as HTMLDetailsElement;
-    const contentEl = thinkingEl.querySelector('.thinking-content');
-    const labelEl = thinkingEl.querySelector('.thinking-label');
     thinkingEl.style.display = '';
-    if (contentEl) contentEl.innerHTML = renderMarkdown(opts.thinking);
+    if (contentEl) reconcileStreamingText(contentEl, opts.thinking);
     if (labelEl) labelEl.textContent = thinkingLabel(opts.isThinking, opts.durationSec);
     thinkingEl.classList.toggle('active', opts.isThinking);
     // Track the model: expanded while it thinks, collapsed once it moves on to
@@ -144,16 +145,19 @@ export function updateStreamingThinking(
 // Block-level incremental render (PRD C4): only blocks after the unchanged
 // prefix are re-parsed and re-rendered on each delta. The block cache is keyed
 // by the live element so a rebuilt skeleton (or new session) starts fresh
-// automatically and stale caches die with their element.
-const streamingTextCache = new WeakMap<HTMLElement, string[]>();
+// automatically and stale caches die with their element. Shared by both live
+// bodies (answer text and reasoning) — one slot per element costs nothing and
+// keeps the streaming thinking block from re-parsing its whole markdown on
+// every frame.
+const streamingBlockCache = new WeakMap<HTMLElement, string[]>();
 
-/** Reconciles the streaming text container with the current full text: keeps
+/** Reconciles a streaming block container with the current full text: keeps
  *  every block up to the unchanged prefix, patches only the tail, and prunes
  *  removed blocks. Idempotent — calling it with any prefix of the text yields
  *  the correct converging DOM. */
 export function reconcileStreamingText(textEl: HTMLElement, text: string): void {
     const next = splitStreamBlocks(text);
-    const prev = streamingTextCache.get(textEl) ?? [];
+    const prev = streamingBlockCache.get(textEl) ?? [];
     const from = computeUnchangedPrefix(prev, next);
 
     while (textEl.children.length > next.length) {
@@ -167,7 +171,7 @@ export function reconcileStreamingText(textEl: HTMLElement, text: string): void 
         }
         blockEl.innerHTML = renderMarkdown(next[i]);
     }
-    streamingTextCache.set(textEl, next);
+    streamingBlockCache.set(textEl, next);
 }
 
 // ── Static view builders ──
@@ -271,7 +275,7 @@ if (change.diff) {
             hunkBar.innerHTML = hunks
                 .map(
                     (h, i) => `
-                        <label class="hunk-row" title="${escHtml(t('diff.hunkTitle'))}">
+                        <label class="hunk-row" title="${escAttr(t('diff.hunkTitle'))}">
                             <input type="checkbox" class="hunk-check" data-hunk="${i}" checked>
                             <code class="hunk-header">@@ -${h.oldStart},${h.oldCount} @@</code>
                         </label>
@@ -819,6 +823,12 @@ export function buildToolApprovalCard(pending: ToolCallPendingInfo): HTMLElement
 
     const card = el('div', 'tool-approval-card');
     card.id = `approval-${pending.toolCallId}`;
+    // This card gates execution, so it is announced and reachable without a
+    // mouse: an alertdialog that takes focus when it appears.
+    card.setAttribute('role', 'alertdialog');
+    card.setAttribute('aria-modal', 'false');
+    card.tabIndex = -1;
+    card.setAttribute('aria-label', `${t('approval.awaiting')}: ${pending.toolName}`);
 
     card.appendChild(buildToolCardHeader(pending.toolName, label, `<span class="tool-status pending">${escHtml(t('approval.awaiting'))}</span>`));
 
@@ -828,16 +838,16 @@ export function buildToolApprovalCard(pending: ToolCallPendingInfo): HTMLElement
 
     const actions = el('div', 'approval-actions');
     actions.innerHTML = `
-        <button class="approval-btn approve" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.approve'))}</button>
+        <button class="approval-btn approve" data-toolcallid="${escAttr(pending.toolCallId)}">${escHtml(t('approval.approve'))}</button>
         ${isDangerousTool(pending.toolName) ? '' : `
         <span class="remember-split">
-            <button class="approval-btn remember" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.remember'))}</button>
+            <button class="approval-btn remember" data-toolcallid="${escAttr(pending.toolCallId)}">${escHtml(t('approval.remember'))}</button>
             <div class="remember-menu" hidden>
-                <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="session">${escHtml(t('approval.rememberSession'))}</div>
-                <div class="remember-option" data-toolcallid="${escHtml(pending.toolCallId)}" data-scope="global">${escHtml(t('approval.rememberGlobal'))}</div>
+                <div class="remember-option" data-toolcallid="${escAttr(pending.toolCallId)}" data-scope="session">${escHtml(t('approval.rememberSession'))}</div>
+                <div class="remember-option" data-toolcallid="${escAttr(pending.toolCallId)}" data-scope="global">${escHtml(t('approval.rememberGlobal'))}</div>
             </div>
         </span>`}
-        <button class="approval-btn reject" data-toolcallid="${escHtml(pending.toolCallId)}">${escHtml(t('approval.reject'))}</button>
+        <button class="approval-btn reject" data-toolcallid="${escAttr(pending.toolCallId)}">${escHtml(t('approval.reject'))}</button>
     `;
     card.appendChild(actions);
 
@@ -888,14 +898,14 @@ export function buildChangedFilesSection(fileChanges: FileChangeInfo[], rollback
     const summary = document.createElement('summary');
     summary.className = 'changed-files-summary';
     const undoRedoBtn = rollbackPoint !== null
-        ? `<button class="changed-files-link" id="btn-redo" title="${escHtml(t('files.redoTitle'))}">${escHtml(t('files.redo'))}</button>`
-        : `<button class="changed-files-link" id="btn-undo" title="${escHtml(t('files.undoTitle'))}">${escHtml(t('files.undo'))}</button>`;
+        ? `<button class="changed-files-link" id="btn-redo" title="${escAttr(t('files.redoTitle'))}">${escHtml(t('files.redo'))}</button>`
+        : `<button class="changed-files-link" id="btn-undo" title="${escAttr(t('files.undoTitle'))}">${escHtml(t('files.undo'))}</button>`;
     summary.innerHTML = `
         <span class="changed-files-arrow codicon codicon-chevron-right codicon-xs"></span>
         <span class="changed-files-count">${escHtml(t(count === 1 ? 'files.countOne' : 'files.countMany', { n: count }))}</span>
         <span class="changed-files-spacer"></span>
         ${undoRedoBtn}
-        <button class="changed-files-review-btn" id="btn-review-all" title="${escHtml(t('files.reviewTitle'))}">${escHtml(t('files.review'))}</button>
+        <button class="changed-files-review-btn" id="btn-review-all" title="${escAttr(t('files.reviewTitle'))}">${escHtml(t('files.review'))}</button>
     `;
     details.appendChild(summary);
 

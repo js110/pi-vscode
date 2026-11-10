@@ -411,5 +411,18 @@ function findMissingApis(sdk: any): string[] {
     if (!has(sdk?.DefaultResourceLoader?.prototype, 'reload')) {
         missing.push('DefaultResourceLoader#reload');
     }
+    // The tool-approval gate is a monkey-patch on runner.emitToolCall (the
+    // only interception point the SDK exposes). If a system copy renames it,
+    // the patch lands on a dead property and every tool call runs unapproved
+    // with no error — so a copy without it must be rejected here.
+    if (!has(sdk?.ExtensionRunner?.prototype, 'emitToolCall')) {
+        missing.push('ExtensionRunner#emitToolCall');
+    }
+    if (!has(sdk?.AgentSession?.prototype, 'subscribe')) {
+        missing.push('AgentSession#subscribe');
+    }
+    if (!has(sdk?.AgentSession?.prototype, 'prompt')) {
+        missing.push('AgentSession#prompt');
+    }
     return missing;
 }

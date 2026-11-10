@@ -48,7 +48,38 @@ window.addEventListener('message', (event) => {
     }
 });
 
+/**
+ * The field the user is mid-edit in, captured before a render wipes the DOM.
+ * Config changes arrive asynchronously (the host re-sends the whole snapshot
+ * on onDidChangeConfiguration), so a debounced keystroke or slider drag would
+ * otherwise be silently discarded and the caret lost. Only the focused field
+ * is preserved: untouched fields always take the fresh snapshot.
+ */
+function captureFocusedField(): { key: string; value: string } | null {
+    const active = document.activeElement as HTMLInputElement | null;
+    const key = active?.dataset?.key;
+    if (!active || !key) return null;
+    if (!active.classList.contains('setting-input') && !active.classList.contains('setting-range')) return null;
+    return { key, value: active.value };
+}
+
+function restoreFocusedField(saved: { key: string; value: string } | null): void {
+    if (!saved) return;
+    const node = document.querySelector<HTMLInputElement>(`.setting-input[data-key="${saved.key}"], .setting-range[data-key="${saved.key}"]`);
+    if (!node) return;
+    node.value = saved.value;
+    if (node.classList.contains('setting-range')) {
+        const label = document.getElementById(`range-val-${saved.key}`);
+        if (label) label.textContent = `${saved.value}${node.dataset.unit ?? '%'}`;
+    }
+    node.focus();
+    if (typeof node.setSelectionRange === 'function') {
+        node.setSelectionRange(saved.value.length, saved.value.length);
+    }
+}
+
 function render(data: SettingsData): void {
+    const focused = captureFocusedField();
     const app = document.getElementById('settings-app')!;
     app.innerHTML = '';
     document.documentElement.dataset.skin = data.skin;
@@ -130,9 +161,9 @@ function render(data: SettingsData): void {
             t('settings.enableCodemodeDesc')),
         buildToggle('enableToolSearch', t('settings.enableToolSearch'), data.enableToolSearch,
             t('settings.enableToolSearchDesc')),
-        buildTextarea('allowedTools', t('settings.allowedTools'), data.allowedTools.join(', '),
+        buildTextField('allowedTools', t('settings.allowedTools'), data.allowedTools.join(', '),
             t('settings.allowedToolsDesc'), t('settings.allowedToolsPlaceholder')),
-        buildTextarea('excludeTools', t('settings.excludeTools'), data.excludeTools.join(', '),
+        buildTextField('excludeTools', t('settings.excludeTools'), data.excludeTools.join(', '),
             t('settings.excludeToolsDesc'), t('settings.excludeToolsPlaceholder')),
     ]));
 
@@ -156,6 +187,7 @@ function render(data: SettingsData): void {
     app.appendChild(container);
     bindEvents();
     renderSkillsSection();
+    restoreFocusedField(focused);
 }
 
 function buildSection(title: string, children: HTMLElement[], collapsed = false): HTMLElement {
@@ -202,7 +234,7 @@ function buildTextInput(key: string, label: string, value: string, description: 
     return row;
 }
 
-function buildTextarea(key: string, label: string, value: string, description: string, placeholder = t('settings.allowedToolsPlaceholder')): HTMLElement {
+function buildTextField(key: string, label: string, value: string, description: string, placeholder = t('settings.allowedToolsPlaceholder')): HTMLElement {
     const row = el('div', 'setting-row');
     row.innerHTML = `
         <div class="setting-label-row">
@@ -295,7 +327,6 @@ function buildAvatarRow(slot: 'pi' | 'user', data: SettingsData): HTMLElement {
 
 function buildApiKeyField(data: SettingsData): HTMLElement {
     const row = el('div', 'setting-row');
-    const provider = data.apiProvider || 'provider';
 
     if (data.apiKeySet) {
         row.innerHTML = `

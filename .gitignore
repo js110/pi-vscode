@@ -9,7 +9,7 @@ legacy-rpc-prototype/
 .design-qa/
 design-qa.md
 .cache
-.github
+.tmp-ego/
 skills-lock.json
 .env
 .DS_Store

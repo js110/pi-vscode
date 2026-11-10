@@ -8,6 +8,9 @@ legacy-rpc-prototype/**
 .tmp-ego/**
 src/**
 node_modules/**
+# …but the codemode worker's QuickJS VM is resolved relative to
+# out/extension.js, so the build mirrors that one package under out/.
+!out/node_modules/**
 .github/**
 .gitignore
 .env

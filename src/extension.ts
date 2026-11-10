@@ -172,6 +172,7 @@ async function readMentionFile(fsPath: string): Promise<string | null> {
 
 export async function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('Pi Agent');
+    context.subscriptions.push(outputChannel);
     // Version self-identification: every activation logs the running build so
     // diagnostics never have to guess whether a reload picked up a new vsix.
     const runningVersion = (require('../package.json') as { version: string }).version;
@@ -181,11 +182,21 @@ export async function activate(context: vscode.ExtensionContext) {
     // launches skip `where/which pi` and `npm root -g`.
     setSdkProbeCacheDir(context.globalStorageUri.fsPath);
 
+    // The IDE bridge is an optional capability: a port-bind failure must not
+    // take the whole sidebar down with it. Without a bridge the chat still
+    // works — the agent just loses the vscode_* tools.
+    let bridgeExtensionPath: string | undefined;
     try {
         bridgeContext = await createBridge(context);
         process.env.PI_VSCODE_BRIDGE_URL = bridgeContext.url;
         process.env.PI_VSCODE_BRIDGE_TOKEN = bridgeContext.token;
-        const bridgeExtensionPath = context.asAbsolutePath('bridge/pi-vscode-bridge.js');
+        bridgeExtensionPath = context.asAbsolutePath('bridge/pi-vscode-bridge.js');
+    } catch (err: any) {
+        outputChannel.appendLine(`IDE bridge unavailable, continuing without it: ${err?.message ?? err}`);
+        bridgeContext = undefined;
+    }
+
+    try {
         const secrets = context.secrets;
 
         let providerRef: SidebarProvider | undefined;
@@ -483,15 +494,19 @@ export async function activate(context: vscode.ExtensionContext) {
                 void inlineChat.discard();
             }),
 
-            vscode.commands.registerCommand('pi-agent.prototypeSecondCwd', async () => {
-                // T07 prototype (wayfinder): spawn a tab pinned to a scratch
-                // cwd to verify multi-SessionManager concurrency in F5.
-                // Removed when T09 lands the real worktree entry.
-                if (!tabManagerRef) return;
-                const protoDir = vscode.Uri.joinPath(context.globalStorageUri, 'proto-cwd');
-                await vscode.workspace.fs.createDirectory(protoDir);
-                await tabManagerRef.createTabInCwd({ cwd: protoDir.fsPath, name: 'Proto ⌗' });
-            }),
+            // Development-only: the manifest no longer contributes this
+            // command, so it must not be registered in a released build
+            // either. Removed for real when T09 lands the worktree entry.
+            ...(context.extensionMode === vscode.ExtensionMode.Production ? [] : [
+                vscode.commands.registerCommand('pi-agent.prototypeSecondCwd', async () => {
+                    // T07 prototype (wayfinder): spawn a tab pinned to a scratch
+                    // cwd to verify multi-SessionManager concurrency in F5.
+                    if (!tabManagerRef) return;
+                    const protoDir = vscode.Uri.joinPath(context.globalStorageUri, 'proto-cwd');
+                    await vscode.workspace.fs.createDirectory(protoDir);
+                    await tabManagerRef.createTabInCwd({ cwd: protoDir.fsPath, name: 'Proto ⌗' });
+                }),
+            ]),
             vscode.commands.registerCommand('pi-agent.newChat', async () => {
                 await sidebarProvider.newSession();
             }),
@@ -514,8 +529,10 @@ export async function activate(context: vscode.ExtensionContext) {
             }),
 
             vscode.commands.registerCommand('pi-agent.compact', async () => {
+                // TabManager reports success/failure (and the benign
+                // "nothing to compact" case) itself — a second unconditional
+                // toast here would claim success for a failed compaction.
                 await sidebarProvider.compact();
-                vscode.window.showInformationMessage(t('compact.done'));
             }),
 
             vscode.commands.registerCommand('pi-agent.sendToPi', async () => {
@@ -717,4 +734,8 @@ export async function deactivate() {
     await PiSessionManager.disposeGlobal();
     await bridgeContext?.dispose();
     bridgeContext = undefined;
+    // The token is a workspace-write capability; do not leave it readable in
+    // a process-wide env var after the bridge that accepted it is gone.
+    delete process.env.PI_VSCODE_BRIDGE_URL;
+    delete process.env.PI_VSCODE_BRIDGE_TOKEN;
 }

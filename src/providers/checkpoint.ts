@@ -12,6 +12,11 @@ interface SuspendedEntry {
     filesAfter: Map<string, string | null>;
 }
 
+/** Turns kept for rollback. Each entry holds the pre-edit content of every
+ *  file the turn touched, so an unbounded map grows with the whole session
+ *  history. 200 turns is far beyond any realistic undo walk. */
+const MAX_RETAINED_TURNS = 200;
+
 export class CheckpointManager implements vscode.Disposable {
     private _checkpoints = new Map<number, CheckpointEntry>();
     private _suspended = new Map<number, SuspendedEntry>();
@@ -29,6 +34,21 @@ export class CheckpointManager implements vscode.Disposable {
         this._currentTurn = messageIndex;
         if (!this._checkpoints.has(messageIndex)) {
             this._checkpoints.set(messageIndex, { filesBefore: new Map() });
+            this._trimOldest();
+        }
+    }
+
+    /** Drop the oldest turns once retention is exceeded. Keyed by turn index,
+     *  not insertion order: redoCheckpoint re-inserts older turns, so the
+     *  smallest index is the one to forget. */
+    private _trimOldest(): void {
+        while (this._checkpoints.size > MAX_RETAINED_TURNS) {
+            let oldest = Infinity;
+            for (const idx of this._checkpoints.keys()) {
+                if (idx < oldest) oldest = idx;
+            }
+            if (!Number.isFinite(oldest)) return;
+            this._checkpoints.delete(oldest);
         }
     }
 
@@ -67,15 +87,7 @@ export class CheckpointManager implements vscode.Disposable {
 
             const filesAfter = new Map<string, string | null>();
             for (const [filePath] of entry.filesBefore) {
-                try {
-                    if (fs.existsSync(filePath)) {
-                        filesAfter.set(filePath, fs.readFileSync(filePath, 'utf-8'));
-                    } else {
-                        filesAfter.set(filePath, null);
-                    }
-                } catch {
-                    filesAfter.set(filePath, null);
-                }
+                filesAfter.set(filePath, await readFileOrNull(filePath));
             }
 
             this._suspended.set(turnIdx, {
@@ -89,16 +101,13 @@ export class CheckpointManager implements vscode.Disposable {
         for (const [filePath, content] of filesToRestore) {
             try {
                 if (content === null) {
-                    if (fs.existsSync(filePath)) {
-                        fs.unlinkSync(filePath);
+                    if (await exists(filePath)) {
+                        await fs.promises.unlink(filePath);
                         restoredFiles.push(filePath);
                     }
                 } else {
-                    const dir = path.dirname(filePath);
-                    if (!fs.existsSync(dir)) {
-                        fs.mkdirSync(dir, { recursive: true });
-                    }
-                    fs.writeFileSync(filePath, content, 'utf-8');
+                    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+                    await fs.promises.writeFile(filePath, content, 'utf-8');
                     restoredFiles.push(filePath);
                 }
             } catch {
@@ -123,16 +132,13 @@ export class CheckpointManager implements vscode.Disposable {
             for (const [filePath, content] of entry.filesAfter) {
                 try {
                     if (content === null) {
-                        if (fs.existsSync(filePath)) {
-                            fs.unlinkSync(filePath);
+                        if (await exists(filePath)) {
+                            await fs.promises.unlink(filePath);
                             redoneFiles.push(filePath);
                         }
                     } else {
-                        const dir = path.dirname(filePath);
-                        if (!fs.existsSync(dir)) {
-                            fs.mkdirSync(dir, { recursive: true });
-                        }
-                        fs.writeFileSync(filePath, content, 'utf-8');
+                        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+                        await fs.promises.writeFile(filePath, content, 'utf-8');
                         redoneFiles.push(filePath);
                     }
                 } catch {
@@ -171,5 +177,22 @@ export class CheckpointManager implements vscode.Disposable {
 
     private _resolveAbsolute(filePath: string): string {
         return resolveWorkspacePath(filePath);
+    }
+}
+
+async function exists(filePath: string): Promise<boolean> {
+    try {
+        await fs.promises.access(filePath);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function readFileOrNull(filePath: string): Promise<string | null> {
+    try {
+        return await fs.promises.readFile(filePath, 'utf-8');
+    } catch {
+        return null;
     }
 }

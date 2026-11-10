@@ -22,3 +22,5 @@ labels: wayfinder:grilling
 4. 过 `npm run check`（typecheck + 编译）并跑单测
 
 不重写；测试资产（mock exec 全覆盖）随用例同步更新。
+
+**后续（2026-11-10）**：该 util 已按本裁决落地并合入 `0ca9c71`，但至今无生产调用方，工作树中已删除以免留下死代码；T08 实现时从 `0ca9c71` 取回即可。

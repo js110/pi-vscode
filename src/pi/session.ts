@@ -41,6 +41,8 @@ export class PiSessionManager {
     private _uiBoundSessions = new WeakSet<object>();
     private _session: AgentSession | undefined;
     private _sessionManager: SessionManager | undefined;
+    /** cwd this manager was initialized with (a tab may pin a worktree). */
+    private _cwd: string | undefined;
     private _modelRegistry: ModelRegistry | undefined;
     private _modelRuntime: ModelRuntime | undefined;
     private _unsubscribe: (() => void) | undefined;
@@ -87,6 +89,7 @@ export class PiSessionManager {
         // A tab-bound session may pin its cwd to a worktree; everything else
         // (model runtime, registry, auth) is shared and cached by the SDK layer.
         const cwd = options?.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+        this._cwd = cwd;
         this._modelRuntime = await getModelRuntime();
         await this._applyStoredApiKey();
         this._modelRegistry = await getModelRegistry();
@@ -143,7 +146,9 @@ export class PiSessionManager {
     }
 
     async prompt(text: string, images?: ImagePayload[]): Promise<string | void> {
-        await this._uiReady;
+        // Wait for the extension UI bind, but never inherit its failure: a
+        // bind error is a UI-capability loss, not a reason to refuse the turn.
+        if (this._uiReady) { await this._uiReady.catch(() => {}); }
         if (!this._session) { throw new Error('Session not initialized'); }
         const start = Date.now();
         this._outputChannel.appendLine(`[prompt] called at ${new Date().toISOString()}, text="${text.substring(0, 80)}${text.length > 80 ? '...' : ''}"${images ? `, images=${images.length}` : ''}`);
@@ -290,7 +295,7 @@ export class PiSessionManager {
         this._unsubscribe?.();
         this._session.dispose();
 
-        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+        const cwd = this._resolveCwd();
         const { SessionManager: SM } = await loadPiSdk();
         this._sessionManager = this._createSessionManager(SM, cwd);
         const { session } = await this._createPiSession(cwd, this._sessionManager);
@@ -305,7 +310,7 @@ export class PiSessionManager {
 
     async getSessions(): Promise<SessionInfo[]> {
         const { SessionManager: SM } = await loadPiSdk();
-        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+        const cwd = this._resolveCwd();
         const sessionDir = vscode.workspace.getConfiguration('pi-agent').get<string>('sessionStoragePath', '') || undefined;
         const key = JSON.stringify([cwd, sessionDir ?? '']);
         const cached = this._sessionsCache.get(key);
@@ -333,7 +338,7 @@ export class PiSessionManager {
         this._session.dispose();
 
         const { SessionManager: SM } = await loadPiSdk();
-        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+        const cwd = this._resolveCwd();
         this._sessionManager = SM.open(sessionPath, undefined);
         const { session } = await this._createPiSession(cwd, this._sessionManager);
 
@@ -423,6 +428,7 @@ export class PiSessionManager {
             additionalExtensionPaths: this._bridgeExtensionPath ? [this._bridgeExtensionPath] : [],
         });
         await resourceLoader.reload();
+        this._reportExtensionLoadErrors(resourceLoader);
 
         const { tools, excludeTools, skippedExtras } = this._readToolOptions();
         if (skippedExtras.length > 0) {
@@ -473,10 +479,25 @@ export class PiSessionManager {
         return result;
     }
 
+    /** cwd of this manager: the tab's pinned worktree when it has one, else
+     *  the first workspace folder. Session listing/creation must agree with
+     *  initialize(), or a worktree tab silently lists the main checkout. */
+    private _resolveCwd(): string {
+        return this._cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+    }
+
     async activateExtensionUi(): Promise<void> {
         if (!this._session || this._uiBoundSessions.has(this._session)) return;
         this._uiReady = this._bindExtensionUi(this._session);
-        await this._uiReady;
+        try {
+            await this._uiReady;
+        } catch (err: any) {
+            // A failed bind must not poison every later prompt(): drop the
+            // cached rejection and unmark the session so a retry re-binds.
+            this._uiReady = undefined;
+            if (this._session) this._uiBoundSessions.delete(this._session);
+            this._outputChannel.appendLine(`[pi] extension UI bind failed: ${err?.message ?? err}`);
+        }
     }
 
     private async _bindExtensionUi(session: AgentSession): Promise<void> {
@@ -501,6 +522,21 @@ export class PiSessionManager {
             abortHandler: () => { void session.abort(); },
             onError: error => this.events.dispatch({ type: 'extension_notification', severity: 'error', message: error.error } as any),
         });
+    }
+
+    /** Surface extension load failures (SDK aggregates them instead of
+     *  throwing) so a bundled install with no node_modules does not silently
+     *  lose the bridge/MCP tools. */
+    private _reportExtensionLoadErrors(loader: unknown): void {
+        try {
+            const errors = (loader as any)?.getExtensions?.()?.errors;
+            if (!Array.isArray(errors) || errors.length === 0) return;
+            for (const error of errors) {
+                this._outputChannel.appendLine(`[pi] extension failed to load: ${error?.path ?? '?'} — ${error?.error ?? error}`);
+            }
+        } catch {
+            // Diagnostics only; never fail session creation over logging.
+        }
     }
 
     async reloadResources(): Promise<void> {

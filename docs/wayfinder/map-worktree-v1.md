@@ -13,7 +13,7 @@ Worktree 并行 Agent 工作流 v1 在 pi-vscode 落地：全部产品决策锁�
 - 追踪器：本仓库无外部 tracker，用 local-markdown tracker——本文件为地图，`tickets/T*.md` 为子票；frontmatter 记 `status / type / assignee / blocked-by`；票被 `blocked-by` 中所有票关闭后进入 frontier。
 - 无子代理可用：research 类票由会话内直接解决。
 - 背景资产：Copilot 与 Kilo 源码调研、v1 PRD 均在 2026-10-14 会话中完成（PRD 四个决策点对应 T01–T04）。
-- 冻结的探索代码：`src/utils/git-worktree.ts` + `src/test/unit/utils/git-worktree.test.ts`（已写未提交，处置由 T04 裁决；已知问题：路径拼接未用 `path.join`，Windows 不兼容）。
+- 冻结的探索代码：`src/utils/git-worktree.ts` + `src/test/unit/utils/git-worktree.test.ts`（T04 裁决后已实现并合入 `0ca9c71`；当前工作树删除，因无生产调用方，T08 需从该提交取回）。
 - Skills：决策票用 grilling；冒烟问题用 diagnose。
 - SDK 事实（建图时已核查）：SessionManager 每实例绑定 cwd，无单例约束，多实例为设计内行为（`dist/core/session-manager.d.ts`）。
 

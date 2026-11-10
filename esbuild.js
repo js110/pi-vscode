@@ -33,6 +33,14 @@ const extensionConfig = {
     target: 'node22',
     sourcemap: isWatch,
     minify: !isWatch,
+    // The Pi SDK is bundled into extension.js and the vsix ships no
+    // node_modules, so the SDK's "unbundled" loader path is unusable: it builds
+    // jiti aliases with require.resolve from a dist/ that no longer exists.
+    // Native Pi extensions (the IDE bridge) then fail to load silently and
+    // their tools disappear. Defining this flag switches the SDK to its
+    // compiled-binary path, whose extra runtime assets are copied by
+    // copyCodemodeWorker() below.
+    define: { PI_BUNDLED_NODE: 'true' },
     plugins: [importMetaPlugin],
     banner: {
         js: [
@@ -70,6 +78,43 @@ const settingsWebviewConfig = {
     minify: !isWatch,
 };
 
+// Hash-named webview chunks accumulate across builds because esbuild names them
+// content-hash only. Wipe the whole directory (including the stale legacy
+// `frame/` dir, whose source no longer exists) so a build — and especially a
+// packaged vsix — can never ship unreachable chunks. Only out/webview is
+// cleared: out/extension.js must survive watch restarts so F5 keeps working.
+async function cleanWebview() {
+    await fs.promises.rm(path.join('out', 'webview'), { recursive: true, force: true });
+}
+
+// PI_BUNDLED_NODE makes the SDK resolve its codemode worker as
+// `new URL("./codemode-worker.js", <extension.js url>)`, so the worker has to
+// sit next to out/extension.js. The SDK ships it as a self-contained chunk
+// (no relative imports, no import.meta) precisely so a release build can copy
+// it verbatim; without it codemode throws ENOENT on first use.
+async function copyCodemodeWorker() {
+    const src = path.join(
+        'node_modules', '@earendil-works', 'pi-coding-agent',
+        'dist', 'bundle', 'chunks', 'codemode-worker.js',
+    );
+    if (!fs.existsSync(src)) return;
+    await fs.promises.copyFile(src, path.join('out', 'codemode-worker.js'));
+
+    // The worker's QuickJS VM is located with
+    // createRequire(<extension.js>).resolve("quickjs-wasi/quickjs.wasm").
+    // node_modules is excluded from the vsix, so mirror just that one package
+    // under out/ — otherwise enabling codemode throws MODULE_NOT_FOUND.
+    const wasmSrc = path.join('node_modules', 'quickjs-wasi', 'quickjs.wasm');
+    if (!fs.existsSync(wasmSrc)) return;
+    const wasmDir = path.join('out', 'node_modules', 'quickjs-wasi');
+    await fs.promises.mkdir(wasmDir, { recursive: true });
+    await fs.promises.copyFile(wasmSrc, path.join(wasmDir, 'quickjs.wasm'));
+    await fs.promises.writeFile(
+        path.join(wasmDir, 'package.json'),
+        JSON.stringify({ name: 'quickjs-wasi', version: '0.0.0', exports: { './quickjs.wasm': './quickjs.wasm' } }),
+    );
+}
+
 async function copyStyles() {
     const stylesDir = path.join('out', 'webview', 'styles');
     await fs.promises.mkdir(stylesDir, { recursive: true });
@@ -97,17 +142,21 @@ async function copyStyles() {
 }
 
 async function build() {
+    await cleanWebview();
     if (isWatch) {
         const extCtx = await esbuild.context(extensionConfig);
         const webCtx = await esbuild.context(webviewConfig);
         const settingsCtx = await esbuild.context(settingsWebviewConfig);
         await Promise.all([extCtx.watch(), webCtx.watch(), settingsCtx.watch()]);
+        await copyStyles();
+        await copyCodemodeWorker();
         console.log('Watching for changes...');
     } else {
         await esbuild.build(extensionConfig);
         await esbuild.build(webviewConfig);
         await esbuild.build(settingsWebviewConfig);
         await copyStyles();
+        await copyCodemodeWorker();
         console.log('Build complete.');
     }
 }

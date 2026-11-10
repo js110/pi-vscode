@@ -8,6 +8,10 @@ async function main() {
     await runTests({
         extensionDevelopmentPath,
         extensionTestsPath,
+        // Pin the download so repeated runs reuse one .vscode-test install
+        // instead of fetching a fresh stable build every time. Must satisfy
+        // engines.vscode (^1.100.0) in package.json.
+        version: '1.100.0',
         launchArgs: ['--disable-extensions'],
     });
 }

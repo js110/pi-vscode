@@ -1,4 +1,5 @@
-import { posix, win32 } from "node:path";
+import { basename, dirname, join, normalize, posix, win32 } from "node:path";
+import * as fs from "node:fs";
 import * as vscode from "vscode";
 
 export function getWorkspaceFolders() {
@@ -27,6 +28,10 @@ export function resolveFilePath(filePath: string): string {
  * Guard for write-side bridge methods (save/format/applyEdit): the resolved
  * path must live under one of the open workspace folders. Reads may stay
  * permissive, but mutation should not escape the workspace boundary.
+ *
+ * The comparison runs on real paths: a raw string prefix check accepts both
+ * `ws/../../outside.txt` and a symlink inside the workspace that points out
+ * of it, and the token holder is an agent, not a trusted person.
  */
 export function assertWritePathInWorkspace(filePath: string): string {
   const resolved = resolveFilePath(filePath);
@@ -34,17 +39,41 @@ export function assertWritePathInWorkspace(filePath: string): string {
   if (roots.length === 0) {
     throw new Error(`No workspace is open — refusing write to ${resolved}`);
   }
-  const contains = (root: string) => {
-    const rootNorm = root.replace(/\\/g, "/").replace(/\/+$/, "");
-    const norm = resolved.replace(/\\/g, "/").replace(/\/+$/, "");
-    const rootKey = win32.isAbsolute(root) ? rootNorm.toUpperCase() : rootNorm;
-    const normKey = win32.isAbsolute(resolved) ? norm.toUpperCase() : norm;
-    return normKey === rootKey || normKey.startsWith(rootKey + "/");
-  };
-  if (!roots.some(contains)) {
+  const real = realPathForGuard(resolved);
+  const realRoots = roots.map(realPathForGuard);
+  if (!realRoots.some((root) => pathContains(root, real))) {
     throw new Error(`Write outside the workspace is not allowed: ${resolved}`);
   }
   return resolved;
+}
+
+/** realpath the target (or its nearest existing ancestor for a new file)
+ *  and normalize case/separators for the containment check. */
+function realPathForGuard(filePath: string): string {
+  let current = filePath;
+  const suffix: string[] = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync.native(current);
+      return normalizeForCompare(suffix.length > 0 ? join(real, ...suffix.reverse()) : real);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return normalizeForCompare(filePath);
+      suffix.push(basename(current));
+      current = parent;
+    }
+  }
+}
+
+function pathContains(root: string, candidate: string): boolean {
+  if (candidate === root) return true;
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  return candidate.startsWith(prefix);
+}
+
+function normalizeForCompare(filePath: string): string {
+  const normalized = normalize(filePath).replace(/\\/g, "/").replace(/\/+$/, "");
+  return win32.isAbsolute(normalized) ? normalized.toUpperCase() : normalized;
 }
 
 export function isAbsolutePath(filePath: string): boolean {

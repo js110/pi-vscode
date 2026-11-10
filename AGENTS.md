@@ -21,10 +21,15 @@ Press F5 in VS Code to launch an Extension Development Host for manual testing.
 
 There are two separate bundle targets (configured in `esbuild.js`):
 
-1. **Extension host** (Node.js, CJS) -- `src/extension.ts` entry point, output to `out/extension.js`. Has access to the `vscode` API and the Pi SDK (both externalized, not bundled).
+1. **Extension host** (Node.js, CJS) -- `src/extension.ts` entry point, output to `out/extension.js`. Has access to the `vscode` API (externalized) and the Pi SDK (bundled in, see below).
 2. **Webview bundles** (browser, IIFE) -- `src/webview/main.ts` and `src/webview/settings.ts`, output to `out/webview/`. These run inside VS Code webview iframes with no Node.js or vscode API access. They communicate with the extension host via `postMessage`.
 
-The Pi SDK package (`@earendil-works/pi-coding-agent`) is externalized in esbuild and loaded at runtime by the extension host.
+The Pi SDK is *bundled* into `out/extension.js`; only `vscode` stays external. Because the vsix ships no `node_modules`, `esbuild.js` also defines `PI_BUNDLED_NODE`, which switches the SDK to its compiled-binary code path (embedded-module jiti loader for native Pi extensions, plus worker/wasm assets resolved relative to `extension.js`). That path needs two runtime files next to the bundle, which the build copies into `out/`:
+
+- `out/codemode-worker.js` — self-contained chunk the SDK ships for exactly this case
+- `out/node_modules/quickjs-wasi/quickjs.wasm` — located via `createRequire(extension.js).resolve(...)`, so `.vscodeignore` must keep `!out/node_modules/**`
+
+`src/test/unit/packaging.test.ts` and `scripts/check-pi-api.mjs` both assert these exist, since a missing one only fails when a user enables codemode.
 
 The local IDE bridge starts with extension activation. `src/bridge/` exposes token-authenticated editor operations on localhost, and `bridge/pi-vscode-bridge.js` is loaded as an additional native Pi extension through `DefaultResourceLoader`.
 
@@ -64,7 +69,6 @@ The local IDE bridge starts with extension activation. `src/bridge/` exposes tok
 | `src/webview/settings.ts` | Settings UI (runs in webview) |
 | `src/webview/styles/main.css` | Chat styles |
 | `src/webview/styles/settings.css` | Settings page styles |
-| `media/icons/` | UI icons (36x36 grayscale PNGs) |
 
 ## Common Pitfalls
 

@@ -1,6 +1,6 @@
 # Pi native commands in VS Code
 
-The sidebar intercepts all 24 built-in commands from Pi 1.1.0 before calling
+The sidebar intercepts all 24 built-in commands from Pi 1.4.0 before calling
 `AgentSession.prompt()`. Pi's SDK only dispatches extension commands and expands
 skills/templates through `prompt()`; the frontend must implement built-ins.
 The command mirror has an upstream parity test to catch new built-ins.
@@ -33,7 +33,7 @@ normal dispatch.
 
 ## Pi 1.x features
 
-The implementation targets the installed Pi SDK 1.1.0:
+The implementation targets the installed Pi SDK 1.4.0:
 
 1. `AgentSessionRuntime` owns new/resume/fork/clone/import flows, preserving
    extension cancellation hooks, shutdown and session rebinding.
@@ -67,5 +67,5 @@ DOM interaction tests, cross-tab dialog isolation, SDK API audit and VS Code
 Extension Host integration tests. External MCP servers and live OAuth sign-in
 are not exercised by automated tests.
 
-References: [Pi 1.1.0 changelog](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/CHANGELOG.md)
+References: [Pi 1.4.0 changelog](https://github.com/earendil-works/pi/blob/v1.4.0/packages/coding-agent/CHANGELOG.md)
 and the installed SDK declarations for `AgentSessionRuntime` and `ExtensionUIContext`.

@@ -48,6 +48,8 @@ const sdkPkg = (() => {
 })();
 const pkgVersion = sdkPkg.version;
 const sdkRoot = sdkPkg.dir;
+// This script lives in <repo>/scripts/, so one level up is the repo root.
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const missing = [];
 
@@ -69,6 +71,19 @@ function checkExport(name) {
 function checkStatic(objName, method) {
     const obj = sdk?.[objName];
     if (typeof obj?.[method] !== 'function') { missing.push(`${objName}.${method} (static)`); }
+}
+
+/**
+ * Assert a build-copied asset still exists. `relativeToPackage` is resolved
+ * against the installed SDK; a `node_modules/...` path against this repo.
+ */
+function checkFile(relativeToPackage) {
+    const full = relativeToPackage.startsWith('node_modules/')
+        ? join(repoRoot, relativeToPackage)
+        : sdkRoot && join(sdkRoot, relativeToPackage);
+    if (!full || !existsSync(full)) {
+        missing.push(`file: ${relativeToPackage} (esbuild.js copies it into out/)`);
+    }
 }
 
 function checkProto(objName, method) {
@@ -129,21 +144,29 @@ if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.0.0')) {
     ['login', 'logout', 'listCredentials', 'getProviders', 'getProvider', 'getAvailableSnapshot'].forEach(m => checkProto('ModelRuntime', m));
     checkProto('ProjectTrustStore', 'set');
     checkProto('SettingsManager', 'setEnabledModels');
+    // esbuild defines PI_BUNDLED_NODE, which switches the SDK to its
+    // compiled-binary loader and codemode worker resolution. Both are
+    // version-specific internals the build now depends on (see esbuild.js
+    // copyCodemodeWorker): a rename upstream would leave a vsix that throws
+    // only when a user enables codemode, so pin the files the build copies.
+    checkFile('dist/core/extensions/virtual-modules.js');
+    checkFile('dist/core/extensions/jiti-static-loader.js');
+    checkFile('dist/bundle/chunks/codemode-worker.js');
+    checkFile('node_modules/quickjs-wasi/quickjs.wasm');
 }
 
 // --- Version-gated APIs (cache warming, SDK 0.86.0+) ---
-// The pinned bundled copy (0.84.4) predates cache warming, and the extension
-// feature-detects every one of these at runtime (src/pi/session.ts), so a
-// missing API is only a hard error once Pi ships >= 0.86.0 — the canary run
-// will catch a rename/removal on the next SDK bump.
+// The extension feature-detects every one of these at runtime (src/pi/
+// session.ts), so a missing API is only a hard error once Pi ships >= 0.86.0;
+// the installed SDK is 1.4.x, so this gate always applies here and the canary
+// run catches a rename/removal on the next SDK bump.
 if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '0.86.0')) {
     ['getCacheWarmingMode', 'setCacheWarmingMode'].forEach((m) => checkProto('SettingsManager', m));
 }
 
 // --- Version-gated APIs (Pi 1.1.0+): session denylist and run/status fields ---
-// The extension reads these unconditionally on 1.1.0+ (session tool options,
-// agent_settled.aborted, tool durationMs); gate so an older pinned copy only
-// warns via the canary's latest-SDK run.
+// Unconditional for the installed 1.4.x SDK; the gate only keeps the audit
+// meaningful for a hypothetical older pinned copy.
 if (pkgVersion !== 'unknown' && versionAtLeast(pkgVersion, '1.1.0')) {
     checkTypeToken('dist/core/sdk.d.ts', 'excludeTools');
     checkTypeToken('dist/core/agent-session.d.ts', 'aborted: boolean');
